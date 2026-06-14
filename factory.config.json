@@ -1,0 +1,34 @@
+{
+  "model": {
+    "provider": "ollama",
+    "name": "qwen3:8b",
+    "reviewerName": "qwen3:8b",
+    "baseUrl": "http://localhost:11434",
+    "timeoutMs": 180000,
+    "temperature": 0.2
+  },
+  "pipeline": {
+    "maxRetries": 3,
+    "timeboxMs": 180000,
+    "maxFixIterations": 3
+  },
+  "paths": {
+    "requirements": "./requirements",
+    "constraints": "./constraints",
+    "runs": "./runs",
+    "templates": "./templates",
+    "prompts": "./packages/agent-factory/prompts"
+  },
+  "targetProject": {
+    "applyArtifacts": false,
+    "allowedPaths": ["src", "app", "components", "lib", "tests"],
+    "commands": {
+      "typeCheck": "pnpm typecheck",
+      "lint": "pnpm lint",
+      "test": "pnpm test"
+    }
+  },
+  "domain": {
+    "rules": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../..",
+    "declaration": true,
+    "sourceMap": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@aifactory/contracts": ["packages/contracts/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "aifactory",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI Factory — requirement-driven, multi-agent code generation",
+  "scripts": {
+    "factory": "tsx --tsconfig tsconfig.json packages/agent-factory/src/cli.ts",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "eslint": "^8.57.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.5"
+  }
+}

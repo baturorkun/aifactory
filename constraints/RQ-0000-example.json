@@ -1,0 +1,6 @@
+{
+  "targetPackage": "src/hello",
+  "language": "typescript",
+  "framework": "jest",
+  "notes": "This is an example constraint file for RQ-0000."
+}
