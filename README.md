@@ -21,6 +21,13 @@ AI Factory reads a requirement and optional constraints, then either:
 
 The target project is controlled by `factory.config.json` in the target repo.
 
+## Example Projects
+
+These public example target projects show AI Factory in real usage:
+
+- Vanilla TypeScript example: https://github.com/baturorkun/aifactory-example-vanilla-ts
+- Python HTTP example: https://github.com/baturorkun/aifactory-example-python-http
+
 ## Recommended Workflow
 
 The normal order is:
