@@ -85,6 +85,105 @@ function writeCommonFiles(projectRoot: string, projectName: string, factoryScrip
   );
 }
 
+function writeReferencesReadme(projectRoot: string): void {
+  writeFileSync(
+    resolve(projectRoot, 'references/README.md'),
+    [
+      '# References',
+      '',
+      'Put source material for requirements here, such as PDFs, standards, screenshots, notes, and domain research.',
+      '',
+      'Suggested layout for a standard or specification:',
+      '',
+      '```text',
+      'references/',
+      '  arinc-661/',
+      '    ARINC-661.pdf',
+      '    summary.md',
+      '    widget-model.md',
+      '    requirements-notes.md',
+      '```',
+      '',
+      'Requirements should link to concise markdown notes from this folder when possible. Keep large PDFs here as source material, but summarize the implementation-relevant parts in markdown before running the factory pipeline.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeGitlabCi(projectRoot: string, projectName: string): void {
+  writeFileSync(
+    resolve(projectRoot, '.gitlab-ci.yml'),
+    [
+      'image: node:20-bullseye',
+      '',
+      'stages:',
+      '  - ai_factory',
+      '',
+      'variables:',
+      '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
+      '  PATH: "$PNPM_HOME:$PATH"',
+      '  AIFACTORY_REPO_URL: "https://github.com/baturorkun/aifactory.git"',
+      '  REQUIREMENT_ID: ""',
+      '',
+      'cache:',
+      '  key: "$CI_COMMIT_REF_SLUG"',
+      '  paths:',
+      '    - .pnpm-store/',
+      '    - .pnpm/',
+      '',
+      'ai_factory_run:',
+      '  stage: ai_factory',
+      '  rules:',
+      '    - if: \'$CI_COMMIT_BRANCH == "master"\'',
+      '      when: manual',
+      '    - if: \'$CI_COMMIT_BRANCH == "main"\'',
+      '      when: manual',
+      '    - when: never',
+      '  before_script:',
+      '    - corepack enable',
+      '    - corepack prepare pnpm@9.15.9 --activate',
+      '    - |',
+      '      if [ -z "$REQUIREMENT_ID" ]; then',
+      '        echo "REQUIREMENT_ID is required. Run this manual job with a value such as RQ-0001-example."',
+      '        exit 1',
+      '      fi',
+      '    - |',
+      '      if [ ! -f ../aifactory/package.json ]; then',
+      '        git clone "$AIFACTORY_REPO_URL" ../aifactory',
+      '      fi',
+      '    - cd ../aifactory',
+      '    - pnpm install --frozen-lockfile',
+      '    - pnpm -r run typecheck',
+      '    - cd "$CI_PROJECT_DIR"',
+      '  script:',
+      '    - pnpm factory run "$REQUIREMENT_ID"',
+      '    - pnpm typecheck',
+      '    - pnpm build',
+      '  artifacts:',
+      '    name: "' + projectName + '-ai-factory-$CI_COMMIT_SHORT_SHA"',
+      '    when: always',
+      '    expire_in: 7 days',
+      '    paths:',
+      '      - public/',
+      '      - src/',
+      '      - dist/',
+      '      - runs/',
+      '      - handoffs/',
+      '      - requirements/',
+      '      - constraints/',
+      '      - factory.config.json',
+      '      - package.json',
+      '      - tsconfig.json',
+      '      - tsconfig.build.json',
+      '      - pyproject.toml',
+      '      - tests/',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 function writeFactoryConfig(
   projectRoot: string,
   promptsPath: string,
@@ -107,6 +206,7 @@ function writeFactoryConfig(
     paths: {
       requirements: './requirements',
       constraints: './constraints',
+      references: './references',
       runs: './runs',
       handoffs: './handoffs',
       templates: './templates',
@@ -252,11 +352,13 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   const promptsPath = toPackageScriptPath(projectRoot, resolve(factoryRoot, 'packages/agent-factory/prompts'));
 
   mkdirSync(projectRoot, { recursive: true });
-  for (const dir of ['requirements', 'constraints', 'handoffs', 'runs', 'templates']) {
+  for (const dir of ['requirements', 'constraints', 'handoffs', 'runs', 'templates', 'references']) {
     mkdirSync(resolve(projectRoot, dir), { recursive: true });
   }
 
   writeCommonFiles(projectRoot, projectName, factoryScript);
+  writeReferencesReadme(projectRoot);
+  writeGitlabCi(projectRoot, projectName);
 
   if (options.template === 'vanilla-ts') {
     writeFactoryConfig(projectRoot, promptsPath, ['public', 'src', 'tests'], {

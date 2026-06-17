@@ -156,9 +156,11 @@ Creates only an AI Factory-ready target workspace:
 ```text
 requirements/
 constraints/
+references/
 handoffs/
 runs/
 templates/
+.gitlab-ci.yml
 factory.config.json
 .env.example
 .gitignore
@@ -166,6 +168,14 @@ package.json
 ```
 
 Use this when the actual project stack will be created later by a requirement.
+
+Every generated target project also includes a manual GitLab CI job in `.gitlab-ci.yml`. The job clones AI Factory from `https://github.com/baturorkun/aifactory.git`, then runs `pnpm factory run "$REQUIREMENT_ID"` when manually started on `master` or `main`.
+
+Set `REQUIREMENT_ID` when starting the manual GitLab job, for example:
+
+```text
+RQ-0001-job-form
+```
 
 #### `vanilla-ts`
 
@@ -228,6 +238,21 @@ This means:
 
 - no `.env`: runs use the mock provider,
 - `.env` with Gemini/xAI/Ollama-compatible settings: runs use the configured provider.
+
+Generated projects also define standard workspace paths:
+
+```json
+{
+  "paths": {
+    "requirements": "./requirements",
+    "constraints": "./constraints",
+    "references": "./references",
+    "runs": "./runs",
+    "handoffs": "./handoffs",
+    "templates": "./templates"
+  }
+}
+```
 
 The same config also controls where files can be written:
 
@@ -426,12 +451,15 @@ In a target project:
 ```text
 requirements/   # permanent product/task descriptions
 constraints/    # permanent technical/domain boundaries
+references/     # source material such as PDFs, standards, screenshots, and notes
 handoffs/       # manual implementation packages, no API usage
 runs/           # pipeline execution history and audit output
 templates/      # optional target-local templates
 src/            # target app source, depending on template
 tests/          # target app tests, depending on template
 ```
+
+`references/` is for source material that supports requirements. Put large inputs such as PDFs under a topic folder, then create concise markdown notes that requirements can cite.
 
 `runs/` is for executed pipeline runs.
 

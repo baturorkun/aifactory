@@ -62,6 +62,7 @@ const PipelineConfigSchema = z.object({
 const PathsConfigSchema = z.object({
   requirements: z.string().default('./requirements'),
   constraints: z.string().default('./constraints'),
+  references: z.string().default('./references'),
   runs: z.string().default('./runs'),
   handoffs: z.string().default('./handoffs'),
   templates: z.string().default('./templates'),

@@ -65,6 +65,7 @@ pnpm factory -- approve <run-id>
   "paths": {
     "requirements": "./requirements",
     "constraints": "./constraints",
+    "references": "./references",
     "runs": "./runs",
     "prompts": "./packages/agent-factory/prompts"
   },
