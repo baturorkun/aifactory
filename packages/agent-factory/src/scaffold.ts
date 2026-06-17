@@ -158,7 +158,7 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '    - pnpm -r run typecheck',
       '    - cd "$CI_PROJECT_DIR"',
       '  script:',
-      '    - pnpm factory run "$REQUIREMENT_ID"',
+      '    - pnpm factory run "$REQUIREMENT_ID" --fast',
       '    - pnpm typecheck',
       '    - pnpm build',
       '  artifacts:',
