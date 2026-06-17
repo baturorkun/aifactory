@@ -309,7 +309,17 @@ program
       targetProject: {
         root: undefined,
         applyArtifacts: false,
-        allowedPaths: ['src', 'app', 'components', 'lib', 'tests'],
+        allowedPaths: [
+          'src',
+          'app',
+          'components',
+          'lib',
+          'tests',
+          'tsconfig.json',
+          'tsconfig.build.json',
+          'package.json',
+          'vite.config.ts',
+        ],
         commands: {
           typeCheck: 'pnpm typecheck',
           lint: 'pnpm lint',

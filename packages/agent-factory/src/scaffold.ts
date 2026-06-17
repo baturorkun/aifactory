@@ -19,6 +19,7 @@ export type NewProjectResult = {
 export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python'];
 
 const PROJECT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+const TYPESCRIPT_CONFIG_PATHS = ['tsconfig.json', 'tsconfig.build.json'];
 
 function assertValidProjectName(projectName: string): void {
   if (!PROJECT_NAME_PATTERN.test(projectName)) {
@@ -115,14 +116,11 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
   writeFileSync(
     resolve(projectRoot, '.gitlab-ci.yml'),
     [
-      'image: node:20-bullseye',
-      '',
       'stages:',
       '  - ai_factory',
       '',
       'variables:',
       '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
-      '  PATH: "$PNPM_HOME:$PATH"',
       '  AIFACTORY_REPO_URL: "https://github.com/baturorkun/aifactory.git"',
       '  REQUIREMENT_ID: ""',
       '',
@@ -133,6 +131,7 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '    - .pnpm/',
       '',
       'ai_factory_run:',
+      '  image: node:20-bullseye',
       '  stage: ai_factory',
       '  rules:',
       '    - if: \'$CI_COMMIT_BRANCH == "master"\'',
@@ -141,6 +140,8 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '      when: manual',
       '    - when: never',
       '  before_script:',
+      '    - node --version',
+      '    - npm --version',
       '    - corepack enable',
       '    - corepack prepare pnpm@9.15.9 --activate',
       '    - |',
@@ -361,7 +362,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   writeGitlabCi(projectRoot, projectName);
 
   if (options.template === 'vanilla-ts') {
-    writeFactoryConfig(projectRoot, promptsPath, ['public', 'src', 'tests'], {
+    writeFactoryConfig(projectRoot, promptsPath, ['public', 'src', 'tests', ...TYPESCRIPT_CONFIG_PATHS], {
       typeCheck: 'pnpm typecheck',
       test: undefined,
     });

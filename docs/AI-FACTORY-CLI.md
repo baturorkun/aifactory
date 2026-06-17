@@ -72,7 +72,7 @@ pnpm factory -- approve <run-id>
   "targetProject": {
     "root": "../my-app",         // target repo/app root (optional)
     "applyArtifacts": false,     // true writes generated files into targetProject.root
-    "allowedPaths": ["src", "app", "components", "lib", "tests"],
+    "allowedPaths": ["src", "app", "components", "lib", "tests", "tsconfig.json", "tsconfig.build.json", "package.json", "vite.config.ts"],
     "commands": {
       "typeCheck": "pnpm typecheck",
       "lint": "pnpm lint",

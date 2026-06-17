@@ -268,7 +268,7 @@ The same config also controls where files can be written:
   "targetProject": {
     "root": ".",
     "applyArtifacts": true,
-    "allowedPaths": ["src", "tests"],
+    "allowedPaths": ["src", "tests", "tsconfig.json", "tsconfig.build.json"],
     "commands": {
       "typeCheck": "pnpm typecheck",
       "test": "pnpm test"
