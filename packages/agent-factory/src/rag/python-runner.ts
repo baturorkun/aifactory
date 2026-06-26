@@ -8,9 +8,10 @@ const CORE_ROOT = resolve(__dirname, '../../../..');
 const RAG_SERVICE_ROOT = resolve(CORE_ROOT, 'services/rag');
 const RAG_SOURCE_ROOT = resolve(RAG_SERVICE_ROOT, 'src');
 const RAG_COMPOSE_FILE = resolve(CORE_ROOT, 'infra/rag/compose.yaml');
+const RAG_VENV_ROOT = resolve(CORE_ROOT, '.venv-rag');
 
 export function runRagPython(args: string[], cwd: string = process.cwd()): void {
-  const python = process.env.AIFACTORY_RAG_PYTHON ?? 'python3';
+  const python = resolveRagPython();
   const configPath = resolve(cwd, 'factory.config.json');
   const env = {
     ...process.env,
@@ -32,8 +33,7 @@ export function runRagPython(args: string[], cwd: string = process.cwd()): void 
   if (result.error) {
     throw new Error(
       `Failed to start Python RAG worker with "${python}". ` +
-        `Install Python 3.11+ and the service dependencies with: ` +
-        `python3 -m pip install -e ${RAG_SERVICE_ROOT}`,
+        `Run: pnpm factory rag install`,
     );
   }
   if (result.status !== 0) {
@@ -42,21 +42,17 @@ export function runRagPython(args: string[], cwd: string = process.cwd()): void 
 }
 
 export function installRagPython(): void {
-  const python = process.env.AIFACTORY_RAG_PYTHON ?? 'python3';
-  const result = spawnSync(python, ['-m', 'pip', 'install', '-e', RAG_SERVICE_ROOT], {
-    cwd: CORE_ROOT,
-    stdio: 'inherit',
-    env: process.env,
-  });
+  const requestedPython = process.env.AIFACTORY_RAG_PYTHON;
+  const python = requestedPython ?? 'python3';
 
-  if (result.error) {
-    throw new Error(
-      `Failed to start Python with "${python}". Install Python 3.11+ or set AIFACTORY_RAG_PYTHON.`,
-    );
+  if (!requestedPython && !existsSync(venvPythonPath())) {
+    console.log(`Creating RAG Python virtual environment: ${RAG_VENV_ROOT}`);
+    runPythonCommand(python, ['-m', 'venv', RAG_VENV_ROOT], 'create RAG Python virtual environment');
   }
-  if (result.status !== 0) {
-    throw new Error(`RAG Python dependency install failed with exit code ${result.status ?? 'unknown'}.`);
-  }
+
+  const installPython = requestedPython ?? venvPythonPath();
+  runPythonCommand(installPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], 'upgrade pip');
+  runPythonCommand(installPython, ['-m', 'pip', 'install', '-e', RAG_SERVICE_ROOT], 'install RAG Python dependencies');
 }
 
 export function runRagEnv(command: RagEnvCommand): void {
@@ -82,6 +78,40 @@ export function runRagEnv(command: RagEnvCommand): void {
   if (result.status !== 0) {
     throw new Error(`${runtime.label} failed with exit code ${result.status ?? 'unknown'}.`);
   }
+}
+
+function runPythonCommand(python: string, args: string[], action: string): void {
+  const result = spawnSync(python, args, {
+    cwd: CORE_ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.error) {
+    throw new Error(
+      `Failed to start Python with "${python}" while trying to ${action}. ` +
+        `Install Python 3.11+ or set AIFACTORY_RAG_PYTHON.`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(`Failed to ${action}; Python exited with code ${result.status ?? 'unknown'}.`);
+  }
+}
+
+function resolveRagPython(): string {
+  if (process.env.AIFACTORY_RAG_PYTHON) return process.env.AIFACTORY_RAG_PYTHON;
+  const venvPython = venvPythonPath();
+  if (existsSync(venvPython)) return venvPython;
+  throw new Error(
+    `RAG Python environment is not installed. Run: pnpm factory rag install`,
+  );
+}
+
+function venvPythonPath(): string {
+  if (process.platform === 'win32') {
+    return resolve(RAG_VENV_ROOT, 'Scripts/python.exe');
+  }
+  return resolve(RAG_VENV_ROOT, 'bin/python');
 }
 
 function findComposeRuntime(): { bin: string; args: string[]; label: string } {
