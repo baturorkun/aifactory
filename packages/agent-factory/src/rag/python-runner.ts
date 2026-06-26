@@ -41,6 +41,24 @@ export function runRagPython(args: string[], cwd: string = process.cwd()): void 
   }
 }
 
+export function installRagPython(): void {
+  const python = process.env.AIFACTORY_RAG_PYTHON ?? 'python3';
+  const result = spawnSync(python, ['-m', 'pip', 'install', '-e', RAG_SERVICE_ROOT], {
+    cwd: CORE_ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.error) {
+    throw new Error(
+      `Failed to start Python with "${python}". Install Python 3.11+ or set AIFACTORY_RAG_PYTHON.`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(`RAG Python dependency install failed with exit code ${result.status ?? 'unknown'}.`);
+  }
+}
+
 export function runRagEnv(command: RagEnvCommand): void {
   if (!existsSync(RAG_COMPOSE_FILE)) {
     throw new Error(`RAG compose file not found: ${RAG_COMPOSE_FILE}`);

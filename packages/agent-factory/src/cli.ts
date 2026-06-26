@@ -8,7 +8,7 @@ import { runPipeline } from './orchestrator/pipeline';
 import { createHandoffPackage } from './orchestrator/handoff';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
-import { runRagEnv, runRagPython } from './rag/python-runner';
+import { installRagPython, runRagEnv, runRagPython } from './rag/python-runner';
 import type { RunManifest } from '@aifactory/contracts';
 
 const program = new Command();
@@ -281,6 +281,11 @@ program
 const rag = program
   .command('rag')
   .description('Run AI Factory RAG environment, ingest, and API commands');
+
+rag
+  .command('install')
+  .description('Install Python dependencies for the RAG service')
+  .action(() => runRagCommand(() => installRagPython()));
 
 const ragEnv = rag.command('env').description('Manage the local RAG container environment');
 
