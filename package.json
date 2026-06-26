@@ -5,6 +5,7 @@
   "description": "AI Factory — requirement-driven, multi-agent code generation",
   "scripts": {
     "factory": "tsx --tsconfig tsconfig.json packages/agent-factory/src/cli.ts",
+    "rag:install": "python3 -m pip install -e services/rag",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",

@@ -93,12 +93,90 @@ const TargetProjectSchema = z.object({
   commands: TargetCommandsSchema.default({}),
 });
 
+const RagSourceSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('filesystem').default('filesystem'),
+  rootPath: z.string().min(1),
+  include: z
+    .array(z.string())
+    .default([
+      '**/*.txt',
+      '**/*.md',
+      '**/*.json',
+      '**/*.csv',
+      '**/*.html',
+      '**/*.htm',
+      '**/*.pdf',
+      '**/*.docx',
+      '**/*.pptx',
+    ]),
+  exclude: z.array(z.string()).default(['**/~$*', '**/.DS_Store']),
+});
+
+const RagConfigSchema = z.object({
+  database: z
+    .object({
+      connectionString: z
+        .string()
+        .default('postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag'),
+    })
+    .default({}),
+  sources: z.array(RagSourceSchema).default([]),
+  ingest: z
+    .object({
+      chunkSize: z.number().int().positive().default(1200),
+      chunkOverlap: z.number().int().min(0).default(150),
+      batchSize: z.number().int().positive().default(50),
+    })
+    .default({}),
+  embedding: z
+    .object({
+      provider: z.enum(['openai', 'gemini', 'ollama']).default('openai'),
+      model: z.string().default('text-embedding-3-small'),
+      dimensions: z.number().int().positive().default(1536),
+      apiKey: z.string().optional(),
+      baseUrl: z.string().optional(),
+    })
+    .default({}),
+  llm: z
+    .object({
+      provider: z.enum(['openai', 'claude', 'gemini', 'ollama']).default('openai'),
+      model: z.string().default('gpt-4o-mini'),
+      apiKey: z.string().optional(),
+      baseUrl: z.string().optional(),
+      temperature: z.number().min(0).max(2).default(0.1),
+    })
+    .default({}),
+  retrieval: z
+    .object({
+      topK: z.number().int().positive().default(6),
+      minScore: z.number().optional(),
+    })
+    .default({}),
+  auth: z
+    .object({
+      provider: z.enum(['none', 'entra']).default('none'),
+      enabled: z.boolean().default(false),
+      tenantId: z.string().optional(),
+      audience: z.string().optional(),
+      issuer: z.string().optional(),
+    })
+    .default({}),
+  api: z
+    .object({
+      host: z.string().default('127.0.0.1'),
+      port: z.number().int().positive().default(8765),
+    })
+    .default({}),
+});
+
 export const FactoryConfigSchema = z.object({
   model: ModelConfigSchema,
   pipeline: PipelineConfigSchema.default({}),
   paths: PathsConfigSchema.default({}),
   domain: DomainConfigSchema.default({}),
   targetProject: TargetProjectSchema.default({}),
+  rag: RagConfigSchema.default({}),
 });
 
 export type FactoryConfig = z.infer<typeof FactoryConfigSchema>;

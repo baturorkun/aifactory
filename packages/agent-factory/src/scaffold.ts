@@ -75,6 +75,17 @@ function writeCommonFiles(projectRoot: string, projectName: string, factoryScrip
       '# AI_BASE_URL=https://api.x.ai/v1',
       '# AI_API_KEY=replace_me',
       '',
+      '# RAG settings:',
+      '# RAG_DATABASE_URL=postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag',
+      '# RAG_FILESERVER_PATH=/mnt/company-share/docs',
+      '# RAG_EMBEDDING_PROVIDER=gemini',
+      '# RAG_EMBEDDING_MODEL=gemini-embedding-001',
+      '# RAG_LLM_PROVIDER=gemini',
+      '# RAG_LLM_MODEL=gemini-2.5-flash',
+      '# RAG_API_KEY=replace_me',
+      '# ENTRA_TENANT_ID=replace_me',
+      '# ENTRA_AUDIENCE=api://replace_me',
+      '',
     ].join('\n'),
     'utf8',
   );
@@ -221,6 +232,51 @@ function writeFactoryConfig(
     },
     domain: {
       rules: [],
+    },
+    rag: {
+      database: {
+        connectionString:
+          '${RAG_DATABASE_URL:-postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag}',
+      },
+      sources: [
+        {
+          id: 'fileserver',
+          type: 'filesystem',
+          rootPath: '${RAG_FILESERVER_PATH:-./references}',
+          include: ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
+          exclude: ['**/~$*', '**/.DS_Store'],
+        },
+      ],
+      ingest: {
+        chunkSize: 1200,
+        chunkOverlap: 150,
+        batchSize: 50,
+      },
+      embedding: {
+        provider: '${RAG_EMBEDDING_PROVIDER:-gemini}',
+        model: '${RAG_EMBEDDING_MODEL:-gemini-embedding-001}',
+        dimensions: 1536,
+        apiKey: '${RAG_API_KEY:-}',
+      },
+      llm: {
+        provider: '${RAG_LLM_PROVIDER:-gemini}',
+        model: '${RAG_LLM_MODEL:-gemini-2.5-flash}',
+        apiKey: '${RAG_API_KEY:-}',
+        temperature: 0.1,
+      },
+      retrieval: {
+        topK: 6,
+      },
+      auth: {
+        provider: 'none',
+        enabled: false,
+        tenantId: '${ENTRA_TENANT_ID:-}',
+        audience: '${ENTRA_AUDIENCE:-}',
+      },
+      api: {
+        host: '127.0.0.1',
+        port: 8765,
+      },
     },
   });
 }

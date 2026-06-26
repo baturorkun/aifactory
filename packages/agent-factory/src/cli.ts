@@ -8,6 +8,7 @@ import { runPipeline } from './orchestrator/pipeline';
 import { createHandoffPackage } from './orchestrator/handoff';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
+import { runRagEnv, runRagPython } from './rag/python-runner';
 import type { RunManifest } from '@aifactory/contracts';
 
 const program = new Command();
@@ -274,6 +275,77 @@ program
   });
 
 // ============================================================
+// factory rag ...
+// ============================================================
+
+const rag = program
+  .command('rag')
+  .description('Run AI Factory RAG environment, ingest, and API commands');
+
+const ragEnv = rag.command('env').description('Manage the local RAG container environment');
+
+ragEnv
+  .command('up')
+  .description('Create and start PostgreSQL + pgvector using Podman/Docker Compose')
+  .action(() => runRagCommand(() => runRagEnv('up')));
+
+ragEnv
+  .command('down')
+  .description('Stop the RAG compose environment')
+  .action(() => runRagCommand(() => runRagEnv('down')));
+
+ragEnv
+  .command('status')
+  .description('Show RAG compose container status')
+  .action(() => runRagCommand(() => runRagEnv('status')));
+
+const ragDb = rag.command('db').description('Manage the RAG database');
+
+ragDb
+  .command('migrate')
+  .description('Create or update RAG database tables')
+  .action(() => runRagCommand(() => runRagPython(['db', 'migrate'])));
+
+rag
+  .command('ingest')
+  .description('Ingest a configured RAG source')
+  .requiredOption('--source <id>', 'RAG source ID from factory.config.json')
+  .option('--force', 'Force re-ingest even when fingerprints match', false)
+  .action((opts: { source: string; force: boolean }) =>
+    runRagCommand(() =>
+      runRagPython(['ingest', '--source', opts.source, ...(opts.force ? ['--force'] : [])]),
+    ),
+  );
+
+rag
+  .command('status')
+  .description('Show RAG document, chunk, and ingest status')
+  .action(() => runRagCommand(() => runRagPython(['status'])));
+
+rag
+  .command('query <question>')
+  .description('Ask the RAG index a question from the CLI')
+  .action((question: string) => runRagCommand(() => runRagPython(['query', question])));
+
+const ragApi = rag.command('api').description('Run the RAG FastAPI service');
+
+ragApi
+  .command('start')
+  .description('Start the Python FastAPI RAG service')
+  .option('--host <host>', 'Bind host')
+  .option('--port <port>', 'Bind port')
+  .action((opts: { host?: string; port?: string }) =>
+    runRagCommand(() =>
+      runRagPython([
+        'api',
+        'start',
+        ...(opts.host ? ['--host', opts.host] : []),
+        ...(opts.port ? ['--port', opts.port] : []),
+      ]),
+    ),
+  );
+
+// ============================================================
 // factory init
 // ============================================================
 
@@ -327,6 +399,51 @@ program
         },
       },
       domain: { rules: [] },
+      rag: {
+        database: {
+          connectionString:
+            '${RAG_DATABASE_URL:-postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag}',
+        },
+        sources: [
+          {
+            id: 'fileserver',
+            type: 'filesystem',
+            rootPath: '${RAG_FILESERVER_PATH:-./references}',
+            include: ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
+            exclude: ['**/~$*', '**/.DS_Store'],
+          },
+        ],
+        ingest: {
+          chunkSize: 1200,
+          chunkOverlap: 150,
+          batchSize: 50,
+        },
+        embedding: {
+          provider: '${RAG_EMBEDDING_PROVIDER:-gemini}',
+          model: '${RAG_EMBEDDING_MODEL:-gemini-embedding-001}',
+          dimensions: 1536,
+          apiKey: '${RAG_API_KEY:-}',
+        },
+        llm: {
+          provider: '${RAG_LLM_PROVIDER:-gemini}',
+          model: '${RAG_LLM_MODEL:-gemini-2.5-flash}',
+          apiKey: '${RAG_API_KEY:-}',
+          temperature: 0.1,
+        },
+        retrieval: {
+          topK: 6,
+        },
+        auth: {
+          provider: 'none',
+          enabled: false,
+          tenantId: '${ENTRA_TENANT_ID:-}',
+          audience: '${ENTRA_AUDIENCE:-}',
+        },
+        api: {
+          host: '127.0.0.1',
+          port: 8765,
+        },
+      },
     };
 
     writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2) + '\n');
@@ -355,6 +472,15 @@ function statusLabel(status: string): string {
       return chalk.red(status);
     default:
       return chalk.dim(status);
+  }
+}
+
+function runRagCommand(action: () => void): void {
+  try {
+    action();
+  } catch (err) {
+    console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+    process.exit(1);
   }
 }
 

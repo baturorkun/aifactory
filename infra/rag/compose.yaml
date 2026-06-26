@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aifactory-rag-postgres
+    environment:
+      POSTGRES_DB: ${RAG_POSTGRES_DB:-aifactory_rag}
+      POSTGRES_USER: ${RAG_POSTGRES_USER:-aifactory_rag}
+      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:-aifactory_rag}
+    ports:
+      - "${RAG_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - aifactory_rag_pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  aifactory_rag_pgdata:
