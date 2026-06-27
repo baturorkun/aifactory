@@ -9,12 +9,20 @@ import uvicorn
 
 from aifactory_rag.api import create_app
 from aifactory_rag.config import load_factory_config
-from aifactory_rag.db import fetch_all, fetch_one, migrate, connect
+from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
 from aifactory_rag.query.responder import answer_question
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="aifactory-rag")
     parser.add_argument("--config", default="factory.config.json")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -52,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if summary.status == "passed" else 2
 
     if args.command == "status":
+        require_schema(config.rag.database.connection_string)
         print_json(_status(config.rag.database.connection_string))
         return 0
 

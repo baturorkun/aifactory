@@ -6,10 +6,11 @@ Python FastAPI + LlamaIndex RAG service used by `pnpm factory rag ...`.
 
 ```bash
 cd aifactory
-python3 -m pip install -e services/rag
+pnpm factory rag install
 ```
 
-Use `AIFACTORY_RAG_PYTHON=/path/to/python` when the RAG service dependencies are installed in a specific virtual environment.
+This creates `.venv-rag/` automatically and installs the Python service there.
+Use `AIFACTORY_RAG_PYTHON=/path/to/python` only when you want to provide your own Python environment.
 
 ## Start PostgreSQL + pgvector
 

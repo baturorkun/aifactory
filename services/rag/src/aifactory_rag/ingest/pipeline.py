@@ -10,7 +10,7 @@ from typing import Any
 import psycopg
 
 from aifactory_rag.config import RagConfig, RagSourceConfig, find_source, require_ingest_config
-from aifactory_rag.db import connect, vector_literal
+from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import EmbeddingAdapter, create_embedding_adapter
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.parsers import parse_file
@@ -32,6 +32,7 @@ class IngestSummary:
 
 def ingest_source(config: RagConfig, source_id: str, force: bool = False) -> IngestSummary:
     require_ingest_config(config)
+    require_schema(config.database.connection_string)
     source = find_source(config, source_id)
     print(f"RAG ingest source : {source.id}", flush=True)
     print(f"RAG ingest root   : {source.root_path}", flush=True)

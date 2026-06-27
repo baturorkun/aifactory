@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from aifactory_rag.config import RagConfig, require_ingest_config
-from aifactory_rag.db import connect, vector_literal
+from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import create_embedding_adapter
 
 
@@ -21,6 +21,7 @@ class RetrievedChunk:
 
 def retrieve(config: RagConfig, question: str) -> list[RetrievedChunk]:
     require_ingest_config(config)
+    require_schema(config.database.connection_string)
     embed_model = create_embedding_adapter(config.embedding)
     embedding = embed_model.embed_query(question)
 

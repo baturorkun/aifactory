@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, load_factory_config
-from aifactory_rag.db import fetch_all, fetch_one, migrate, connect
+from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
 from aifactory_rag.query.responder import answer_question
 
@@ -24,6 +24,7 @@ class IngestRunRequest(BaseModel):
 
 def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     factory_config = load_factory_config(config_path)
+    require_schema(factory_config.rag.database.connection_string)
     app = FastAPI(title="AI Factory RAG", version="0.1.0")
 
     def auth_claims(request: Request) -> dict[str, Any]:

@@ -20,6 +20,43 @@ def migrate(connection_string: str) -> None:
         conn.commit()
 
 
+def require_schema(connection_string: str) -> None:
+    required_tables = {
+        "rag_sources",
+        "rag_documents",
+        "rag_chunks",
+        "rag_ingest_runs",
+        "rag_ingest_errors",
+        "rag_queries",
+    }
+    try:
+        with connect(connection_string) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_name = ANY(%s)
+                    """,
+                    (list(required_tables),),
+                )
+                existing = {row["table_name"] for row in cur.fetchall()}
+    except psycopg.Error as exc:
+        raise RuntimeError(
+            "RAG database is not reachable. Start PostgreSQL + pgvector first with: "
+            "pnpm factory rag env up"
+        ) from exc
+
+    missing = sorted(required_tables - existing)
+    if missing:
+        raise RuntimeError(
+            "RAG database schema is not migrated. Missing tables: "
+            + ", ".join(missing)
+            + ". Run: pnpm factory rag db migrate"
+        )
+
+
 def vector_literal(values: Iterable[float]) -> str:
     return "[" + ",".join(f"{value:.8f}" for value in values) + "]"
 
