@@ -55,6 +55,7 @@ export function installRagService(options: RagServiceInstallOptions): void {
     runSystemctl(['daemon-reload']);
     if (options.start) {
       runSystemctl(['enable', '--now', SERVICE_NAME]);
+      runSystemctl(['is-active', '--quiet', SERVICE_NAME]);
     } else {
       runSystemctl(['enable', SERVICE_NAME]);
     }
@@ -112,11 +113,23 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=${systemdValue(options.user)}
-WorkingDirectory=${systemdValue(CORE_ROOT)}
-EnvironmentFile=-${systemdValue(options.envPath)}
-Environment=${systemdValue(`PYTHONPATH=${RAG_SOURCE_ROOT}`)}
-ExecStart=${systemdValue(RAG_PYTHON)} -m aifactory_rag --config ${systemdValue(options.configPath)} api start --host ${systemdValue(options.host)} --port ${systemdValue(options.port)}
+User=${systemdUser(options.user)}
+WorkingDirectory=${systemdWord(CORE_ROOT)}
+EnvironmentFile=-${systemdWord(options.envPath)}
+Environment=${systemdWord(`PYTHONPATH=${RAG_SOURCE_ROOT}`)}
+ExecStart=${[
+    RAG_PYTHON,
+    '-m',
+    'aifactory_rag',
+    '--config',
+    options.configPath,
+    'api',
+    'start',
+    '--host',
+    options.host,
+    '--port',
+    options.port,
+  ].map(systemdWord).join(' ')}
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -132,11 +145,25 @@ function defaultServiceUser(): string {
   return process.env.SUDO_USER || process.env.USER || 'root';
 }
 
-function systemdValue(value: string): string {
+function systemdUser(value: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(value)) {
+    throw new Error(`Invalid Linux service user: ${value}`);
+  }
+  return value;
+}
+
+function systemdWord(value: string): string {
   if (/[\r\n]/.test(value)) {
     throw new Error('systemd service values cannot contain line breaks.');
   }
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  return value
+    .replace(/\\/g, '\\x5c')
+    .replace(/ /g, '\\x20')
+    .replace(/\t/g, '\\x09')
+    .replace(/"/g, '\\x22')
+    .replace(/'/g, '\\x27')
+    .replace(/%/g, '%%')
+    .replace(/\$/g, '$$');
 }
 
 function requireSystemd(): void {
