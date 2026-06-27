@@ -9,6 +9,12 @@ import { createHandoffPackage } from './orchestrator/handoff';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import { installRagPython, runRagEnv, runRagPython } from './rag/python-runner';
+import {
+  installRagService,
+  runRagService,
+  showRagServiceLogs,
+  uninstallRagService,
+} from './rag/systemd';
 import type { RunManifest } from '@aifactory/contracts';
 
 const program = new Command();
@@ -349,6 +355,42 @@ ragApi
       ]),
     ),
   );
+
+const ragApiService = ragApi
+  .command('service')
+  .description('Manage the RAG API as an Ubuntu/Linux systemd service');
+
+ragApiService
+  .command('install')
+  .description('Install, enable, and start the RAG API systemd service')
+  .option('--host <host>', 'Bind host', '127.0.0.1')
+  .option('--port <port>', 'Bind port', '8765')
+  .option('--user <user>', 'Linux user that runs the service')
+  .option('--no-start', 'Install and enable without starting immediately')
+  .action((opts: { host: string; port: string; user?: string; start: boolean }) =>
+    runRagCommand(() => installRagService(opts)),
+  );
+
+for (const action of ['start', 'stop', 'restart', 'status'] as const) {
+  ragApiService
+    .command(action)
+    .description(`${action[0].toUpperCase()}${action.slice(1)} the RAG API systemd service`)
+    .action(() => runRagCommand(() => runRagService(action)));
+}
+
+ragApiService
+  .command('logs')
+  .description('Show RAG API systemd logs')
+  .option('--lines <count>', 'Number of recent log lines', '100')
+  .option('--follow', 'Follow new log entries', false)
+  .action((opts: { lines: string; follow: boolean }) =>
+    runRagCommand(() => showRagServiceLogs(opts.lines, opts.follow)),
+  );
+
+ragApiService
+  .command('uninstall')
+  .description('Stop, disable, and remove the RAG API systemd service')
+  .action(() => runRagCommand(() => uninstallRagService()));
 
 // ============================================================
 // factory init

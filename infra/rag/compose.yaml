@@ -2,6 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: aifactory-rag-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${RAG_POSTGRES_DB:-aifactory_rag}
       POSTGRES_USER: ${RAG_POSTGRES_USER:-aifactory_rag}

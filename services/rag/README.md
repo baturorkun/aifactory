@@ -69,3 +69,34 @@ FastAPI exposes:
 - `GET /ingest-runs/{id}`
 - `GET /sources`
 - `GET /documents`
+
+## Run As An Ubuntu Service
+
+Install and immediately start a boot-enabled systemd service:
+
+```bash
+pnpm factory rag api service install --host 0.0.0.0 --port 8765
+```
+
+The install command uses `sudo` when required. It loads the project `.env`,
+uses `.venv-rag`, and runs the API directly with Python. The PostgreSQL
+container uses `restart: unless-stopped` so it also returns after a reboot
+when the container runtime starts.
+
+The default bind address is `127.0.0.1`. Binding to `0.0.0.0` exposes the API
+to the server network, so protect it with configured authentication, a reverse
+proxy, or firewall rules.
+
+```bash
+pnpm factory rag api service status
+pnpm factory rag api service logs
+pnpm factory rag api service logs --follow
+pnpm factory rag api service restart
+pnpm factory rag api service stop
+pnpm factory rag api service start
+pnpm factory rag api service uninstall
+```
+
+Use `--user <linux-user>` during install when the service should run as a
+different Linux account. That account must be able to read the repository,
+`.env`, and mounted fileserver paths.
