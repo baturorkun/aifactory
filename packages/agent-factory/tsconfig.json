@@ -5,10 +5,9 @@
     "rootDir": "../..",
     "declaration": true,
     "sourceMap": true,
-    "baseUrl": "../..",
     "paths": {
-      "@aifactory/contracts": ["packages/contracts/src/index.ts"],
-      "@aifactory/quality-gates": ["packages/quality-gates/src/index.ts"]
+      "@aifactory/contracts": ["../contracts/src/index.ts"],
+      "@aifactory/quality-gates": ["../quality-gates/src/index.ts"]
     }
   },
   "include": ["src"]
