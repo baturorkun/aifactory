@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import psycopg
@@ -14,7 +15,7 @@ from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import EmbeddingAdapter, create_embedding_adapter
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.parsers import parse_file
-from aifactory_rag.ingest.sources import SourceFile, scan_files
+from aifactory_rag.ingest.sources import SourceFile, normalize_subdir, scan_files
 
 
 @dataclass
@@ -22,23 +23,38 @@ class IngestSummary:
     run_id: int
     source_id: str
     status: str
+    subdir: str | None = None
     scanned_count: int = 0
     inserted_count: int = 0
     updated_count: int = 0
     skipped_count: int = 0
     deleted_count: int = 0
     error_count: int = 0
+    duration_seconds: float = 0.0
 
 
-def ingest_source(config: RagConfig, source_id: str, force: bool = False) -> IngestSummary:
+def _format_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    minutes, remaining = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)}m {remaining:.1f}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{int(hours)}h {int(minutes)}m {remaining:.1f}s"
+
+
+def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir: str | None = None) -> IngestSummary:
+    run_started = perf_counter()
     require_ingest_config(config)
     require_schema(config.database.connection_string)
     source = find_source(config, source_id)
+    normalized_subdir = normalize_subdir(source, subdir)
     print(f"RAG ingest source : {source.id}", flush=True)
     print(f"RAG ingest root   : {source.root_path}", flush=True)
     print(f"RAG include       : {', '.join(source.include) if source.include else '(all files)'}", flush=True)
     print(f"RAG exclude       : {', '.join(source.exclude) if source.exclude else '(none)'}", flush=True)
-    files = scan_files(source)
+    print(f"RAG subdirectory  : {normalized_subdir or '(entire source)'}", flush=True)
+    files = scan_files(source, normalized_subdir)
     print(f"RAG matched files : {len(files)}", flush=True)
     for file in files[:10]:
         print(f"  - {file.relative_path}", flush=True)
@@ -48,14 +64,17 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False) -> Ing
     with connect(config.database.connection_string) as conn:
         _upsert_source(conn, source)
         run_id = _start_run(conn, source.id)
-        summary = IngestSummary(run_id=run_id, source_id=source.id, status="running", scanned_count=len(files))
+        summary = IngestSummary(run_id=run_id, source_id=source.id, status="running", subdir=normalized_subdir, scanned_count=len(files))
         conn.commit()
 
         embed_model = create_embedding_adapter(config.embedding)
         seen = set()
 
         try:
-            for file in files:
+            for index, file in enumerate(files, start=1):
+                file_started = perf_counter()
+                progress = f"[{index}/{len(files)}]"
+                print(f"{progress} START {file.relative_path}", flush=True)
                 seen.add(file.relative_path)
                 try:
                     outcome = _ingest_file(conn, config, source, file, embed_model, force)
@@ -66,22 +85,28 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False) -> Ing
                     elif outcome == "skipped":
                         summary.skipped_count += 1
                     conn.commit()
+                    print(f"{progress} DONE  {outcome:<8} {file.relative_path} ({_format_duration(perf_counter() - file_started)})", flush=True)
                 except Exception as exc:
                     conn.rollback()
                     summary.error_count += 1
                     _record_file_error(conn, run_id, source.id, file.relative_path, "ingest", exc)
                     conn.commit()
+                    print(f"{progress} ERROR {file.relative_path} ({_format_duration(perf_counter() - file_started)}): {exc}", flush=True)
 
-            summary.deleted_count = _mark_deleted(conn, source.id, seen)
+            summary.deleted_count = _mark_deleted(conn, source.id, seen, normalized_subdir)
             summary.status = "failed" if summary.error_count else "passed"
+            summary.duration_seconds = round(perf_counter() - run_started, 3)
             _finish_run(conn, summary)
             conn.commit()
+            print(f"RAG ingest finished: {summary.status} in {_format_duration(summary.duration_seconds)}", flush=True)
             return summary
         except Exception as exc:
             conn.rollback()
             summary.status = "failed"
+            summary.duration_seconds = round(perf_counter() - run_started, 3)
             _finish_run(conn, summary, error=str(exc))
             conn.commit()
+            print(f"RAG ingest failed after {_format_duration(summary.duration_seconds)}: {exc}", flush=True)
             raise
 
 
@@ -101,19 +126,25 @@ def _ingest_file(
             existing["file_size"] == file.size
             and existing["modified_at"].replace(tzinfo=timezone.utc) == modified_at
             and existing["status"] == "active"
+            and _chunk_config_matches(existing, config)
         )
         if same_fast_fingerprint:
             return "skipped"
 
     content_hash = _sha256(file.path)
-    if existing and not force and existing["content_hash"] == content_hash and existing["status"] == "active":
+    if existing and not force and existing["content_hash"] == content_hash and existing["status"] == "active" and _chunk_config_matches(existing, config):
         _touch_document(conn, int(existing["id"]), file.size, modified_at)
         return "skipped"
 
     text = parse_file(file.path)
     chunks = chunk_text(text, config.ingest.chunk_size, config.ingest.chunk_overlap)
-    document_id = _upsert_document(conn, source, file, modified_at, content_hash, existing)
-    _replace_chunks(conn, document_id, source.id, file.relative_path, chunks, embed_model)
+    resume = _can_resume(existing, content_hash, config)
+    document_id = _upsert_document(conn, source, file, modified_at, content_hash, existing, config, len(chunks))
+    if not resume:
+        _reset_chunk_checkpoints(conn, document_id)
+    conn.commit()
+    _replace_chunks(conn, document_id, source.id, file.relative_path, chunks, embed_model, config.ingest.batch_size, resume)
+    _activate_document(conn, document_id)
     return "updated" if existing else "inserted"
 
 
@@ -124,25 +155,75 @@ def _replace_chunks(
     relative_path: str,
     chunks: list[str],
     embed_model: EmbeddingAdapter,
+    batch_size: int,
+    resume: bool,
 ) -> None:
+    completed: set[int] = set()
+    if resume:
+        with conn.cursor() as cur:
+            cur.execute("SELECT chunk_index, text FROM rag_chunks WHERE document_id = %s AND status = 'checkpoint'", (document_id,))
+            completed = {int(row["chunk_index"]) for row in cur.fetchall() if int(row["chunk_index"]) < len(chunks) and row["text"] == chunks[int(row["chunk_index"])]}
+        if completed:
+            print(f"  EMBED resume     {relative_path}: {len(completed)}/{len(chunks)} chunks already checkpointed", flush=True)
+
+    pending = [index for index in range(len(chunks)) if index not in completed]
+    total_batches = (len(pending) + batch_size - 1) // batch_size if pending else 0
+    for batch_number, start in enumerate(range(0, len(pending), batch_size), start=1):
+        indices = pending[start:start + batch_size]
+        batch_chunks = [chunks[index] for index in indices]
+        print(f"  EMBED [{batch_number}/{total_batches}] {relative_path}: chunks {indices[0] + 1}-{indices[-1] + 1}/{len(chunks)}", flush=True)
+        embeddings = embed_model.embed_documents(batch_chunks)
+        if len(embeddings) != len(batch_chunks):
+            raise RuntimeError(f"Embedding provider returned {len(embeddings)} vectors for {len(batch_chunks)} chunks")
+        with conn.cursor() as cur:
+            for index, chunk, embedding in zip(indices, batch_chunks, embeddings):
+                if len(embedding) == 0:
+                    raise RuntimeError(f"Embedding provider returned an empty vector for chunk {index}")
+                metadata = {"relativePath": relative_path}
+                cur.execute(
+                    """
+                    INSERT INTO rag_chunks(document_id, source_id, chunk_index, text, embedding, metadata, status)
+                    VALUES (%s, %s, %s, %s, %s::vector, %s::jsonb, 'checkpoint')
+                    ON CONFLICT(document_id, chunk_index)
+                    DO UPDATE SET text = EXCLUDED.text,
+                                  embedding = EXCLUDED.embedding,
+                                  metadata = EXCLUDED.metadata,
+                                  status = 'checkpoint',
+                                  created_at = now()
+                    """,
+                    (document_id, source_id, index, chunk, vector_literal(embedding), json.dumps(metadata)),
+                )
+        conn.commit()
+        print(f"  EMBED [{batch_number}/{total_batches}] checkpointed in DB", flush=True)
+
+
+def _can_resume(existing: dict[str, Any] | None, content_hash: str, config: RagConfig) -> bool:
+    if not existing or existing.get("status") != "processing" or existing.get("content_hash") != content_hash:
+        return False
+    return _chunk_config_matches(existing, config)
+
+
+def _chunk_config_matches(existing: dict[str, Any], config: RagConfig) -> bool:
+    metadata = existing.get("metadata") or {}
+    return metadata.get("chunkSize") == config.ingest.chunk_size and metadata.get("chunkOverlap") == config.ingest.chunk_overlap
+
+
+def _reset_chunk_checkpoints(conn: psycopg.Connection, document_id: int) -> None:
     with conn.cursor() as cur:
-        cur.execute("UPDATE rag_chunks SET status = 'replaced' WHERE document_id = %s AND status = 'active'", (document_id,))
-        embeddings = embed_model.embed_documents(chunks) if chunks else []
-        for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            metadata = {"relativePath": relative_path}
-            cur.execute(
-                """
-                INSERT INTO rag_chunks(document_id, source_id, chunk_index, text, embedding, metadata, status)
-                VALUES (%s, %s, %s, %s, %s::vector, %s::jsonb, 'active')
-                ON CONFLICT(document_id, chunk_index)
-                DO UPDATE SET text = EXCLUDED.text,
-                              embedding = EXCLUDED.embedding,
-                              metadata = EXCLUDED.metadata,
-                              status = 'active',
-                              created_at = now()
-                """,
-                (document_id, source_id, index, chunk, vector_literal(embedding), json.dumps(metadata)),
-            )
+        cur.execute("UPDATE rag_chunks SET status = 'replaced' WHERE document_id = %s AND status <> 'replaced'", (document_id,))
+
+
+def _activate_document(conn: psycopg.Connection, document_id: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute("UPDATE rag_chunks SET status = 'active' WHERE document_id = %s AND status = 'checkpoint'", (document_id,))
+        cur.execute(
+            """
+            UPDATE rag_documents
+            SET status = 'active', last_ingested_at = now(), last_error = NULL, updated_at = now()
+            WHERE id = %s
+            """,
+            (document_id,),
+        )
 
 
 def _upsert_source(conn: psycopg.Connection, source: RagSourceConfig) -> None:
@@ -178,8 +259,10 @@ def _upsert_document(
     modified_at: datetime,
     content_hash: str,
     existing: dict[str, Any] | None,
+    config: RagConfig,
+    chunk_count: int,
 ) -> int:
-    metadata = {"extension": file.path.suffix.lower()}
+    metadata = {"extension": file.path.suffix.lower(), "chunkSize": config.ingest.chunk_size, "chunkOverlap": config.ingest.chunk_overlap, "expectedChunks": chunk_count}
     with conn.cursor() as cur:
         if existing:
             cur.execute(
@@ -189,8 +272,7 @@ def _upsert_document(
                     file_size = %s,
                     modified_at = %s,
                     content_hash = %s,
-                    status = 'active',
-                    last_ingested_at = now(),
+                    status = 'processing',
                     last_error = NULL,
                     metadata = %s::jsonb,
                     updated_at = now()
@@ -206,7 +288,7 @@ def _upsert_document(
                   source_id, path, relative_path, file_size, modified_at, content_hash,
                   status, last_ingested_at, metadata
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, 'active', now(), %s::jsonb)
+                VALUES (%s, %s, %s, %s, %s, %s, 'processing', NULL, %s::jsonb)
                 RETURNING id
                 """,
                 (source.id, str(file.path), file.relative_path, file.size, modified_at, content_hash, json.dumps(metadata)),
@@ -227,27 +309,30 @@ def _touch_document(conn: psycopg.Connection, document_id: int, size: int, modif
         )
 
 
-def _mark_deleted(conn: psycopg.Connection, source_id: str, seen: set[str]) -> int:
+def _mark_deleted(conn: psycopg.Connection, source_id: str, seen: set[str], subdir: str | None = None) -> int:
     with conn.cursor() as cur:
+        scope_sql = " AND left(relative_path, length(%s)) = %s" if subdir else ""
+        scope_prefix = f"{subdir}/" if subdir else ""
+        scope_params: tuple[str, ...] = (scope_prefix, scope_prefix) if subdir else ()
         if seen:
             cur.execute(
-                """
+                f"""
                 UPDATE rag_documents
                 SET status = 'deleted', updated_at = now()
-                WHERE source_id = %s AND status <> 'deleted' AND NOT (relative_path = ANY(%s))
+                WHERE source_id = %s AND status <> 'deleted'{scope_sql} AND NOT (relative_path = ANY(%s))
                 RETURNING id
                 """,
-                (source_id, list(seen)),
+                (source_id, *scope_params, list(seen)),
             )
         else:
             cur.execute(
-                """
+                f"""
                 UPDATE rag_documents
                 SET status = 'deleted', updated_at = now()
-                WHERE source_id = %s AND status <> 'deleted'
+                WHERE source_id = %s AND status <> 'deleted'{scope_sql}
                 RETURNING id
                 """,
-                (source_id,),
+                (source_id, *scope_params),
             )
         rows = cur.fetchall()
         document_ids = [row["id"] for row in rows]

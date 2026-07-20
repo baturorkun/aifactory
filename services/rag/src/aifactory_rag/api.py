@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, load_factory_config
@@ -15,11 +15,13 @@ from aifactory_rag.query.responder import answer_question
 
 class QueryRequest(BaseModel):
     question: str
+    sourceIds: list[str] = Field(default_factory=list)
 
 
 class IngestRunRequest(BaseModel):
     sourceId: str
     force: bool = False
+    subdir: str | None = None
 
 
 def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
@@ -40,11 +42,16 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     @app.post("/query")
     def query(payload: QueryRequest, claims: dict[str, Any] = Depends(auth_claims)) -> dict:
         user_id = user_from_claims(claims)
-        return answer_question(factory_config.rag, payload.question, user_id=user_id)
+        return answer_question(
+            factory_config.rag,
+            payload.question,
+            user_id=user_id,
+            source_ids=payload.sourceIds,
+        )
 
     @app.post("/ingest-runs")
     def create_ingest_run(payload: IngestRunRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:
-        summary = ingest_source(factory_config.rag, payload.sourceId, force=payload.force)
+        summary = ingest_source(factory_config.rag, payload.sourceId, force=payload.force, subdir=payload.subdir)
         return summary.__dict__
 
     @app.get("/ingest-runs/{run_id}")

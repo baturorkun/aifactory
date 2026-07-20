@@ -17,7 +17,7 @@ from aifactory_rag.query.responder import answer_question
 def main(argv: list[str] | None = None) -> int:
     try:
         return _main(argv)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError, FileNotFoundError, NotADirectoryError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -33,6 +33,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     ingest_parser = sub.add_parser("ingest")
     ingest_parser.add_argument("--source", required=True)
+    ingest_parser.add_argument("--subdir")
     ingest_parser.add_argument("--force", action="store_true")
 
     sub.add_parser("status")
@@ -55,7 +56,7 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "ingest":
-        summary = ingest_source(config.rag, args.source, force=args.force)
+        summary = ingest_source(config.rag, args.source, force=args.force, subdir=args.subdir)
         print_json(summary.__dict__)
         return 0 if summary.status == "passed" else 2
 

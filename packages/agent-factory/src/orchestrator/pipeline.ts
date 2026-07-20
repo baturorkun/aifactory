@@ -47,6 +47,13 @@ import {
 } from './manifest';
 import { runAgent } from './runner';
 import { runAllGates } from '@aifactory/quality-gates';
+import {
+  buildGroundingQuestion,
+  formatGroundingContext,
+  queryConfiguredRag,
+  shouldQueryGrounding,
+  type RagGroundingResponse,
+} from '../rag/grounding-client';
 
 // ============================================================
 // HELPERS
@@ -151,6 +158,24 @@ export async function runPipeline(
 
   try {
     let hasFailedTasks = false;
+    let ragGrounding: RagGroundingResponse | undefined;
+
+    if (!opts.dryRun && shouldQueryGrounding(config, requirement.rawMarkdown)) {
+      console.log('  ▸ Project RAG grounding...');
+      try {
+        ragGrounding = await queryConfiguredRag(config, buildGroundingQuestion(config, requirement));
+        writeFileSync(
+          join(runDir, 'rag-context.json'),
+          JSON.stringify(ragGrounding, null, 2) + '\n',
+          'utf8',
+        );
+        console.log(`    └ ${ragGrounding.sources.length} cited source(s)`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!config.rag.grounding.failOpen) throw error;
+        console.log(`    ⚠ RAG unavailable; continuing without grounding: ${message}`);
+      }
+    }
 
     // ---- 1. Planning
     console.log('  ▸ Planner...');
@@ -161,6 +186,7 @@ export async function runPipeline(
       primaryModel,
       promptRegistry,
       config,
+      ragGrounding,
     );
     console.log(`    └ ${plan.tasks.length} task(s)`);
 
@@ -184,6 +210,7 @@ export async function runPipeline(
         promptRegistry,
         Boolean(opts.dryRun),
         Boolean(opts.fast),
+        ragGrounding,
       );
       if (!passed) hasFailedTasks = true;
     }
@@ -241,12 +268,17 @@ async function runPlannerAgent(
   model: ModelAdapter,
   promptRegistry: PromptRegistry,
   config: FactoryConfig,
+  ragGrounding?: RagGroundingResponse,
 ): Promise<PlanOutput> {
   const result = await runAgent({
     agent: 'planner',
     runDir,
     systemPrompt: promptRegistry.get('planner'),
-    userPrompt: buildPlannerPrompt(requirement, constraints),
+    userPrompt: buildPlannerPrompt(
+      requirement,
+      constraints,
+      formatGroundingContext(config, ragGrounding, 'planner'),
+    ),
     model,
     maxRetries: config.pipeline.maxRetries,
     validate: makeValidator(PlanOutputSchema, 'Planner'),
@@ -273,6 +305,7 @@ async function runTaskPipeline(
   promptRegistry: PromptRegistry,
   dryRun: boolean,
   fast: boolean,
+  ragGrounding?: RagGroundingResponse,
 ): Promise<boolean> {
   // ---- Architect
   console.log('    ▸ Architect...');
@@ -281,7 +314,12 @@ async function runTaskPipeline(
     taskId: task.id,
     runDir,
     systemPrompt: promptRegistry.get('architect'),
-    userPrompt: buildArchitectPrompt(task, plan, requirement),
+    userPrompt: buildArchitectPrompt(
+      task,
+      plan,
+      requirement,
+      formatGroundingContext(config, ragGrounding, 'architect'),
+    ),
     model: primaryModel,
     maxRetries: config.pipeline.maxRetries,
     validate: makeValidator(ArchitectureOutputSchema, 'Architect'),
@@ -304,7 +342,13 @@ async function runTaskPipeline(
       taskId: task.id,
       runDir,
       systemPrompt: promptRegistry.get('coder'),
-      userPrompt: buildCoderPrompt(task, architecture, requirement, fixContext),
+      userPrompt: buildCoderPrompt(
+        task,
+        architecture,
+        requirement,
+        fixContext,
+        formatGroundingContext(config, ragGrounding, 'coder'),
+      ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
       validate: makeValidator(CodePatchOutputSchema, 'Coder'),
@@ -335,7 +379,12 @@ async function runTaskPipeline(
       taskId: task.id,
       runDir,
       systemPrompt: promptRegistry.get('tester'),
-      userPrompt: buildTesterPrompt(task, code, requirement),
+      userPrompt: buildTesterPrompt(
+        task,
+        code,
+        requirement,
+        formatGroundingContext(config, ragGrounding, 'tester'),
+      ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
       validate: makeValidator(TestOutputSchema, 'Tester'),
@@ -359,7 +408,13 @@ async function runTaskPipeline(
       taskId: task.id,
       runDir,
       systemPrompt: promptRegistry.get('reviewer'),
-      userPrompt: buildReviewerPrompt(task, code, tests, requirement),
+      userPrompt: buildReviewerPrompt(
+        task,
+        code,
+        tests,
+        requirement,
+        formatGroundingContext(config, ragGrounding, 'reviewer'),
+      ),
       model: reviewerModel,
       maxRetries: config.pipeline.maxRetries,
       validate: makeValidator(ReviewOutputSchema, 'Reviewer'),
@@ -380,7 +435,13 @@ async function runTaskPipeline(
       taskId: task.id,
       runDir,
       systemPrompt: promptRegistry.get('domain-guard'),
-      userPrompt: buildDomainGuardPrompt(task, code, requirement, config.domain.rules),
+      userPrompt: buildDomainGuardPrompt(
+        task,
+        code,
+        requirement,
+        config.domain.rules,
+        formatGroundingContext(config, ragGrounding, 'domain-guard'),
+      ),
       model: reviewerModel,
       maxRetries: config.pipeline.maxRetries,
       validate: makeValidator(DomainGuardOutputSchema, 'DomainGuard'),

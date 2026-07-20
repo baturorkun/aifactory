@@ -9,6 +9,7 @@ import { createHandoffPackage } from './orchestrator/handoff';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import { installRagPython, runRagEnv, runRagPython } from './rag/python-runner';
+import { queryConfiguredRag } from './rag/grounding-client';
 import {
   installRagService,
   runRagService,
@@ -321,10 +322,11 @@ rag
   .command('ingest')
   .description('Ingest a configured RAG source')
   .requiredOption('--source <id>', 'RAG source ID from factory.config.json')
+  .option('--subdir <path>', 'Only ingest this directory below the configured source root')
   .option('--force', 'Force re-ingest even when fingerprints match', false)
-  .action((opts: { source: string; force: boolean }) =>
+  .action((opts: { source: string; subdir?: string; force: boolean }) =>
     runRagCommand(() =>
-      runRagPython(['ingest', '--source', opts.source, ...(opts.force ? ['--force'] : [])]),
+      runRagPython(['ingest', '--source', opts.source, ...(opts.subdir ? ['--subdir', opts.subdir] : []), ...(opts.force ? ['--force'] : [])]),
     ),
   );
 
@@ -337,6 +339,19 @@ rag
   .command('query <question>')
   .description('Ask the RAG index a question from the CLI')
   .action((question: string) => runRagCommand(() => runRagPython(['query', question])));
+
+rag
+  .command('chat <question>')
+  .description('Ask the project-configured remote RAG grounding endpoint')
+  .action(async (question: string) => {
+    try {
+      const response = await queryConfiguredRag(loadConfig(), question);
+      console.log(JSON.stringify(response, null, 2));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
 
 const ragApi = rag.command('api').description('Run the RAG FastAPI service');
 
@@ -470,6 +485,10 @@ program
           model: '${RAG_EMBEDDING_MODEL:-gemini-embedding-001}',
           dimensions: 1536,
           apiKey: '${RAG_API_KEY:-}',
+          maxRetries: 6,
+          retryBaseSeconds: 2,
+          retryMaxSeconds: 60,
+          minRequestIntervalSeconds: 1,
         },
         llm: {
           provider: '${RAG_LLM_PROVIDER:-gemini}',
@@ -485,6 +504,16 @@ program
           enabled: false,
           tenantId: '${ENTRA_TENANT_ID:-}',
           audience: '${ENTRA_AUDIENCE:-}',
+        },
+        grounding: {
+          enabled: false,
+          mode: 'always',
+          marker: '@rag',
+          sourceIds: [],
+          agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
+          timeoutMs: 120000,
+          failOpen: true,
+          maxContextChars: 12000,
         },
         api: {
           host: '127.0.0.1',

@@ -17,6 +17,7 @@ import type { DomainRule } from '../config';
 export function buildPlannerPrompt(
   requirement: Requirement,
   constraints: Record<string, unknown>,
+  ragContext?: string,
 ): string {
   const parts: string[] = [
     `## Requirement: ${requirement.id}`,
@@ -40,6 +41,8 @@ export function buildPlannerPrompt(
     parts.push('', '### Constraints', '```json', JSON.stringify(constraints, null, 2), '```');
   }
 
+  if (ragContext) parts.push('', ragContext);
+
   parts.push(
     '',
     'Produce a **PlanOutput** JSON object matching the schema provided in your system prompt.',
@@ -57,6 +60,7 @@ export function buildArchitectPrompt(
   task: Task,
   plan: PlanOutput,
   requirement: Requirement,
+  ragContext?: string,
 ): string {
   return [
     `## Task: ${task.id}`,
@@ -73,6 +77,7 @@ export function buildArchitectPrompt(
     `Requirement: ${requirement.title} (${requirement.id})`,
     `Plan summary: ${plan.summary}`,
     `Total tasks in plan: ${plan.tasks.length}`,
+    ...(ragContext ? ['', ragContext] : []),
     '',
     'Return an **ArchitectureOutput** JSON object.',
   ].join('\n');
@@ -92,6 +97,7 @@ export function buildCoderPrompt(
   architecture: ArchitectureOutput,
   requirement: Requirement,
   fixContext?: FixContext,
+  ragContext?: string,
 ): string {
   const parts: string[] = [
     `## Task: ${task.id} — ${task.title}`,
@@ -107,6 +113,8 @@ export function buildCoderPrompt(
     '### Acceptance Criteria',
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
   ];
+
+  if (ragContext) parts.push('', ragContext);
 
   if (fixContext) {
     const blockers = fixContext.reviewFindings.filter((f) => f.severity === 'blocker');
@@ -140,6 +148,7 @@ export function buildTesterPrompt(
   task: Task,
   code: CodePatchOutput,
   requirement: Requirement,
+  ragContext?: string,
 ): string {
   const fileBlocks = code.patches.flatMap((p) => [
     `#### ${p.path}`,
@@ -157,6 +166,7 @@ export function buildTesterPrompt(
     '',
     '### Code Under Test',
     ...fileBlocks,
+    ...(ragContext ? [ragContext, ''] : []),
     'Return a **TestOutput** JSON with complete test file contents.',
     'Use Jest as the default test framework unless specified otherwise.',
   ].join('\n');
@@ -171,6 +181,7 @@ export function buildReviewerPrompt(
   code: CodePatchOutput,
   tests: TestOutput,
   requirement: Requirement,
+  ragContext?: string,
 ): string {
   const codeBlocks = code.patches.flatMap((p) => [
     `#### ${p.path}`,
@@ -198,6 +209,7 @@ export function buildReviewerPrompt(
     ...codeBlocks,
     '### Tests',
     ...testBlocks,
+    ...(ragContext ? [ragContext, ''] : []),
     'Review code and tests. Return a **ReviewOutput** JSON.',
     'Set verdict to: "approved" | "needs-fix" | "rejected".',
     'List blockers separately from warnings.',
@@ -213,6 +225,7 @@ export function buildDomainGuardPrompt(
   code: CodePatchOutput,
   requirement: Requirement,
   domainRules: DomainRule[],
+  ragContext?: string,
 ): string {
   const rulesSection =
     domainRules.length === 0
@@ -235,6 +248,7 @@ export function buildDomainGuardPrompt(
     '',
     '### Code to Validate',
     ...codeBlocks,
+    ...(ragContext ? [ragContext, ''] : []),
     'Return a **DomainGuardOutput** JSON.',
     'Set verdict to: "passed" | "needs-fix" | "rejected".',
   ].join('\n');

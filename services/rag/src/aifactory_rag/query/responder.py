@@ -11,9 +11,14 @@ from aifactory_rag.db import connect
 from aifactory_rag.query.retriever import RetrievedChunk, retrieve
 
 
-def answer_question(config: RagConfig, question: str, user_id: str | None = None) -> dict:
+def answer_question(
+    config: RagConfig,
+    question: str,
+    user_id: str | None = None,
+    source_ids: list[str] | None = None,
+) -> dict:
     require_query_config(config)
-    chunks = retrieve(config, question)
+    chunks = retrieve(config, question, source_ids=source_ids)
     answer = _generate_answer(config, question, chunks)
     sources = [
         {

@@ -14,7 +14,7 @@ const result = spawnSync(
   {
     cwd: process.cwd(),
     stdio: 'inherit',
-    env: process.env,
+    env: { ...process.env, AIFACTORY_HOME: process.env.AIFACTORY_HOME || repoRoot },
   },
 );
 

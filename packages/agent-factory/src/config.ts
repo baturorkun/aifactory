@@ -113,6 +113,34 @@ const RagSourceSchema = z.object({
   exclude: z.array(z.string()).default(['**/~$*', '**/.DS_Store']),
 });
 
+const RagGroundingAgentSchema = z.enum([
+  'planner',
+  'architect',
+  'coder',
+  'tester',
+  'reviewer',
+  'domain-guard',
+]);
+
+const RagGroundingSchema = z.object({
+  enabled: z.boolean().default(false),
+  chatUrl: z.string().url().optional(),
+  mode: z.enum(['always', 'explicit']).default('always'),
+  marker: z.string().min(1).default('@rag'),
+  sourceIds: z.array(z.string().min(1)).default([]),
+  agents: z
+    .array(RagGroundingAgentSchema)
+    .default(['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard']),
+  timeoutMs: z.number().int().positive().default(120_000),
+  failOpen: z.boolean().default(true),
+  maxContextChars: z.number().int().positive().default(12_000),
+  queryPrefix: z
+    .string()
+    .default(
+      'Answer using the configured project documentation. Identify applicable rules, constraints, and source references.',
+    ),
+});
+
 const RagConfigSchema = z.object({
   database: z
     .object({
@@ -136,6 +164,10 @@ const RagConfigSchema = z.object({
       dimensions: z.number().int().positive().default(1536),
       apiKey: z.string().optional(),
       baseUrl: z.string().optional(),
+      maxRetries: z.number().int().min(0).default(6),
+      retryBaseSeconds: z.number().positive().default(2),
+      retryMaxSeconds: z.number().positive().default(60),
+      minRequestIntervalSeconds: z.number().min(0).default(1),
     })
     .default({}),
   llm: z
@@ -162,6 +194,7 @@ const RagConfigSchema = z.object({
       issuer: z.string().optional(),
     })
     .default({}),
+  grounding: RagGroundingSchema.default({}),
   api: z
     .object({
       host: z.string().default('127.0.0.1'),
@@ -188,7 +221,7 @@ export type TargetProjectConfig = z.infer<typeof TargetProjectSchema>;
 // ENV
 // ============================================================
 
-function loadEnvFile(cwd: string): void {
+function loadEnvFile(cwd: string, overwrite = true): void {
   const envPath = resolve(cwd, '.env');
   if (!existsSync(envPath)) return;
 
@@ -204,7 +237,9 @@ function loadEnvFile(cwd: string): void {
     const rawValue = trimmed.slice(eq + 1).trim();
     const value = rawValue.replace(/^['"]|['"]$/g, '');
 
-    process.env[key] = value;
+    if (overwrite || process.env[key] === undefined) {
+      process.env[key] = value;
+    }
   }
 }
 
@@ -242,6 +277,10 @@ function expandEnvVars(value: unknown): unknown {
 const CONFIG_FILENAME = 'factory.config.json';
 
 export function loadConfig(cwd: string = process.cwd()): FactoryConfig {
+  const factoryHome = process.env.AIFACTORY_HOME;
+  if (factoryHome && resolve(factoryHome) !== resolve(cwd)) {
+    loadEnvFile(factoryHome, false);
+  }
   loadEnvFile(cwd);
   const configPath = resolve(cwd, CONFIG_FILENAME);
 
@@ -259,6 +298,19 @@ export function loadConfig(cwd: string = process.cwd()): FactoryConfig {
     throw new Error(`Failed to parse ${CONFIG_FILENAME}: ${String(err)}`);
   }
 
+  if (factoryHome) {
+    const globalConfigPath = resolve(factoryHome, CONFIG_FILENAME);
+    if (globalConfigPath !== configPath && existsSync(globalConfigPath)) {
+      let globalRaw: unknown;
+      try {
+        globalRaw = JSON.parse(readFileSync(globalConfigPath, 'utf8'));
+      } catch (err) {
+        throw new Error(`Failed to parse global ${globalConfigPath}: ${String(err)}`);
+      }
+      raw = mergeGlobalGrounding(globalRaw, raw);
+    }
+  }
+
   const expanded = expandEnvVars(raw);
   const result = FactoryConfigSchema.safeParse(expanded);
   if (!result.success) {
@@ -269,4 +321,31 @@ export function loadConfig(cwd: string = process.cwd()): FactoryConfig {
   }
 
   return result.data;
+}
+
+function mergeGlobalGrounding(globalRaw: unknown, projectRaw: unknown): unknown {
+  if (!isRecord(projectRaw)) return projectRaw;
+  const globalGrounding = nestedRecord(globalRaw, 'rag', 'grounding');
+  if (!globalGrounding) return projectRaw;
+
+  const projectRag = isRecord(projectRaw.rag) ? projectRaw.rag : {};
+  const projectGrounding = isRecord(projectRag.grounding) ? projectRag.grounding : {};
+  return {
+    ...projectRaw,
+    rag: {
+      ...projectRag,
+      grounding: { ...globalGrounding, ...projectGrounding },
+    },
+  };
+}
+
+function nestedRecord(value: unknown, first: string, second: string): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !isRecord(value[first]) || !isRecord(value[first][second])) {
+    return undefined;
+  }
+  return value[first][second];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

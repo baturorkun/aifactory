@@ -257,6 +257,10 @@ function writeFactoryConfig(
         model: '${RAG_EMBEDDING_MODEL:-gemini-embedding-001}',
         dimensions: 1536,
         apiKey: '${RAG_API_KEY:-}',
+        maxRetries: 6,
+        retryBaseSeconds: 2,
+        retryMaxSeconds: 60,
+        minRequestIntervalSeconds: 1,
       },
       llm: {
         provider: '${RAG_LLM_PROVIDER:-gemini}',
@@ -272,6 +276,16 @@ function writeFactoryConfig(
         enabled: false,
         tenantId: '${ENTRA_TENANT_ID:-}',
         audience: '${ENTRA_AUDIENCE:-}',
+      },
+      grounding: {
+        enabled: false,
+        mode: 'always',
+        marker: '@rag',
+        sourceIds: [],
+        agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
+        timeoutMs: 120000,
+        failOpen: true,
+        maxContextChars: 12000,
       },
       api: {
         host: '127.0.0.1',

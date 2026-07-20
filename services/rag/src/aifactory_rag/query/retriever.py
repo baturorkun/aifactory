@@ -19,7 +19,11 @@ class RetrievedChunk:
     metadata: dict[str, Any]
 
 
-def retrieve(config: RagConfig, question: str) -> list[RetrievedChunk]:
+def retrieve(
+    config: RagConfig,
+    question: str,
+    source_ids: list[str] | None = None,
+) -> list[RetrievedChunk]:
     require_ingest_config(config)
     require_schema(config.database.connection_string)
     embed_model = create_embedding_adapter(config.embedding)
@@ -27,8 +31,13 @@ def retrieve(config: RagConfig, question: str) -> list[RetrievedChunk]:
 
     with connect(config.database.connection_string) as conn:
         with conn.cursor() as cur:
+            source_filter = " AND c.source_id = ANY(%s)" if source_ids else ""
+            params: list[Any] = [vector_literal(embedding)]
+            if source_ids:
+                params.append(source_ids)
+            params.extend([vector_literal(embedding), config.retrieval.top_k])
             cur.execute(
-                """
+                f"""
                 SELECT
                   c.id AS chunk_id,
                   c.document_id,
@@ -42,14 +51,11 @@ def retrieve(config: RagConfig, question: str) -> list[RetrievedChunk]:
                 WHERE c.status = 'active'
                   AND d.status = 'active'
                   AND c.embedding IS NOT NULL
+                  {source_filter}
                 ORDER BY c.embedding <=> %s::vector
                 LIMIT %s
                 """,
-                (
-                    vector_literal(embedding),
-                    vector_literal(embedding),
-                    config.retrieval.top_k,
-                ),
+                tuple(params),
             )
             rows = cur.fetchall()
 

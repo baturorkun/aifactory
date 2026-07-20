@@ -61,6 +61,31 @@ pnpm factory rag status
 pnpm factory rag api start
 ```
 
+To ingest only one directory below a configured source root, pass a source-relative path:
+
+```bash
+pnpm factory rag ingest --source arinc --subdir "ARINC 661"
+```
+
+The filter is recursive. Document identities remain relative to the configured source root, and deletion detection is limited to the selected subdirectory.
+
+Gemini document embeddings use `batchEmbedContents`, the configured `rag.ingest.batchSize`, and bounded retry/backoff for transient rate-limit and service errors. The optional tuning fields are:
+
+```json
+{
+  "rag": {
+    "embedding": {
+      "maxRetries": 6,
+      "retryBaseSeconds": 2,
+      "retryMaxSeconds": 60,
+      "minRequestIntervalSeconds": 1
+    }
+  }
+}
+```
+
+Completed chunk batches are checkpointed in PostgreSQL. Re-running the same source file resumes compatible checkpoints unless `--force`, file content, or chunking settings changed.
+
 FastAPI exposes:
 
 - `GET /health`
@@ -69,6 +94,55 @@ FastAPI exposes:
 - `GET /ingest-runs/{id}`
 - `GET /sources`
 - `GET /documents`
+
+`POST /query` accepts an optional `sourceIds` array. When supplied, retrieval is
+limited to those configured sources.
+
+## Project-Configured Grounding
+
+The AI Factory root config holds shared connection settings:
+
+```json
+{
+  "rag": {
+    "grounding": {
+      "enabled": false,
+      "chatUrl": "${RAG_CHAT_URL:-http://192.168.1.2:8765/query}",
+      "timeoutMs": 120000,
+      "failOpen": true,
+      "maxContextChars": 12000
+    }
+  }
+}
+```
+
+Consumer projects inherit those values and enable grounding with their own
+source and agent selection:
+
+```json
+{
+  "rag": {
+    "grounding": {
+      "enabled": true,
+      "mode": "always",
+      "marker": "@rag",
+      "sourceIds": ["arinc"],
+      "agents": ["planner", "architect", "coder", "domain-guard"],
+      "queryPrefix": "Answer using the project's domain documentation."
+    }
+  }
+}
+```
+
+Use `mode: "explicit"` to query RAG only when the requirement contains the
+configured marker. `mode: "always"` queries it for every non-dry-run
+requirement. The response is saved as `rag-context.json` under the run directory.
+
+Ask the configured remote endpoint directly with:
+
+```bash
+pnpm factory rag chat "What are the GpTriangleFan parameters?"
+```
 
 ## Run As An Ubuntu Service
 

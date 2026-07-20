@@ -37,9 +37,16 @@
     },
     "sources": [
       {
-        "id": "fileserver",
+        "id": "rapita",
         "type": "filesystem",
-        "rootPath": "${RAG_FILESERVER_PATH:-./references}",
+        "rootPath": "${RAG_RAPITA_PATH:-./references/rapita}",
+        "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
+        "exclude": ["**/~$*", "**/.DS_Store"]
+      },
+      {
+        "id": "arinc",
+        "type": "filesystem",
+        "rootPath": "${RAG_ARINC_PATH:-./references/arinc}",
         "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
         "exclude": ["**/~$*", "**/.DS_Store"]
       }
@@ -53,7 +60,11 @@
       "provider": "${RAG_EMBEDDING_PROVIDER:-gemini}",
       "model": "${RAG_EMBEDDING_MODEL:-gemini-embedding-001}",
       "dimensions": 1536,
-      "apiKey": "${RAG_API_KEY:-}"
+      "apiKey": "${RAG_API_KEY:-}",
+      "maxRetries": 6,
+      "retryBaseSeconds": 2,
+      "retryMaxSeconds": 60,
+      "minRequestIntervalSeconds": 1
     },
     "llm": {
       "provider": "${RAG_LLM_PROVIDER:-gemini}",
@@ -69,6 +80,13 @@
       "enabled": false,
       "tenantId": "${ENTRA_TENANT_ID:-}",
       "audience": "${ENTRA_AUDIENCE:-}"
+    },
+    "grounding": {
+      "enabled": false,
+      "chatUrl": "${RAG_CHAT_URL:-http://192.168.1.2:8765/query}",
+      "timeoutMs": 120000,
+      "failOpen": true,
+      "maxContextChars": 12000
     },
     "api": {
       "host": "127.0.0.1",

@@ -15,15 +15,37 @@ class SourceFile:
     modified_timestamp: float
 
 
-def scan_files(source: RagSourceConfig) -> list[SourceFile]:
+def normalize_subdir(source: RagSourceConfig, subdir: str | None) -> str | None:
     root = Path(source.root_path).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"RAG source root does not exist: {root}")
     if not root.is_dir():
         raise NotADirectoryError(f"RAG source root is not a directory: {root}")
+    if subdir is None or not subdir.strip() or subdir.strip() == ".":
+        return None
+
+    requested = Path(subdir.strip())
+    if requested.is_absolute():
+        raise ValueError("RAG ingest subdirectory must be relative to the configured source root")
+    resolved = (root / requested).resolve()
+    try:
+        relative = resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("RAG ingest subdirectory resolves outside the configured source root") from exc
+    if not resolved.exists():
+        raise FileNotFoundError(f"RAG ingest subdirectory does not exist: {resolved}")
+    if not resolved.is_dir():
+        raise NotADirectoryError(f"RAG ingest subdirectory is not a directory: {resolved}")
+    return relative.as_posix()
+
+
+def scan_files(source: RagSourceConfig, subdir: str | None = None) -> list[SourceFile]:
+    root = Path(source.root_path).expanduser().resolve()
+    normalized_subdir = normalize_subdir(source, subdir)
+    scan_root = root / normalized_subdir if normalized_subdir else root
 
     files: list[SourceFile] = []
-    for path in root.rglob("*"):
+    for path in scan_root.rglob("*"):
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()

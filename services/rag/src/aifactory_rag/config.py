@@ -52,6 +52,10 @@ class RagEmbeddingConfig(BaseModel):
     dimensions: int = 1536
     api_key: str | None = Field(default=None, alias="apiKey")
     base_url: str | None = Field(default=None, alias="baseUrl")
+    max_retries: int = Field(default=6, ge=0, alias="maxRetries")
+    retry_base_seconds: float = Field(default=2.0, gt=0, alias="retryBaseSeconds")
+    retry_max_seconds: float = Field(default=60.0, gt=0, alias="retryMaxSeconds")
+    min_request_interval_seconds: float = Field(default=1.0, ge=0, alias="minRequestIntervalSeconds")
 
 
 class RagLlmConfig(BaseModel):
@@ -80,6 +84,34 @@ class RagApiConfig(BaseModel):
     port: int = 8765
 
 
+class RagGroundingConfig(BaseModel):
+    enabled: bool = False
+    chat_url: str | None = Field(default=None, alias="chatUrl")
+    mode: Literal["always", "explicit"] = "always"
+    marker: str = "@rag"
+    source_ids: list[str] = Field(default_factory=list, alias="sourceIds")
+    agents: list[str] = Field(
+        default_factory=lambda: [
+            "planner",
+            "architect",
+            "coder",
+            "tester",
+            "reviewer",
+            "domain-guard",
+        ]
+    )
+    timeout_ms: int = Field(default=120_000, gt=0, alias="timeoutMs")
+    fail_open: bool = Field(default=True, alias="failOpen")
+    max_context_chars: int = Field(default=12_000, gt=0, alias="maxContextChars")
+    query_prefix: str = Field(
+        default=(
+            "Answer using the configured project documentation. Identify applicable rules, "
+            "constraints, and source references."
+        ),
+        alias="queryPrefix",
+    )
+
+
 class RagConfig(BaseModel):
     database: RagDatabaseConfig = Field(default_factory=RagDatabaseConfig)
     sources: list[RagSourceConfig] = Field(default_factory=list)
@@ -88,6 +120,7 @@ class RagConfig(BaseModel):
     llm: RagLlmConfig = Field(default_factory=RagLlmConfig)
     retrieval: RagRetrievalConfig = Field(default_factory=RagRetrievalConfig)
     auth: RagAuthConfig = Field(default_factory=RagAuthConfig)
+    grounding: RagGroundingConfig = Field(default_factory=RagGroundingConfig)
     api: RagApiConfig = Field(default_factory=RagApiConfig)
 
 
