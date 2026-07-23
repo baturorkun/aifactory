@@ -95,6 +95,13 @@ export function formatGroundingContext(
   agent: RagGroundingAgent,
 ): string | undefined {
   if (!context || !config.rag.grounding.agents.includes(agent)) return undefined;
+  return formatGroundingReference(config, context);
+}
+
+export function formatGroundingReference(
+  config: FactoryConfig,
+  context: RagGroundingResponse,
+): string {
   const answer = context.answer.slice(0, config.rag.grounding.maxContextChars);
   const sources = context.sources.length
     ? context.sources.map((source, index) => {

@@ -2,6 +2,13 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 
 import { join, resolve } from 'path';
 import type { FactoryConfig } from '../config';
 import { parseRequirement } from '../requirements/parser';
+import {
+  buildGroundingQuestion,
+  formatGroundingReference,
+  queryConfiguredRag,
+  shouldQueryGrounding,
+  type RagGroundingResponse,
+} from '../rag/grounding-client';
 
 function generateRunId(requirementId: string): string {
   return requirementId;
@@ -30,7 +37,11 @@ function listTargetFiles(root: string): string[] {
   return results.sort();
 }
 
-export function createHandoffPackage(requirementId: string, config: FactoryConfig): string {
+export async function createHandoffPackage(
+  requirementId: string,
+  config: FactoryConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
   const requirement = parseRequirement(requirementId, config.paths.requirements);
   const constraints = loadConstraints(requirementId, config.paths.constraints);
   const handoffsDir = resolve(config.paths.handoffs);
@@ -39,10 +50,45 @@ export function createHandoffPackage(requirementId: string, config: FactoryConfi
   mkdirSync(handoffDir, { recursive: true });
   const targetRoot = resolve(config.targetProject.root ?? '.');
   const files = listTargetFiles(targetRoot);
+  let ragGrounding: RagGroundingResponse | undefined;
+  let ragError: string | undefined;
+
+  if (shouldQueryGrounding(config, requirement.rawMarkdown)) {
+    console.log('  ▸ Project RAG grounding...');
+    try {
+      ragGrounding = await queryConfiguredRag(
+        config,
+        buildGroundingQuestion(config, requirement),
+        fetchImpl,
+      );
+      writeFileSync(
+        join(handoffDir, 'rag-context.json'),
+        JSON.stringify(ragGrounding, null, 2) + '\n',
+        'utf8',
+      );
+      console.log(`    └ ${ragGrounding.sources.length} cited source(s)`);
+    } catch (error) {
+      ragError = error instanceof Error ? error.message : String(error);
+      if (!config.rag.grounding.failOpen) throw error;
+      console.log(`    ⚠ RAG unavailable; creating handoff without grounding: ${ragError}`);
+    }
+  }
+
+  const ragSection = ragGrounding
+    ? ['## RAG Grounding', '', formatGroundingReference(config, ragGrounding), '']
+    : ragError
+      ? [
+          '## RAG Grounding',
+          '',
+          `RAG grounding was requested but unavailable: ${ragError}`,
+          'Verify domain-specific claims against the authoritative documents before implementation.',
+          '',
+        ]
+      : [];
   const content = [
     '# Manual Handoff',
     '',
-    'Use this handoff in the manual implementation flow when you want an external implementer to complete the requirement without spending LLM API calls.',
+    'Use this handoff in the manual implementation flow when you want an external implementer to complete the requirement without running the AI Factory agent pipeline.',
     '',
     '## Instruction for Implementer',
     '',
@@ -64,6 +110,7 @@ export function createHandoffPackage(requirementId: string, config: FactoryConfi
     '',
     requirement.rawMarkdown,
     '',
+    ...ragSection,
     '## Constraints',
     '',
     '```json',

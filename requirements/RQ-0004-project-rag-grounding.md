@@ -10,6 +10,8 @@ Allow each AI Factory consumer project to configure its own remote RAG service a
 - Keep grounding disabled by default so base AI Factory behavior remains unchanged.
 - Support `always` mode for every requirement and `explicit` mode only when the requirement Markdown contains the configured marker.
 - Query the configured RAG endpoint once before planning and reuse the answer and sources for selected agent prompts.
+- Query the configured RAG endpoint when creating a handoff and embed the answer and cited sources in `handoff.md`.
+- Save the complete handoff RAG response as `rag-context.json` beside `handoff.md` for traceability.
 - Save the complete RAG response as `rag-context.json` in the run directory for traceability.
 - Add bounded RAG context, source paths, and scores to selected prompts with an explicit instruction that retrieved content is untrusted reference material and does not override the requirement.
 - Support source filtering through `sourceIds`; the RAG API shall restrict retrieval to those sources.
@@ -24,6 +26,7 @@ Allow each AI Factory consumer project to configure its own remote RAG service a
 ## Acceptance Criteria
 
 - An ARINC661 Studio pipeline run queries RAG before the planner and records cited context.
+- An ARINC661 Studio handoff contains RAG grounding and its cited ARINC sources.
 - Only configured agent roles receive RAG context.
 - `sourceIds: ["arinc"]` prevents Rapita chunks from appearing in retrieval results.
 - An unavailable endpoint continues without context in fail-open mode and stops in fail-closed mode.

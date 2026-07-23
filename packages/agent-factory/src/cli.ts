@@ -86,17 +86,17 @@ program
 
 program
   .command('handoff <reqId>')
-  .description('Create a handoff package without calling an LLM provider')
-  .action((reqId: string) => {
+  .description('Create a handoff package without running the agent LLM pipeline')
+  .action(async (reqId: string) => {
     try {
       const config = loadConfig();
-      const runId = createHandoffPackage(reqId, config);
+      const runId = await createHandoffPackage(reqId, config);
       const handoffPath = resolve(config.paths.handoffs, runId, 'handoff.md');
       console.log(chalk.green('\n✓ Handoff package created: ' + chalk.bold(runId)));
       console.log(chalk.dim('  File: ' + handoffPath + '\n'));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 
@@ -625,4 +625,7 @@ const argv =
     ? [...process.argv.slice(0, 2), ...process.argv.slice(3)]
     : process.argv;
 
-program.parse(argv);
+void program.parseAsync(argv).catch((err: unknown) => {
+  console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+  process.exitCode = 1;
+});
