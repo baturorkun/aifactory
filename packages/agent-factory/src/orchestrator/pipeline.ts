@@ -1,5 +1,5 @@
-import { writeFileSync, existsSync, readFileSync } from 'fs';
-import { resolve, join } from 'path';
+import { writeFileSync, existsSync, readFileSync, readdirSync } from 'fs';
+import { extname, resolve, join } from 'path';
 import { z } from 'zod';
 import {
   PlanOutputSchema,
@@ -17,7 +17,7 @@ import {
   type Task,
   type Requirement,
 } from '@aifactory/contracts';
-import type { FactoryConfig } from '../config';
+import type { FactoryConfig, TargetProjectConfig } from '../config';
 import type { ModelAdapter } from '../model/adapter';
 import { createModelAdapter, createReviewerAdapter } from '../model';
 import { PromptRegistry } from '../prompts/registry';
@@ -36,6 +36,7 @@ import {
   applyArtifactToTarget,
   resolveTargetRoot,
   shouldApplyArtifacts,
+  validateTargetPath,
 } from '../workspace/apply';
 import {
   createRunDir,
@@ -85,6 +86,75 @@ function makeValidator<T>(schema: z.ZodType<T>, label: string) {
       throw new Error(`${label} output schema invalid:\n${r.error.message}`);
     }
     return r.data;
+  };
+}
+
+function taskAllowsPath(task: Task, artifactPath: string): boolean {
+  if (!task.targetFiles?.length) return true;
+  return task.targetFiles.some((targetPath) =>
+    extname(targetPath) ? artifactPath === targetPath : artifactPath === targetPath || artifactPath.startsWith(`${targetPath}/`),
+  );
+}
+
+function constraintAllowedPaths(constraints: Record<string, unknown>): string[] {
+  const configured = constraints.allowedImplementationPaths;
+  return Array.isArray(configured) ? configured.filter((value): value is string => typeof value === 'string') : [];
+}
+
+function pathAllowedByHints(artifactPath: string, hints: readonly string[]): boolean {
+  if (!hints.length) return true;
+  return hints.some((hint) =>
+    extname(hint) ? artifactPath === hint : artifactPath === hint || artifactPath.startsWith(`${hint}/`),
+  );
+}
+
+function validateConfiguredPath(target: TargetProjectConfig, artifactPath: string): string | undefined {
+  const targetRoot = resolveTargetRoot(target);
+  if (!targetRoot) return undefined;
+  return validateTargetPath(targetRoot, artifactPath, target.allowedPaths);
+}
+
+function existingTaskFiles(task: Task, target: TargetProjectConfig): Array<{ path: string; content: string }> {
+  if (!task.targetFiles?.length) return [];
+  return task.targetFiles.flatMap((artifactPath) => {
+    const absolutePath = validateConfiguredPath(target, artifactPath);
+    if (!absolutePath || !existsSync(absolutePath) || extname(artifactPath) === '') return [];
+    return [{ path: artifactPath, content: readFileSync(absolutePath, 'utf8') }];
+  });
+}
+
+function existingTestPaths(target: TargetProjectConfig): string[] {
+  const targetRoot = resolveTargetRoot(target);
+  if (!targetRoot) return [];
+  const testsRoot = join(targetRoot, 'tests');
+  if (!existsSync(testsRoot)) return [];
+  return readdirSync(testsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => `tests/${entry.name}`)
+    .sort();
+}
+
+function makeCodeValidator(task: Task, target: TargetProjectConfig) {
+  return (raw: unknown): CodePatchOutput => {
+    const parsed = CodePatchOutputSchema.parse(raw);
+    const patches = parsed.patches.map((patch) => {
+      if (!taskAllowsPath(task, patch.path)) {
+        throw new Error(`Coder artifact path is outside task.targetFiles: ${patch.path}`);
+      }
+      const absolutePath = validateConfiguredPath(target, patch.path);
+      if (patch.mode !== 'replace') return patch;
+      if (!absolutePath || !existsSync(absolutePath)) {
+        throw new Error(`Cannot apply exact-text replacement to missing file: ${patch.path}`);
+      }
+      const current = readFileSync(absolutePath, 'utf8');
+      const find = patch.find!;
+      const occurrences = current.split(find).length - 1;
+      if (occurrences !== 1) {
+        throw new Error(`Replacement find text must occur exactly once in ${patch.path}; found ${occurrences}`);
+      }
+      return { ...patch, mode: 'full' as const, find: undefined, content: current.replace(find, patch.content) };
+    });
+    return { ...parsed, patches };
   };
 }
 
@@ -318,6 +388,7 @@ async function runTaskPipeline(
       task,
       plan,
       requirement,
+      constraints,
       formatGroundingContext(config, ragGrounding, 'architect'),
     ),
     model: primaryModel,
@@ -346,12 +417,15 @@ async function runTaskPipeline(
         task,
         architecture,
         requirement,
+        constraints,
+        existingTaskFiles(task, config.targetProject),
+        config.targetProject.allowedPaths,
         fixContext,
         formatGroundingContext(config, ragGrounding, 'coder'),
       ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
-      validate: makeValidator(CodePatchOutputSchema, 'Coder'),
+      validate: makeCodeValidator(task, config.targetProject),
       extractJSON,
       outputFileName: `coder-${task.id}-iter${iter}.json`,
     });
@@ -383,11 +457,24 @@ async function runTaskPipeline(
         task,
         code,
         requirement,
+        constraints,
+        config.targetProject.allowedPaths,
+        existingTestPaths(config.targetProject),
         formatGroundingContext(config, ragGrounding, 'tester'),
       ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
-      validate: makeValidator(TestOutputSchema, 'Tester'),
+      validate: (raw: unknown): TestOutput => {
+        const parsed = TestOutputSchema.parse(raw);
+        const constraintPaths = constraintAllowedPaths(constraints);
+        for (const test of parsed.tests) {
+          if (!pathAllowedByHints(test.path, constraintPaths)) {
+            throw new Error(`Tester artifact path is outside requirement constraints: ${test.path}`);
+          }
+          validateConfiguredPath(config.targetProject, test.path);
+        }
+        return parsed;
+      },
       extractJSON,
       outputFileName: `tester-${task.id}-iter${iter}.json`,
     });

@@ -24,7 +24,7 @@ export function buildPlannerPrompt(
     `**Title:** ${requirement.title}`,
     '',
     '### Description',
-    requirement.description,
+    requirement.rawMarkdown,
   ];
 
   if (requirement.acceptanceCriteria.length > 0) {
@@ -60,6 +60,7 @@ export function buildArchitectPrompt(
   task: Task,
   plan: PlanOutput,
   requirement: Requirement,
+  constraints: Record<string, unknown>,
   ragContext?: string,
 ): string {
   return [
@@ -77,6 +78,9 @@ export function buildArchitectPrompt(
     `Requirement: ${requirement.title} (${requirement.id})`,
     `Plan summary: ${plan.summary}`,
     `Total tasks in plan: ${plan.tasks.length}`,
+    ...(Object.keys(constraints).length
+      ? ['', '### Project Constraints', '```json', JSON.stringify(constraints, null, 2), '```']
+      : []),
     ...(ragContext ? ['', ragContext] : []),
     '',
     'Return an **ArchitectureOutput** JSON object.',
@@ -96,6 +100,9 @@ export function buildCoderPrompt(
   task: Task,
   architecture: ArchitectureOutput,
   requirement: Requirement,
+  constraints: Record<string, unknown>,
+  existingFiles: ReadonlyArray<{ path: string; content: string }>,
+  allowedPaths: readonly string[],
   fixContext?: FixContext,
   ragContext?: string,
 ): string {
@@ -113,6 +120,23 @@ export function buildCoderPrompt(
     '### Acceptance Criteria',
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
   ];
+
+  if (Object.keys(constraints).length > 0) {
+    parts.push('', '### Project Constraints', '```json', JSON.stringify(constraints, null, 2), '```');
+  }
+  if (allowedPaths.length > 0) {
+    parts.push('', `### Allowed Artifact Paths`, allowedPaths.map((path) => `- ${path}`).join('\n'));
+  }
+  if (existingFiles.length > 0) {
+    parts.push('', '### Existing Target Files');
+    for (const file of existingFiles) {
+      parts.push(`#### ${file.path}`, '```typescript', file.content, '```');
+    }
+    parts.push(
+      '',
+      'Preserve all unrelated existing code. Use mode "replace" with a small exact `find` block for existing files.',
+    );
+  }
 
   if (ragContext) parts.push('', ragContext);
 
@@ -136,7 +160,7 @@ export function buildCoderPrompt(
     }
   }
 
-  parts.push('', 'Return a **CodePatchOutput** JSON with **complete** file contents.');
+  parts.push('', 'Return a **CodePatchOutput** JSON. Use exact-text replacement mode for existing files.');
   return parts.join('\n');
 }
 
@@ -148,6 +172,9 @@ export function buildTesterPrompt(
   task: Task,
   code: CodePatchOutput,
   requirement: Requirement,
+  constraints: Record<string, unknown>,
+  allowedPaths: readonly string[],
+  existingTestPaths: readonly string[],
   ragContext?: string,
 ): string {
   const fileBlocks = code.patches.flatMap((p) => [
@@ -166,9 +193,18 @@ export function buildTesterPrompt(
     '',
     '### Code Under Test',
     ...fileBlocks,
+    ...(Object.keys(constraints).length
+      ? ['### Project Constraints', '```json', JSON.stringify(constraints, null, 2), '```', '']
+      : []),
+    ...(allowedPaths.length
+      ? ['### Allowed Artifact Paths', ...allowedPaths.map((path) => `- ${path}`), '']
+      : []),
+    ...(existingTestPaths.length
+      ? ['### Existing Test Conventions', ...existingTestPaths.map((path) => `- ${path}`), '']
+      : []),
     ...(ragContext ? [ragContext, ''] : []),
     'Return a **TestOutput** JSON with complete test file contents.',
-    'Use Jest as the default test framework unless specified otherwise.',
+    'Follow the requirement and existing project test conventions. Use Jest only when the project already uses Jest.',
   ].join('\n');
 }
 

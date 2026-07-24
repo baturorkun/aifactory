@@ -72,6 +72,16 @@ export const FilePatchSchema = z.object({
   content: z.string().min(1),
   language: z.string().min(1),
   description: z.string().optional(),
+  mode: z.enum(['full', 'replace']).default('full'),
+  find: z.string().min(1).optional(),
+}).superRefine((patch, ctx) => {
+  if (patch.mode === 'replace' && !patch.find) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['find'],
+      message: 'find is required when mode is replace',
+    });
+  }
 });
 
 export const CodePatchOutputSchema = z.object({
