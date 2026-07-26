@@ -63,12 +63,12 @@ After a target project exists and a requirement is written, choose one of these 
 
 | Mode | Command | Calls external LLM API? | Writes application code? | Purpose |
 |---|---|---:|---:|---|
-| Handoff | `pnpm factory handoff <req-id>` | No | No | Package the task for manual/local assistant implementation |
+| Handoff | `pnpm factory handoff <req-id>` | Only when configured RAG grounding requires it | No | Create a tracked run and package the task for manual/local assistant implementation |
 | Mock run | `pnpm factory run <req-id>` with no `.env`, or `--dry-run` | No | Mock artifacts only | Test the factory pipeline/config without API cost |
 | API run | `pnpm factory run <req-id>` with `.env` provider settings | Yes | Yes, when the provider returns valid artifacts | Let the LLM-backed agents implement the requirement |
 | Fast API run | `pnpm factory run <req-id> --fast` with `.env` provider settings | Yes, fewer calls | Yes | Lower-cost API implementation path |
 
-Handoff is not a pipeline run. It creates `handoffs/<req-id>/handoff.md`, which combines the requirement, constraints, target project root, allowed paths, local check commands, and current file list. Use it when you do not want to spend API calls but still want a complete implementation brief.
+Handoff uses the same run history as the agent pipeline, but delegates implementation to a human or local assistant. It creates `handoffs/<run-id>/handoff.md` and `runs/<run-id>/manifest.json` with the same unique run ID. Use `handoff-begin` before implementation and `handoff-finish` afterward to capture changed files, run the configured quality gates, and finalize the run.
 
 If `.env` is missing, `run` falls back to the mock provider. Mock is useful for plumbing tests, but it does not implement the real feature.
 
@@ -349,10 +349,11 @@ Run these from the target project directory.
 pnpm factory handoff RQ-0001-example
 ```
 
-This does not call an LLM and does not write application code. It creates:
+This does not run the agent implementation pipeline and does not write application code. Configured RAG grounding can still call its configured model. The command creates:
 
 ```text
-handoffs/RQ-0001-example/handoff.md
+handoffs/<run-id>/handoff.md
+runs/<run-id>/manifest.json
 ```
 
 The handoff file is an implementation brief. It includes:
@@ -365,6 +366,16 @@ The handoff file is an implementation brief. It includes:
 - current target file list.
 
 Use this when API cost matters or when you want a human/local assistant to implement the requirement. Handoff does not modify `src/`, `tests/`, or other application files by itself.
+
+Start and finish the tracked implementation with the Run ID printed by `handoff`:
+
+```bash
+pnpm factory handoff-begin <run-id>
+# Implement the handoff in the target workspace.
+pnpm factory handoff-finish <run-id>
+```
+
+`handoff-finish` captures files changed since handoff creation under the run’s `artifacts/` directory, records deleted files, runs the configured target quality gates, and sets the run to `passed`, `needs-fix`, or `failed`. Use `--skip-gates` only when gate execution is intentionally deferred.
 
 ### Run full pipeline
 

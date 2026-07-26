@@ -5,7 +5,11 @@ import { resolve, join } from 'path';
 import chalk from 'chalk';
 import { loadConfig } from './config';
 import { runPipeline } from './orchestrator/pipeline';
-import { createHandoffPackage } from './orchestrator/handoff';
+import {
+  beginHandoffRun,
+  createHandoffPackage,
+  finishHandoffRun,
+} from './orchestrator/handoff';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import { installRagPython, runRagEnv, runRagPython } from './rag/python-runner';
@@ -94,6 +98,58 @@ program
       const handoffPath = resolve(config.paths.handoffs, runId, 'handoff.md');
       console.log(chalk.green('\n✓ Handoff package created: ' + chalk.bold(runId)));
       console.log(chalk.dim('  File: ' + handoffPath + '\n'));
+      printRunSummary(readManifest(resolve(config.paths.runs, runId)));
+      console.log(chalk.dim(`\n  Begin  : pnpm factory -- handoff-begin ${runId}`));
+      console.log(chalk.dim(`  Finish : pnpm factory -- handoff-finish ${runId}\n`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+// ============================================================
+// factory handoff-begin <run-id>
+// ============================================================
+
+program
+  .command('handoff-begin <runId>')
+  .description('Mark a generated handoff run as actively being implemented')
+  .action((runId: string) => {
+    try {
+      const config = loadConfig();
+      const manifest = beginHandoffRun(runId, config);
+      console.log(chalk.blue(`\n▶ Handoff implementation started: ${chalk.bold(runId)}\n`));
+      printRunSummary(manifest);
+      console.log();
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+// ============================================================
+// factory handoff-finish <run-id>
+// ============================================================
+
+program
+  .command('handoff-finish <runId>')
+  .description('Capture handoff changes, run quality gates, and finalize its run history')
+  .option('--skip-gates', 'Capture changes without running quality gates', false)
+  .action(async (runId: string, opts: { skipGates: boolean }) => {
+    try {
+      const config = loadConfig();
+      const manifest = await finishHandoffRun(runId, config, {
+        skipGates: opts.skipGates,
+      });
+      console.log();
+      printRunSummary(manifest);
+      if (manifest.status === 'passed') {
+        console.log(chalk.green(`\n✓ Passed  — Handoff run: ${chalk.bold(runId)}\n`));
+      } else {
+        console.log(chalk.yellow(`\n⚠ Needs fix — Handoff run: ${chalk.bold(runId)}`));
+        console.log(chalk.dim(`  Logs: pnpm factory -- logs ${runId}\n`));
+        process.exitCode = 1;
+      }
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -221,7 +277,7 @@ program
       }
 
       const manifest = readManifest(runDir);
-      console.log(chalk.bold(`\nAgent logs — ${chalk.cyan(runId)}\n`));
+      console.log(chalk.bold(`\nRun logs — ${chalk.cyan(runId)}\n`));
 
       manifest.steps.forEach((step) => {
         const icon =
@@ -565,6 +621,7 @@ function printRunSummary(manifest: RunManifest): void {
 
   console.log(chalk.bold(`Run: ${chalk.cyan(manifest.runId)}`));
   console.log(`  Requirement : ${manifest.requirementId}`);
+  console.log(`  Mode        : ${manifest.executionMode}`);
   console.log(`  Status      : ${statusLabel(manifest.status)}`);
   console.log(`  Created     : ${manifest.createdAt}`);
   if (manifest.steps.length > 0) {
@@ -572,6 +629,9 @@ function printRunSummary(manifest: RunManifest): void {
   }
   if (manifest.artifacts.length > 0) {
     console.log(`  Artifacts   : ${manifest.artifacts.length} file(s)`);
+  }
+  if (manifest.deletedFiles.length > 0) {
+    console.log(`  Deleted     : ${manifest.deletedFiles.length} file(s)`);
   }
 
   const gates = Object.entries(manifest.gateResults)
@@ -615,7 +675,7 @@ function listRuns(runsDir: string): void {
 
   console.log(chalk.bold('\nRecent runs:\n'));
   manifests.forEach((m) => {
-    console.log(`  ${statusLabel(m.status).padEnd(20)} ${chalk.cyan(m.runId)}  ${chalk.dim(m.requirementId)}`);
+    console.log(`  ${statusLabel(m.status).padEnd(20)} ${chalk.cyan(m.runId)}  ${chalk.dim(m.requirementId)}  ${chalk.dim(m.executionMode)}`);
   });
   console.log();
 }

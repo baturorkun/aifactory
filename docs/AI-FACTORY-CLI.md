@@ -34,6 +34,10 @@ pnpm factory -- approve <run-id>
 | Command | Description |
 |---|---|
 | `factory run <req-id>` | Start pipeline for a requirement |
+| `factory handoff <req-id>` | Create a uniquely versioned handoff package and queued run |
+| `factory handoff-begin <run-id>` | Mark handoff implementation as running |
+| `factory handoff-finish <run-id>` | Capture changes, run gates, and finalize a handoff run |
+| `factory handoff-finish <run-id> --skip-gates` | Finalize a handoff run without executing gates |
 | `factory run <req-id> --dry-run` | Run with mock model (no LLM) |
 | `factory run <req-id> --skip-gates` | Skip quality gates |
 | `factory run <req-id> --tasks task-1,task-2` | Run only specific tasks |

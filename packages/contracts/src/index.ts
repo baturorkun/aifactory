@@ -11,6 +11,7 @@ export const AgentRoleSchema = z.enum([
   'tester',
   'reviewer',
   'domain-guard',
+  'handoff',
 ]);
 export type AgentRole = z.infer<typeof AgentRoleSchema>;
 
@@ -218,11 +219,14 @@ export type GateResults = z.infer<typeof GateResultsSchema>;
 export const RunManifestSchema = z.object({
   runId: z.string(),
   requirementId: z.string(),
+  executionMode: z.enum(['agent', 'handoff']).default('agent'),
+  handoffPath: z.string().optional(),
   status: RunStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
   steps: z.array(AgentStepRecordSchema).default([]),
   artifacts: z.array(z.string()).default([]),
+  deletedFiles: z.array(z.string()).default([]),
   gateResults: GateResultsSchema.default({}),
   approvedAt: z.string().optional(),
   approvedBy: z.string().optional(),

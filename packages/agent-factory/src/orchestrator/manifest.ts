@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { isAbsolute, join, normalize, relative, resolve, sep } from 'path';
+import { copyFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'path';
 import {
   RunManifestSchema,
   type RunManifest,
@@ -39,7 +39,17 @@ export function updateManifest(
 // RUN DIRECTORY
 // ============================================================
 
-export function createRunDir(runsDir: string, runId: string, requirementId: string): string {
+export interface CreateRunOptions {
+  executionMode?: RunManifest['executionMode'];
+  handoffPath?: string;
+}
+
+export function createRunDir(
+  runsDir: string,
+  runId: string,
+  requirementId: string,
+  options: CreateRunOptions = {},
+): string {
   const runDir = join(runsDir, runId);
   mkdirSync(join(runDir, 'steps'), { recursive: true });
   mkdirSync(join(runDir, 'artifacts'), { recursive: true });
@@ -48,11 +58,14 @@ export function createRunDir(runsDir: string, runId: string, requirementId: stri
   const manifest: RunManifest = {
     runId,
     requirementId,
+    executionMode: options.executionMode ?? 'agent',
+    handoffPath: options.handoffPath,
     status: 'queued',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     steps: [],
     artifacts: [],
+    deletedFiles: [],
     gateResults: {
       schemaCheck: 'pending',
       typeCheck: 'pending',
@@ -88,11 +101,20 @@ export function updateStep(
   taskId: string | undefined,
   updates: Partial<AgentStepRecord>,
 ): void {
+  const terminalStatus =
+    updates.status === 'passed' ||
+    updates.status === 'needs-fix' ||
+    updates.status === 'failed' ||
+    updates.status === 'skipped';
   updateManifest(runDir, (m) => ({
     ...m,
     steps: m.steps.map((s) =>
       s.agent === agent && s.taskId === taskId
-        ? { ...s, ...updates, finishedAt: new Date().toISOString() }
+        ? {
+            ...s,
+            ...updates,
+            finishedAt: updates.finishedAt ?? (terminalStatus ? new Date().toISOString() : s.finishedAt),
+          }
         : s,
     ),
   }));
@@ -114,6 +136,14 @@ export function writeArtifact(runDir: string, relativePath: string, content: str
   const fullPath = safeArtifactPath(artifactsDir, relativePath);
   mkdirSync(join(fullPath, '..'), { recursive: true });
   writeFileSync(fullPath, content, 'utf8');
+  return fullPath;
+}
+
+export function copyArtifact(runDir: string, relativePath: string, sourcePath: string): string {
+  const artifactsDir = join(runDir, 'artifacts');
+  const fullPath = safeArtifactPath(artifactsDir, relativePath);
+  mkdirSync(dirname(fullPath), { recursive: true });
+  copyFileSync(sourcePath, fullPath);
   return fullPath;
 }
 
