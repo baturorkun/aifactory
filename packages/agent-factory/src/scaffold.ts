@@ -245,6 +245,11 @@ function writeFactoryConfig(
       allowedPaths,
       commands,
     },
+    projectGuidelines: {
+      files: ['./PROJECT_GUIDELINES.md'],
+      required: true,
+      maxContextChars: 20000,
+    },
     domain: {
       rules: [],
     },
@@ -443,6 +448,19 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   }
 
   writeCommonFiles(projectRoot, projectName, factoryScript);
+  writeFileSync(
+    resolve(projectRoot, 'PROJECT_GUIDELINES.md'),
+    [
+      '# Project Guidelines',
+      '',
+      '- Preserve the existing project architecture and conventions.',
+      '- Follow the active requirement and its acceptance criteria.',
+      '- Do not make unrelated changes.',
+      '- Verify implementation changes with the configured quality gates.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
   writeReferencesReadme(projectRoot);
   writeGitlabCi(projectRoot, projectName);
 
@@ -465,6 +483,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   writeFileSync(resolve(projectRoot, 'requirements/.gitkeep'), '', 'utf8');
   writeFileSync(resolve(projectRoot, 'constraints/.gitkeep'), '', 'utf8');
   writeFileSync(resolve(projectRoot, 'handoffs/.gitkeep'), '', 'utf8');
+  writeFileSync(resolve(projectRoot, 'runs/.gitkeep'), '', 'utf8');
   writeFileSync(resolve(projectRoot, 'templates/.gitkeep'), '', 'utf8');
 
   return { projectName, projectRoot, factoryScript, template: options.template };

@@ -45,6 +45,10 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
     join(requirements, 'RQ-0001.md'),
     '# ARINC Layer\n\nImplement the Layer parent-child rules.',
   );
+  writeFileSync(
+    join(root, 'PROJECT_GUIDELINES.md'),
+    '# Project Guidelines\n\n- Preserve Supplement 8 compatibility.',
+  );
   const config = FactoryConfigSchema.parse({
     model: { provider: 'mock', name: 'mock' },
     paths: {
@@ -54,6 +58,10 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
       runs,
     },
     targetProject: { root },
+    projectGuidelines: {
+      files: ['./PROJECT_GUIDELINES.md'],
+      required: true,
+    },
     rag: {
       grounding: {
         enabled: true,
@@ -91,6 +99,8 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
     assert.deepEqual(requestBody?.sourceIds, ['arinc']);
     assert.match(handoffId, /^\d{14}-RQ-0001$/);
     assert.match(handoff, /## RAG Grounding/);
+    assert.match(handoff, /## Project Guidelines/);
+    assert.match(handoff, /Preserve Supplement 8 compatibility/);
     assert.match(handoff, new RegExp(`Run ID: \`${handoffId}\``));
     assert.match(handoff, /A Layer can parent supported Container widgets/);
     assert.match(handoff, /ARINC661P1-8\.pdf/);
@@ -99,6 +109,8 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
     assert.equal(manifest.status, 'queued');
     assert.equal(manifest.steps[0]?.agent, 'handoff');
     assert.equal(manifest.steps[0]?.status, 'pending');
+    assert.equal(manifest.projectGuidelines?.files[0]?.path, 'PROJECT_GUIDELINES.md');
+    assert.ok(existsSync(join(handoffs, handoffId, 'project-guidelines.json')));
     assert.equal(
       readFileSync(join(runs, handoffId, 'rag-context.json'), 'utf8'),
       readFileSync(join(handoffs, handoffId, 'rag-context.json'), 'utf8'),

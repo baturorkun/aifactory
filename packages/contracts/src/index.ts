@@ -221,6 +221,17 @@ export const RunManifestSchema = z.object({
   requirementId: z.string(),
   executionMode: z.enum(['agent', 'handoff']).default('agent'),
   handoffPath: z.string().optional(),
+  projectGuidelines: z
+    .object({
+      combinedSha256: z.string(),
+      files: z.array(
+        z.object({
+          path: z.string(),
+          sha256: z.string(),
+        }),
+      ),
+    })
+    .optional(),
   status: RunStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string(),

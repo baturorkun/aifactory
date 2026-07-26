@@ -55,6 +55,12 @@ import {
   shouldQueryGrounding,
   type RagGroundingResponse,
 } from '../rag/grounding-client';
+import {
+  loadProjectGuidelines,
+  recordProjectGuidelines,
+  withProjectGuidelines,
+  type ProjectGuidelinesContext,
+} from '../project-guidelines';
 
 // ============================================================
 // HELPERS
@@ -185,10 +191,12 @@ export async function runPipeline(
   // -- Inputs
   const requirement = parseRequirement(requirementId, config.paths.requirements);
   const constraints = loadConstraints(requirementId, config.paths.constraints);
+  const projectGuidelines = loadProjectGuidelines(config);
 
   // -- Run directory
   const runId = generateRunId(requirementId);
   const runDir = createRunDir(resolve(config.paths.runs), runId, requirementId);
+  recordProjectGuidelines(runDir, projectGuidelines);
 
   // Save input copies for reproducibility
   writeFileSync(join(runDir, 'requirement.md'), requirement.rawMarkdown, 'utf8');
@@ -257,6 +265,7 @@ export async function runPipeline(
       promptRegistry,
       config,
       ragGrounding,
+      projectGuidelines,
     );
     console.log(`    └ ${plan.tasks.length} task(s)`);
 
@@ -281,6 +290,7 @@ export async function runPipeline(
         Boolean(opts.dryRun),
         Boolean(opts.fast),
         ragGrounding,
+        projectGuidelines,
       );
       if (!passed) hasFailedTasks = true;
     }
@@ -339,11 +349,12 @@ async function runPlannerAgent(
   promptRegistry: PromptRegistry,
   config: FactoryConfig,
   ragGrounding?: RagGroundingResponse,
+  projectGuidelines?: ProjectGuidelinesContext,
 ): Promise<PlanOutput> {
   const result = await runAgent({
     agent: 'planner',
     runDir,
-    systemPrompt: promptRegistry.get('planner'),
+    systemPrompt: withProjectGuidelines(promptRegistry.get('planner'), projectGuidelines),
     userPrompt: buildPlannerPrompt(
       requirement,
       constraints,
@@ -376,6 +387,7 @@ async function runTaskPipeline(
   dryRun: boolean,
   fast: boolean,
   ragGrounding?: RagGroundingResponse,
+  projectGuidelines?: ProjectGuidelinesContext,
 ): Promise<boolean> {
   // ---- Architect
   console.log('    ▸ Architect...');
@@ -383,7 +395,7 @@ async function runTaskPipeline(
     agent: 'architect',
     taskId: task.id,
     runDir,
-    systemPrompt: promptRegistry.get('architect'),
+    systemPrompt: withProjectGuidelines(promptRegistry.get('architect'), projectGuidelines),
     userPrompt: buildArchitectPrompt(
       task,
       plan,
@@ -412,7 +424,7 @@ async function runTaskPipeline(
       agent: 'coder',
       taskId: task.id,
       runDir,
-      systemPrompt: promptRegistry.get('coder'),
+      systemPrompt: withProjectGuidelines(promptRegistry.get('coder'), projectGuidelines),
       userPrompt: buildCoderPrompt(
         task,
         architecture,
@@ -452,7 +464,7 @@ async function runTaskPipeline(
       agent: 'tester',
       taskId: task.id,
       runDir,
-      systemPrompt: promptRegistry.get('tester'),
+      systemPrompt: withProjectGuidelines(promptRegistry.get('tester'), projectGuidelines),
       userPrompt: buildTesterPrompt(
         task,
         code,
@@ -494,7 +506,7 @@ async function runTaskPipeline(
       agent: 'reviewer',
       taskId: task.id,
       runDir,
-      systemPrompt: promptRegistry.get('reviewer'),
+      systemPrompt: withProjectGuidelines(promptRegistry.get('reviewer'), projectGuidelines),
       userPrompt: buildReviewerPrompt(
         task,
         code,
@@ -521,7 +533,7 @@ async function runTaskPipeline(
       agent: 'domain-guard',
       taskId: task.id,
       runDir,
-      systemPrompt: promptRegistry.get('domain-guard'),
+      systemPrompt: withProjectGuidelines(promptRegistry.get('domain-guard'), projectGuidelines),
       userPrompt: buildDomainGuardPrompt(
         task,
         code,

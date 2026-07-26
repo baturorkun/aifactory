@@ -93,6 +93,12 @@ const TargetProjectSchema = z.object({
   commands: TargetCommandsSchema.default({}),
 });
 
+const ProjectGuidelinesSchema = z.object({
+  files: z.array(z.string().min(1)).default([]),
+  required: z.boolean().default(false),
+  maxContextChars: z.number().int().positive().default(20_000),
+});
+
 const RagSourceSchema = z.object({
   id: z.string().min(1),
   type: z.literal('filesystem').default('filesystem'),
@@ -209,6 +215,7 @@ export const FactoryConfigSchema = z.object({
   paths: PathsConfigSchema.default({}),
   domain: DomainConfigSchema.default({}),
   targetProject: TargetProjectSchema.default({}),
+  projectGuidelines: ProjectGuidelinesSchema.default({}),
   rag: RagConfigSchema.default({}),
 });
 

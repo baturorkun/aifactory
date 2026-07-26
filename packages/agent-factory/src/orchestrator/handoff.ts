@@ -24,6 +24,10 @@ import {
   shouldQueryGrounding,
   type RagGroundingResponse,
 } from '../rag/grounding-client';
+import {
+  loadProjectGuidelines,
+  recordProjectGuidelines,
+} from '../project-guidelines';
 
 interface HandoffBaseline {
   targetRoot: string;
@@ -233,6 +237,7 @@ export async function createHandoffPackage(
 ): Promise<string> {
   const requirement = parseRequirement(requirementId, config.paths.requirements);
   const constraints = loadConstraints(requirementId, config.paths.constraints);
+  const projectGuidelines = loadProjectGuidelines(config);
   const handoffsDir = resolve(config.paths.handoffs);
   const runsDir = resolve(config.paths.runs);
   const runId = generateRunId(requirementId, runsDir, handoffsDir);
@@ -244,6 +249,14 @@ export async function createHandoffPackage(
     executionMode: 'handoff',
     handoffPath,
   });
+  recordProjectGuidelines(runDir, projectGuidelines);
+  if (projectGuidelines) {
+    writeFileSync(
+      join(handoffDir, 'project-guidelines.json'),
+      readFileSync(join(runDir, 'project-guidelines.json'), 'utf8'),
+      'utf8',
+    );
+  }
   writeFileSync(join(runDir, 'requirement.md'), requirement.rawMarkdown, 'utf8');
   if (Object.keys(constraints).length > 0) {
     writeFileSync(
@@ -306,6 +319,9 @@ export async function createHandoffPackage(
           '',
         ]
       : [];
+  const guidelinesSection = projectGuidelines
+    ? ['## Project Guidelines', '', projectGuidelines.prompt, '']
+    : [];
   const content = [
     '# Manual Handoff',
     '',
@@ -329,6 +345,7 @@ export async function createHandoffPackage(
     '',
     ...files.map((file) => '- ' + file),
     '',
+    ...guidelinesSection,
     '## Requirement',
     '',
     requirement.rawMarkdown,
