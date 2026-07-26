@@ -92,7 +92,22 @@ function writeCommonFiles(projectRoot: string, projectName: string, factoryScrip
 
   writeFileSync(
     resolve(projectRoot, '.gitignore'),
-    ['node_modules/', 'dist/', '.env', 'runs/', '.DS_Store', ''].join('\n'),
+    [
+      'node_modules/',
+      'dist/',
+      '.env',
+      '# Keep lightweight run history; generated artifacts and logs stay local.',
+      'runs/*',
+      '!runs/.gitkeep',
+      '!runs/*/',
+      'runs/*/*',
+      '!runs/*/manifest.json',
+      '!runs/*/gates/',
+      'runs/*/gates/*',
+      '!runs/*/gates/report.json',
+      '.DS_Store',
+      '',
+    ].join('\n'),
     'utf8',
   );
 }
