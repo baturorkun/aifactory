@@ -66,7 +66,7 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
       grounding: {
         enabled: true,
         chatUrl: 'http://rag.example/query',
-        sourceIds: ['arinc'],
+        sourceIds: ['source-a'],
       },
     },
   });
@@ -78,7 +78,7 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
         answer: 'A Layer can parent supported Container widgets.',
         sources: [
           {
-            sourceId: 'arinc',
+            sourceId: 'source-a',
             relativePath: 'ARINC 661/ARINC661P1-8.pdf',
             score: 0.9,
           },
@@ -96,7 +96,7 @@ test('handoff queries configured RAG and embeds answer with sources', async () =
     ) as { answer: string };
     const manifest = readManifest(join(runs, handoffId));
 
-    assert.deepEqual(requestBody?.sourceIds, ['arinc']);
+    assert.deepEqual(requestBody?.sourceIds, ['source-a']);
     assert.match(handoffId, /^\d{14}-RQ-0001$/);
     assert.match(handoff, /## RAG Grounding/);
     assert.match(handoff, /## Project Guidelines/);

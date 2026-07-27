@@ -17,7 +17,7 @@ function config(overrides: Record<string, unknown> = {}) {
       grounding: {
         enabled: true,
         chatUrl: 'http://rag.example/query',
-        sourceIds: ['arinc'],
+        sourceIds: ['source-a'],
         agents: ['planner'],
         ...overrides,
       },
@@ -59,7 +59,7 @@ test('project grounding inherits shared connection settings from AI Factory', ()
         rag: {
           grounding: {
             enabled: true,
-            sourceIds: ['arinc'],
+            sourceIds: ['source-a'],
             agents: ['planner'],
           },
         },
@@ -72,7 +72,7 @@ test('project grounding inherits shared connection settings from AI Factory', ()
     assert.equal(projectConfig.rag.grounding.enabled, true);
     assert.equal(projectConfig.rag.grounding.chatUrl, 'http://central-rag.example/query');
     assert.equal(projectConfig.rag.grounding.timeoutMs, 90000);
-    assert.deepEqual(projectConfig.rag.grounding.sourceIds, ['arinc']);
+    assert.deepEqual(projectConfig.rag.grounding.sourceIds, ['source-a']);
   } finally {
     if (originalFactoryHome === undefined) delete process.env.AIFACTORY_HOME;
     else process.env.AIFACTORY_HOME = originalFactoryHome;
@@ -89,7 +89,7 @@ test('remote query sends the project source filter and parses citations', async 
         answer: 'GpTriangleFan requires a valid parent container.',
         sources: [
           {
-            sourceId: 'arinc',
+            sourceId: 'source-a',
             relativePath: 'ARINC 661/ARINC661P1-8.pdf',
             score: 0.91,
           },
@@ -103,7 +103,7 @@ test('remote query sends the project source filter and parses citations', async 
 
   assert.deepEqual(requestBody, {
     question: 'What are the parameters?',
-    sourceIds: ['arinc'],
+    sourceIds: ['source-a'],
   });
   assert.equal(response.sources[0]?.relativePath, 'ARINC 661/ARINC661P1-8.pdf');
 });
@@ -113,7 +113,7 @@ test('grounding context is bounded and only emitted for selected agents', () => 
   const response = {
     question: 'question',
     answer: 'abcdefgh',
-    sources: [{ sourceId: 'arinc', relativePath: 'standard.pdf', score: 0.75 }],
+    sources: [{ sourceId: 'source-a', relativePath: 'standard.pdf', score: 0.75 }],
     retrievedAt: '2026-07-19T00:00:00.000Z',
   };
 
@@ -122,6 +122,6 @@ test('grounding context is bounded and only emitted for selected agents', () => 
   assert.match(plannerContext ?? '', /abcd/);
   assert.doesNotMatch(plannerContext ?? '', /abcdefgh/);
   assert.match(plannerContext ?? '', /untrusted reference context/);
-  assert.match(plannerContext ?? '', /\[arinc\] standard\.pdf/);
+  assert.match(plannerContext ?? '', /\[source-a\] standard\.pdf/);
   assert.equal(formatGroundingContext(projectConfig, response, 'coder'), undefined);
 });

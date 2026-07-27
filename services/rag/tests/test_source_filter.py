@@ -70,10 +70,10 @@ class SourceFilterTests(unittest.TestCase):
         return cursor
 
     def test_retrieval_limits_chunks_to_requested_sources(self) -> None:
-        cursor = self.run_retrieve(["arinc"])
+        cursor = self.run_retrieve(["source-a"])
 
         self.assertIn("c.source_id = ANY(%s)", cursor.statement)
-        self.assertEqual(cursor.params[1], ["arinc"])
+        self.assertEqual(cursor.params[1], ["source-a"])
 
     def test_retrieval_has_no_source_clause_without_filter(self) -> None:
         cursor = self.run_retrieve(None)

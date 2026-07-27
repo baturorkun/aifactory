@@ -18,7 +18,7 @@ Allow an operator to ingest only one selected directory below a configured RAG f
 
 ## Acceptance Criteria
 
-- `pnpm factory rag ingest --source arinc --subdir "ARINC 661"` scans only that directory tree.
+- `pnpm factory rag ingest --source source-2 --subdir "standards"` scans only that directory tree.
 - `--subdir ../outside` and absolute paths are rejected.
 - A subdirectory ingest does not mark documents from sibling directories as deleted.
 - File-level progress uses paths relative to the configured source root.

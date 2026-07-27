@@ -64,7 +64,7 @@ pnpm factory rag api start
 To ingest only one directory below a configured source root, pass a source-relative path:
 
 ```bash
-pnpm factory rag ingest --source arinc --subdir "ARINC 661"
+pnpm factory rag ingest --source source-2 --subdir "standards"
 ```
 
 The filter is recursive. Document identities remain relative to the configured source root, and deletion detection is limited to the selected subdirectory.
@@ -126,7 +126,7 @@ source and agent selection:
       "enabled": true,
       "mode": "always",
       "marker": "@rag",
-      "sourceIds": ["arinc"],
+      "sourceIds": ["${RAG_SOURCE_2_ID:-source-2}"],
       "agents": ["planner", "architect", "coder", "domain-guard"],
       "queryPrefix": "Answer using the project's domain documentation."
     }

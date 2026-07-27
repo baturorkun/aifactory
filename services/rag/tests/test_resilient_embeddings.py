@@ -130,7 +130,7 @@ class ResilientEmbeddingTests(unittest.TestCase):
         connection = FakeConnection([{"chunk_index": 0, "text": "zero"}, {"chunk_index": 1, "text": "one"}])
         adapter = FakeEmbeddingAdapter()
 
-        _replace_chunks(connection, 10, "arinc", "ARINC 661/standard.pdf", chunks, adapter, batch_size=2, resume=True)  # type: ignore[arg-type]
+        _replace_chunks(connection, 10, "source-a", "standards/standard.pdf", chunks, adapter, batch_size=2, resume=True)  # type: ignore[arg-type]
 
         self.assertTrue(connection.selected)
         self.assertEqual(adapter.batches, [["two", "three"], ["four"]])

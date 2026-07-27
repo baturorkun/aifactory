@@ -19,7 +19,7 @@ Allow each AI Factory consumer project to configure its own remote RAG service a
 - Respect `timeoutMs`; when `failOpen` is true continue without RAG context and when false fail the run.
 - Do not send a request when grounding is disabled or explicit mode is not activated.
 - Never include endpoint credentials or sensitive headers in logs or run artifacts.
-- Configure `arinc661-studio` to query the `arinc` source through the centrally configured RAG URL.
+- Configure a consumer project to query its env-configured project source through the centrally configured RAG URL.
 - Support a central AI Factory `rag.grounding` configuration. Consumer projects shall inherit
   its connection settings and override only their project-specific grounding fields.
 
@@ -28,7 +28,7 @@ Allow each AI Factory consumer project to configure its own remote RAG service a
 - An ARINC661 Studio pipeline run queries RAG before the planner and records cited context.
 - An ARINC661 Studio handoff contains RAG grounding and its cited ARINC sources.
 - Only configured agent roles receive RAG context.
-- `sourceIds: ["arinc"]` prevents Rapita chunks from appearing in retrieval results.
+- A configured `sourceIds` filter prevents chunks from unrelated sources from appearing in retrieval results.
 - An unavailable endpoint continues without context in fail-open mode and stops in fail-closed mode.
 - Base projects without `rag.grounding.enabled` make no remote request.
 - Remote chat CLI prints the answer and cited sources.

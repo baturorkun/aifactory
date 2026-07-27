@@ -37,16 +37,23 @@
     },
     "sources": [
       {
-        "id": "rapita",
+        "id": "${RAG_SOURCE_1_ID:-source-1}",
         "type": "filesystem",
-        "rootPath": "${RAG_RAPITA_PATH:-./references/rapita}",
+        "rootPath": "${RAG_SOURCE_1_PATH:-./references/source-1}",
         "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
         "exclude": ["**/~$*", "**/.DS_Store"]
       },
       {
-        "id": "arinc",
+        "id": "${RAG_SOURCE_2_ID:-source-2}",
         "type": "filesystem",
-        "rootPath": "${RAG_ARINC_PATH:-./references/arinc}",
+        "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}",
+        "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
+        "exclude": ["**/~$*", "**/.DS_Store"]
+      },
+      {
+        "id": "${RAG_SOURCE_3_ID:-source-3}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}",
         "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
         "exclude": ["**/~$*", "**/.DS_Store"]
       }
