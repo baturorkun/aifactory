@@ -232,6 +232,14 @@ export const RunManifestSchema = z.object({
       ),
     })
     .optional(),
+  git: z
+    .object({
+      branch: z.string(),
+      baseBranch: z.string(),
+      sourceCommit: z.string(),
+      requirementSha256: z.string(),
+    })
+    .optional(),
   status: RunStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -248,12 +256,30 @@ export type RunManifest = z.infer<typeof RunManifestSchema>;
 // REQUIREMENT
 // ============================================================
 
+export const RequirementStatusSchema = z.enum(['draft', 'ready', 'completed']);
+export type RequirementStatus = z.infer<typeof RequirementStatusSchema>;
+
+export const RequirementExecutionModeSchema = z.enum(['handoff', 'pipeline']);
+export type RequirementExecutionMode = z.infer<typeof RequirementExecutionModeSchema>;
+
+export const RequirementLifecycleSchema = z.object({
+  status: RequirementStatusSchema,
+  executionMode: RequirementExecutionModeSchema,
+  createdByName: z.string().min(1),
+  createdByEmail: z.string().min(1),
+  createdAt: z.string().datetime(),
+  branch: z.string().min(1),
+  createdFromCommit: z.string().min(1),
+});
+export type RequirementLifecycle = z.infer<typeof RequirementLifecycleSchema>;
+
 export const RequirementSchema = z.object({
   id: z.string(),
   title: z.string(),
   description: z.string(),
   acceptanceCriteria: z.array(z.string()).default([]),
   nfr: z.array(z.string()).default([]),
+  lifecycle: RequirementLifecycleSchema.optional(),
   rawMarkdown: z.string(),
 });
 export type Requirement = z.infer<typeof RequirementSchema>;

@@ -8,22 +8,25 @@ API-less, requirement-driven, multi-agent code generation.
 # 1. Install dependencies
 pnpm install
 
-# 2. Write a requirement
-# → requirements/RQ-0001.md
+# 2. Reserve a draft requirement and switch to its branch
+pnpm factory -- requirement new "My feature" --mode handoff
 
-# 3. (Optional) Add constraints
+# 3. Complete the generated requirement, then submit it
+pnpm factory -- requirement submit RQ-0001
+
+# 4. (Optional) Add constraints
 # → constraints/RQ-0001.json
 
-# 4. Run the pipeline (dry-run uses mock model — no LLM needed)
+# 5. Run the pipeline directly (dry-run uses mock model — no LLM needed)
 pnpm factory -- run RQ-0001 --dry-run
 
-# 5. Check status
+# 6. Check status
 pnpm factory -- status
 
-# 6. See what was produced
+# 7. See what was produced
 pnpm factory -- artifacts <run-id>
 
-# 7. Approve when satisfied
+# 8. Approve when satisfied
 pnpm factory -- approve <run-id>
 ```
 
@@ -33,6 +36,10 @@ pnpm factory -- approve <run-id>
 
 | Command | Description |
 |---|---|
+| `factory requirement new <title> --mode handoff` | Reserve a draft on main, create its branch, and switch to it |
+| `factory requirement mode <req-id> <handoff\|pipeline>` | Change execution mode locally |
+| `factory requirement submit <req-id>` | Validate and submit through the configured mode |
+| `factory requirement decision <req-id>` | Print the CI execution decision |
 | `factory run <req-id>` | Start pipeline for a requirement |
 | `factory handoff <req-id>` | Create a uniquely versioned handoff package and queued run |
 | `factory handoff-begin <run-id>` | Mark handoff implementation as running |
@@ -122,7 +129,17 @@ Then in `factory.config.json`:
 ## Requirement Format — `requirements/<id>.md`
 
 ```markdown
-# My Feature Title
+---
+id: RQ-0001
+status: draft
+executionMode: handoff
+createdByName: "Developer"
+createdByEmail: "developer@example.com"
+createdAt: "2026-07-28T10:00:00.000Z"
+branch: "factory/RQ-0001"
+createdFromCommit: "abc123"
+---
+# RQ-0001 - My Feature Title
 
 Short description of what needs to be built.
 
@@ -136,6 +153,10 @@ Short description of what needs to be built.
 - Performance: response < 100ms
 - Language: TypeScript strict mode
 ```
+
+Metadata-free legacy requirements remain supported. Explicit lifecycle
+requirements must be `ready`; `run` accepts pipeline mode and `handoff` accepts
+handoff mode.
 
 ---
 

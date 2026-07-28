@@ -1,6 +1,10 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { resolve, join } from 'path';
-import type { Requirement } from '@aifactory/contracts';
+import {
+  RequirementLifecycleSchema,
+  type Requirement,
+  type RequirementLifecycle,
+} from '@aifactory/contracts';
 
 // ============================================================
 // PUBLIC API
@@ -25,7 +29,7 @@ export function parseRequirement(requirementId: string, requirementsDir: string)
 // FILE DISCOVERY
 // ============================================================
 
-function findRequirementFile(id: string, dir: string): string | undefined {
+export function findRequirementFile(id: string, dir: string): string | undefined {
   if (!existsSync(dir)) return undefined;
 
   // Exact match
@@ -48,8 +52,9 @@ function findRequirementFile(id: string, dir: string): string | undefined {
 // MARKDOWN PARSER
 // ============================================================
 
-function parseMarkdown(id: string, markdown: string): Requirement {
-  const lines = markdown.split('\n');
+export function parseRequirementMarkdown(id: string, markdown: string): Requirement {
+  const { body, metadata } = splitFrontmatter(markdown);
+  const lines = body.split('\n');
 
   // Title: first H1
   const titleLine = lines.find((l) => l.startsWith('# '));
@@ -77,7 +82,84 @@ function parseMarkdown(id: string, markdown: string): Requirement {
   ]);
   const nfr = extractBullets(sections[nfrKey] ?? '');
 
-  return { id, title, description, acceptanceCriteria, nfr, rawMarkdown: markdown };
+  return {
+    id,
+    title,
+    description,
+    acceptanceCriteria,
+    nfr,
+    lifecycle: parseLifecycle(id, metadata),
+    rawMarkdown: markdown,
+  };
+}
+
+function parseMarkdown(id: string, markdown: string): Requirement {
+  return parseRequirementMarkdown(id, markdown);
+}
+
+export function updateRequirementMetadata(
+  markdown: string,
+  updates: Partial<Pick<RequirementLifecycle, 'status' | 'executionMode'>>,
+): string {
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!match) {
+    throw new Error('Requirement lifecycle metadata is missing.');
+  }
+  const lines = match[1].split(/\r?\n/);
+  for (const [key, value] of Object.entries(updates)) {
+    const index = lines.findIndex((line) => line.startsWith(`${key}:`));
+    if (index < 0) throw new Error(`Requirement metadata field is missing: ${key}`);
+    lines[index] = `${key}: ${value}`;
+  }
+  return `---\n${lines.join('\n')}\n---\n${markdown.slice(match[0].length)}`;
+}
+
+function splitFrontmatter(markdown: string): {
+  body: string;
+  metadata?: Record<string, string>;
+} {
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!match) return { body: markdown };
+  const metadata: Record<string, string> = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const separator = line.indexOf(':');
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim();
+    const raw = line.slice(separator + 1).trim();
+    if (!key) continue;
+    if (raw.startsWith('"') && raw.endsWith('"')) {
+      try {
+        metadata[key] = JSON.parse(raw) as string;
+        continue;
+      } catch {
+        // Keep the literal value so validation can report a useful error below.
+      }
+    }
+    metadata[key] = raw;
+  }
+  return { body: markdown.slice(match[0].length), metadata };
+}
+
+function parseLifecycle(
+  requirementId: string,
+  metadata?: Record<string, string>,
+): RequirementLifecycle | undefined {
+  if (!metadata) return undefined;
+  const metadataId = metadata.id?.toUpperCase();
+  if (metadataId !== requirementId.toUpperCase()) {
+    throw new Error(
+      `Requirement metadata ID "${metadata.id ?? ''}" does not match "${requirementId}".`,
+    );
+  }
+  return RequirementLifecycleSchema.parse({
+    status: metadata.status,
+    executionMode: metadata.executionMode,
+    createdByName: metadata.createdByName ?? '',
+    createdByEmail: metadata.createdByEmail ?? '',
+    createdAt: metadata.createdAt ?? '',
+    branch: metadata.branch ?? '',
+    createdFromCommit: metadata.createdFromCommit ?? '',
+  });
 }
 
 function splitSections(lines: string[]): Record<string, string> {

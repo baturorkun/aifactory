@@ -99,6 +99,13 @@ const ProjectGuidelinesSchema = z.object({
   maxContextChars: z.number().int().positive().default(20_000),
 });
 
+const RequirementBranchesSchema = z.object({
+  enabled: z.boolean().default(false),
+  branchPrefix: z.string().min(1).default('factory/'),
+  baseBranch: z.string().min(1).default('main'),
+  remote: z.string().min(1).default('origin'),
+});
+
 const RagSourceSchema = z.object({
   id: z.string().min(1),
   type: z.literal('filesystem').default('filesystem'),
@@ -216,6 +223,7 @@ export const FactoryConfigSchema = z.object({
   domain: DomainConfigSchema.default({}),
   targetProject: TargetProjectSchema.default({}),
   projectGuidelines: ProjectGuidelinesSchema.default({}),
+  requirementBranches: RequirementBranchesSchema.default({}),
   rag: RagConfigSchema.default({}),
 });
 

@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  parseRequirementMarkdown,
+  updateRequirementMetadata,
+} from './parser';
+import { assertRequirementExecution } from '../requirement-lifecycle';
+
+test('legacy requirements remain supported without lifecycle metadata', () => {
+  const requirement = parseRequirementMarkdown(
+    'RQ-0001',
+    '# RQ-0001 - Legacy\n\nLegacy description.\n\n## Acceptance Criteria\n\n- It works.\n',
+  );
+  assert.equal(requirement.title, 'RQ-0001 - Legacy');
+  assert.equal(requirement.lifecycle, undefined);
+  assert.deepEqual(requirement.acceptanceCriteria, ['It works.']);
+});
+
+test('lifecycle frontmatter is parsed and can be updated without changing the body', () => {
+  const markdown = [
+    '---',
+    'id: RQ-0017',
+    'status: draft',
+    'executionMode: handoff',
+    'createdByName: "Batur"',
+    'createdByEmail: "batur@example.com"',
+    'createdAt: "2026-07-28T10:00:00.000Z"',
+    'branch: "factory/RQ-0017"',
+    'createdFromCommit: "abc123"',
+    '---',
+    '# RQ-0017 - Lifecycle',
+    '',
+    'Description.',
+    '',
+    '## Acceptance Criteria',
+    '',
+    '- It works.',
+    '',
+  ].join('\n');
+  const updated = updateRequirementMetadata(markdown, {
+    status: 'ready',
+    executionMode: 'pipeline',
+  });
+  const requirement = parseRequirementMarkdown('RQ-0017', updated);
+  assert.equal(requirement.lifecycle?.status, 'ready');
+  assert.equal(requirement.lifecycle?.executionMode, 'pipeline');
+  assert.equal(requirement.lifecycle?.createdByName, 'Batur');
+  assert.match(updated, /# RQ-0017 - Lifecycle/);
+});
+
+test('draft and execution-mode mismatches are rejected', () => {
+  const draft = parseRequirementMarkdown(
+    'RQ-0017',
+    [
+      '---',
+      'id: RQ-0017',
+      'status: draft',
+      'executionMode: handoff',
+      'createdByName: "Batur"',
+      'createdByEmail: "batur@example.com"',
+      'createdAt: "2026-07-28T10:00:00.000Z"',
+      'branch: "factory/RQ-0017"',
+      'createdFromCommit: "abc123"',
+      '---',
+      '# RQ-0017 - Lifecycle',
+      '',
+    ].join('\n'),
+  );
+  assert.throws(() => assertRequirementExecution(draft, 'handoff'), /is draft/);
+
+  const ready = {
+    ...draft,
+    lifecycle: { ...draft.lifecycle!, status: 'ready' as const },
+  };
+  assert.throws(() => assertRequirementExecution(ready, 'pipeline'), /uses handoff mode/);
+  assert.doesNotThrow(() => assertRequirementExecution(ready, 'handoff'));
+});

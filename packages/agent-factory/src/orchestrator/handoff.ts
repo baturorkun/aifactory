@@ -28,6 +28,7 @@ import {
   loadProjectGuidelines,
   recordProjectGuidelines,
 } from '../project-guidelines';
+import { assertRequirementExecution } from '../requirement-lifecycle';
 
 interface HandoffBaseline {
   targetRoot: string;
@@ -236,6 +237,7 @@ export async function createHandoffPackage(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const requirement = parseRequirement(requirementId, config.paths.requirements);
+  assertRequirementExecution(requirement, 'handoff');
   const constraints = loadConstraints(requirementId, config.paths.constraints);
   const projectGuidelines = loadProjectGuidelines(config);
   const handoffsDir = resolve(config.paths.handoffs);

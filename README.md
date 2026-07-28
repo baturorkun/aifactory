@@ -343,6 +343,29 @@ For native Ollama provider config, use `provider: ollama` in `factory.config.jso
 
 Run these from the target project directory.
 
+### Create and submit a requirement branch
+
+Start from a clean, current configured base branch:
+
+```bash
+pnpm factory -- requirement new "Feature title" --mode handoff
+```
+
+This reserves a metadata-rich draft on the base branch, pushes it, creates and
+pushes `factory/RQ-xxxx`, and switches the local worktree to that branch. Finish
+the generated description and acceptance criteria, optionally switch execution
+mode, and submit:
+
+```bash
+pnpm factory -- requirement mode RQ-0001 pipeline
+pnpm factory -- requirement submit RQ-0001
+```
+
+Handoff submit creates a local handoff package without committing or pushing.
+Pipeline submit commits only the requirement document and pushes its branch so
+GitLab CI can run the existing agent pipeline. Draft pushes never start code
+generation, and Merge Requests remain manual.
+
 ### Create a handoff package
 
 ```bash

@@ -21,6 +21,17 @@ import {
   uninstallRagService,
 } from './rag/systemd';
 import type { RunManifest } from '@aifactory/contracts';
+import {
+  changedRequirementIds,
+  syncRequirementBranch,
+} from './requirement-branches';
+import {
+  createDraftRequirement,
+  requirementExecutionDecision,
+  setRequirementMode,
+  submitRequirement,
+} from './requirement-lifecycle';
+import type { RequirementExecutionMode } from '@aifactory/contracts';
 
 const program = new Command();
 
@@ -28,6 +39,150 @@ program
   .name('factory')
   .description('AI Factory — requirement-driven, multi-agent code generation')
   .version('0.1.0');
+
+// ============================================================
+// factory requirement ...
+// ============================================================
+
+const requirement = program
+  .command('requirement')
+  .description('Manage draft requirement branches and submission');
+
+requirement
+  .command('new <title>')
+  .description('Reserve the next requirement ID on main and switch to its draft branch')
+  .option('--mode <mode>', 'Execution mode: handoff or pipeline', 'handoff')
+  .action((title: string, opts: { mode: string }) => {
+    try {
+      if (opts.mode !== 'handoff' && opts.mode !== 'pipeline') {
+        throw new Error('Invalid mode. Choose handoff or pipeline.');
+      }
+      const result = createDraftRequirement(
+        title,
+        opts.mode as RequirementExecutionMode,
+        loadConfig(),
+      );
+      console.log(chalk.green(`\n✓ Draft requirement created: ${chalk.bold(result.requirementId)}`));
+      console.log(chalk.dim(`  File   : ${result.requirementFile}`));
+      console.log(chalk.dim(`  Branch : ${result.branch}`));
+      console.log(chalk.dim(`  Mode   : ${result.mode}`));
+      console.log(chalk.dim(`\n  Submit : pnpm factory -- requirement submit ${result.requirementId}\n`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('mode <reqId> <mode>')
+  .description('Change a draft requirement execution mode without committing or pushing')
+  .action((reqId: string, mode: string) => {
+    try {
+      if (mode !== 'handoff' && mode !== 'pipeline') {
+        throw new Error('Invalid mode. Choose handoff or pipeline.');
+      }
+      const updated = setRequirementMode(
+        reqId,
+        mode as RequirementExecutionMode,
+        loadConfig(),
+      );
+      console.log(chalk.green(`✓ ${updated.id} mode changed to ${mode}.`));
+      console.log(chalk.dim('  The requirement file was updated locally; it was not committed or pushed.'));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('submit <reqId>')
+  .description('Mark a requirement ready and start its configured handoff or pipeline flow')
+  .action(async (reqId: string) => {
+    try {
+      const result = await submitRequirement(reqId, loadConfig(), {
+        createHandoff: createHandoffPackage,
+      });
+      console.log(chalk.green(`\n✓ Requirement submitted: ${chalk.bold(result.requirementId)}`));
+      console.log(chalk.dim(`  Mode   : ${result.mode}`));
+      console.log(chalk.dim(`  Push   : ${result.pushed ? 'completed' : 'not performed'}`));
+      if (result.runId) {
+        console.log(chalk.dim(`  Handoff: ${result.runId}`));
+        console.log(chalk.dim(`  Apply  : ask Codex to apply handoff ${result.runId}`));
+      }
+      console.log();
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('decision <reqId>')
+  .description('Print the CI execution decision: run, draft, handoff, or legacy')
+  .action((reqId: string) => {
+    try {
+      console.log(requirementExecutionDecision(reqId, loadConfig()));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+// ============================================================
+// factory changed-requirements / sync-requirement
+// ============================================================
+
+program
+  .command('changed-requirements')
+  .description('List requirement IDs changed between two Git refs')
+  .requiredOption('--base <ref>', 'Base Git ref or commit')
+  .option('--head <ref>', 'Head Git ref or commit', 'HEAD')
+  .action((opts: { base: string; head: string }) => {
+    try {
+      const config = loadConfig();
+      changedRequirementIds(
+        resolve(config.targetProject.root ?? '.'),
+        opts.base,
+        opts.head,
+      ).forEach((id) => console.log(id));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('sync-requirement <reqId>')
+  .description('Create or update a requirement branch, run AI Factory, commit, and optionally push')
+  .option('--source-ref <ref>', 'Commit containing the requirement update; defaults to configured remote/base branch')
+  .option('--push', 'Push the synchronized branch to the configured remote', false)
+  .option('--fast', 'Skip tester/reviewer/domain-guard agents', false)
+  .action(async (reqId: string, opts: { sourceRef?: string; push: boolean; fast: boolean }) => {
+    try {
+      const config = loadConfig();
+      const decision = requirementExecutionDecision(reqId, config);
+      if (decision === 'draft' || decision === 'handoff') {
+        console.log(chalk.dim(`${reqId.toUpperCase()} skipped: ${decision}.`));
+        return;
+      }
+      const result = await syncRequirementBranch(reqId, config, {
+        sourceRef: opts.sourceRef,
+        push: opts.push,
+        fast: opts.fast,
+      });
+      if (!result.changed) {
+        console.log(chalk.dim(`${result.requirementId} is unchanged on ${result.branch}.`));
+        return;
+      }
+      console.log(chalk.green(`✓ ${result.requirementId} synchronized on ${result.branch}`));
+      if (result.runId) console.log(chalk.dim(`  Run: ${result.runId}`));
+      console.log(chalk.dim(`  Push: ${result.pushed ? 'completed' : 'not requested'}`));
+      console.log(chalk.dim('  Merge request: manual'));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
 
 // ============================================================
 // factory run <req-id>
@@ -515,6 +670,12 @@ program
           lint: 'pnpm lint',
           test: 'pnpm test',
         },
+      },
+      requirementBranches: {
+        enabled: true,
+        branchPrefix: 'factory/',
+        baseBranch: 'main',
+        remote: 'origin',
       },
       domain: { rules: [] },
       rag: {

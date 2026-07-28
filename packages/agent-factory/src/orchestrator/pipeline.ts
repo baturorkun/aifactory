@@ -61,6 +61,7 @@ import {
   withProjectGuidelines,
   type ProjectGuidelinesContext,
 } from '../project-guidelines';
+import { assertRequirementExecution } from '../requirement-lifecycle';
 
 // ============================================================
 // HELPERS
@@ -190,6 +191,7 @@ export async function runPipeline(
 ): Promise<string> {
   // -- Inputs
   const requirement = parseRequirement(requirementId, config.paths.requirements);
+  assertRequirementExecution(requirement, 'pipeline');
   const constraints = loadConstraints(requirementId, config.paths.constraints);
   const projectGuidelines = loadProjectGuidelines(config);
 
