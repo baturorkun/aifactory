@@ -6,12 +6,14 @@ export interface GeminiConfig {
   apiKey?: string;
   apiKeyEnv?: string;
   timeoutMs?: number;
+  maxTokens?: number;
   temperature?: number;
 }
 
 interface GeminiResponse {
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
   }>;
   usageMetadata?: {
     promptTokenCount?: number;
@@ -54,13 +56,21 @@ export class GeminiAdapter implements ModelAdapter {
       ],
       generationConfig: {
         temperature: req.temperature ?? this.config.temperature ?? 0.2,
-        maxOutputTokens: req.maxTokens ?? 8192,
+        maxOutputTokens: req.maxTokens ?? this.config.maxTokens ?? 8192,
+        responseMimeType: 'application/json',
       },
     };
 
     const response = await this.fetchWithRetry(url, body);
     const data = (await response.json()) as GeminiResponse;
-    const content = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+    const candidate = data.candidates?.[0];
+    const content = candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+    if (candidate?.finishReason === 'MAX_TOKENS') {
+      throw new Error(
+        `Gemini output was truncated at ${data.usageMetadata?.candidatesTokenCount ?? 'unknown'} tokens. ` +
+          `Increase model.maxTokens or reduce the requested artifact size.`,
+      );
+    }
 
     return {
       content,

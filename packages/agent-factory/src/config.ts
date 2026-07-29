@@ -12,6 +12,7 @@ const OllamaModelSchema = z.object({
   reviewerName: z.string().optional(),
   baseUrl: z.string().optional(),
   timeoutMs: z.number().optional(),
+  maxTokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
 
@@ -22,6 +23,7 @@ const OpenAICompatModelSchema = z.object({
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
   timeoutMs: z.number().optional(),
+  maxTokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
 
@@ -33,6 +35,7 @@ const GeminiModelSchema = z.object({
   apiKey: z.string().optional(),
   apiKeyEnv: z.string().default('GEMINI_API_KEY'),
   timeoutMs: z.number().optional(),
+  maxTokens: z.number().int().positive().optional(),
   temperature: z.number().min(0).max(2).optional(),
 });
 

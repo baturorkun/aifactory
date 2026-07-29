@@ -21,6 +21,7 @@ export function createModelAdapter(config: ModelConfig): ModelAdapter {
         model: config.name,
         baseUrl: config.baseUrl,
         timeoutMs: config.timeoutMs,
+        maxTokens: config.maxTokens,
         temperature: config.temperature,
       });
     case 'openai-compat':
@@ -29,6 +30,7 @@ export function createModelAdapter(config: ModelConfig): ModelAdapter {
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         timeoutMs: config.timeoutMs,
+        maxTokens: config.maxTokens,
       });
     case 'gemini':
       return new GeminiAdapter({
@@ -37,6 +39,7 @@ export function createModelAdapter(config: ModelConfig): ModelAdapter {
         apiKey: config.apiKey,
         apiKeyEnv: config.apiKeyEnv,
         timeoutMs: config.timeoutMs,
+        maxTokens: config.maxTokens,
         temperature: config.temperature,
       });
   }
@@ -52,6 +55,7 @@ export function createReviewerAdapter(config: ModelConfig): ModelAdapter {
       model: reviewerName,
       baseUrl: config.baseUrl,
       timeoutMs: config.timeoutMs,
+      maxTokens: config.maxTokens,
       temperature: config.temperature,
     });
   }
@@ -63,6 +67,7 @@ export function createReviewerAdapter(config: ModelConfig): ModelAdapter {
       apiKey: config.apiKey,
       apiKeyEnv: config.apiKeyEnv,
       timeoutMs: config.timeoutMs,
+      maxTokens: config.maxTokens,
       temperature: config.temperature,
     });
   }
@@ -73,5 +78,6 @@ export function createReviewerAdapter(config: ModelConfig): ModelAdapter {
     baseUrl: config.baseUrl,
     apiKey: config.apiKey,
     timeoutMs: config.timeoutMs,
+    maxTokens: config.maxTokens,
   });
 }

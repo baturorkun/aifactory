@@ -15,12 +15,28 @@ test('new projects enable the draft requirement branch workflow', () => {
     const config = JSON.parse(
       readFileSync(join(result.projectRoot, 'factory.config.json'), 'utf8'),
     ) as {
+      model: {
+        provider: string;
+        name: string;
+        reviewerName: string;
+        baseUrl: string;
+        apiKey: string;
+        maxTokens: number;
+      };
       requirementBranches: {
         enabled: boolean;
         branchPrefix: string;
         baseBranch: string;
       };
     };
+    assert.deepEqual(config.model, {
+      provider: '${AI_PROVIDER}',
+      name: '${AI_MODEL}',
+      reviewerName: '${AI_REVIEWER_MODEL}',
+      baseUrl: '${AI_BASE_URL}',
+      apiKey: '${AI_API_KEY}',
+      maxTokens: 32768,
+    });
     const ci = readFileSync(join(result.projectRoot, '.gitlab-ci.yml'), 'utf8');
     assert.deepEqual(config.requirementBranches, {
       enabled: true,

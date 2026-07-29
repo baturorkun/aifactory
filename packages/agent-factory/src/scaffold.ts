@@ -61,12 +61,12 @@ function writeCommonFiles(projectRoot: string, projectName: string, factoryScrip
   writeFileSync(
     resolve(projectRoot, '.env.example'),
     [
-      '# Optional real provider settings. factory.config.json starts with mock by default.',
-      '# AI_PROVIDER=gemini',
-      '# AI_MODEL=gemini-2.5-flash',
-      '# AI_REVIEWER_MODEL=gemini-2.5-flash',
-      '# AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta',
-      '# AI_API_KEY=replace_me',
+      '# Required model settings. Copy this file to .env and provide real values.',
+      'AI_PROVIDER=gemini',
+      'AI_MODEL=gemini-2.5-flash',
+      'AI_REVIEWER_MODEL=gemini-2.5-flash',
+      'AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta',
+      'AI_API_KEY=replace_me',
       '',
       '# xAI / Grok via OpenAI-compatible endpoint example:',
       '# AI_PROVIDER=openai-compat',
@@ -239,11 +239,12 @@ function writeFactoryConfig(
 ): void {
   writeJson(resolve(projectRoot, 'factory.config.json'), {
     model: {
-      provider: '${AI_PROVIDER:-mock}',
-      name: '${AI_MODEL:-mock}',
-      reviewerName: '${AI_REVIEWER_MODEL:-mock}',
-      baseUrl: '${AI_BASE_URL:-}',
-      apiKey: '${AI_API_KEY:-}',
+      provider: '${AI_PROVIDER}',
+      name: '${AI_MODEL}',
+      reviewerName: '${AI_REVIEWER_MODEL}',
+      baseUrl: '${AI_BASE_URL}',
+      apiKey: '${AI_API_KEY}',
+      maxTokens: 32768,
     },
     pipeline: {
       maxRetries: 3,

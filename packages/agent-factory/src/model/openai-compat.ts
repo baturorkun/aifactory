@@ -5,6 +5,7 @@ export interface OpenAICompatConfig {
   baseUrl?: string; // e.g. http://localhost:8080 for LM Studio / vLLM
   apiKey?: string;
   timeoutMs?: number;
+  maxTokens?: number;
 }
 
 interface OpenAIChatResponse {
@@ -35,7 +36,7 @@ export class OpenAICompatAdapter implements ModelAdapter {
         { role: 'user', content: req.userPrompt },
       ],
       temperature: req.temperature ?? 0.2,
-      max_tokens: req.maxTokens ?? 8192,
+      max_tokens: req.maxTokens ?? this.config.maxTokens ?? 8192,
     };
 
     let response: Response;

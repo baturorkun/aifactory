@@ -4,6 +4,7 @@ export interface OllamaConfig {
   model: string;
   baseUrl?: string;
   timeoutMs?: number;
+  maxTokens?: number;
   temperature?: number;
 }
 
@@ -36,7 +37,7 @@ export class OllamaAdapter implements ModelAdapter {
       stream: false,
       options: {
         temperature: req.temperature ?? this.config.temperature ?? 0.2,
-        num_predict: req.maxTokens ?? 8192,
+        num_predict: req.maxTokens ?? this.config.maxTokens ?? 8192,
       },
     };
 

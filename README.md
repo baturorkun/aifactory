@@ -227,24 +227,23 @@ The Python template uses Python standard library commands by default.
 
 Each target project has a `factory.config.json`.
 
-New projects are generated with model settings that read from `.env` if it exists, and fall back to mock if it does not:
+New projects are generated with required model settings. Define every value in
+the target project's `.env` file or its CI/CD environment:
 
 ```json
 {
   "model": {
-    "provider": "${AI_PROVIDER:-mock}",
-    "name": "${AI_MODEL:-mock}",
-    "reviewerName": "${AI_REVIEWER_MODEL:-mock}",
-    "baseUrl": "${AI_BASE_URL:-}",
-    "apiKey": "${AI_API_KEY:-}"
+    "provider": "${AI_PROVIDER}",
+    "name": "${AI_MODEL}",
+    "reviewerName": "${AI_REVIEWER_MODEL}",
+    "baseUrl": "${AI_BASE_URL}",
+    "apiKey": "${AI_API_KEY}"
   }
 }
 ```
 
-This means:
-
-- no `.env`: runs use the mock provider,
-- `.env` with Gemini/xAI/Ollama-compatible settings: runs use the configured provider.
+There is no implicit model provider. Missing values stop the run with an
+environment-variable error instead of silently selecting the mock provider.
 
 Generated projects also define standard workspace paths:
 
@@ -291,7 +290,7 @@ Mock is useful for checking that the pipeline and config work, but it does not p
 pnpm factory run RQ-0001-example
 ```
 
-With no `.env`, this runs against mock.
+The command requires model settings from `.env` or the CI/CD environment.
 
 ### Gemini Example
 
@@ -409,8 +408,8 @@ pnpm factory run RQ-0001-example
 
 Uses the configured provider.
 
-- If `.env` is missing, provider falls back to mock.
-- If `.env` configures Gemini/xAI/etc., it calls that API.
+- If a required model variable is missing, the run stops with a configuration error.
+- If `.env` or CI/CD configures Gemini/xAI/etc., it calls that API.
 
 ### Run cost-controlled mode
 
