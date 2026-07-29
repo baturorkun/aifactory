@@ -37,6 +37,8 @@ stable `factory/RQ-xxxx` branch.
   for a lifecycle execution-mode mismatch.
 - Have GitLab CI skip draft and handoff branches and run AI Factory only for
   ready pipeline requirements.
+- Refresh a reused runner-side AI Factory checkout from `origin/main` and
+  detach it at the fetched commit before installing or executing the CLI.
 - Store the successful requirement fingerprint in
   `.aifactory/requirements/RQ-xxxx.json` and skip unchanged reruns.
 - Keep Merge Request creation and merge manual.
