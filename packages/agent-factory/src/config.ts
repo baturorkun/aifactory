@@ -329,7 +329,7 @@ export function loadConfig(cwd: string = process.cwd()): FactoryConfig {
     }
   }
 
-  const expanded = expandEnvVars(raw);
+  const expanded = expandEnvVars(projectRuntimeConfig(raw));
   const result = FactoryConfigSchema.safeParse(expanded);
   if (!result.success) {
     const issues = result.error.issues
@@ -339,6 +339,20 @@ export function loadConfig(cwd: string = process.cwd()): FactoryConfig {
   }
 
   return result.data;
+}
+
+/**
+ * TypeScript requirement and pipeline commands only consume the remote
+ * grounding client settings. RAG service infrastructure is loaded and
+ * validated by the Python RAG CLI when a `factory rag ...` command runs.
+ */
+function projectRuntimeConfig(raw: unknown): unknown {
+  if (!isRecord(raw) || !isRecord(raw.rag)) return raw;
+  const grounding = raw.rag.grounding;
+  return {
+    ...raw,
+    rag: grounding === undefined ? {} : { grounding },
+  };
 }
 
 function mergeGlobalGrounding(globalRaw: unknown, projectRaw: unknown): unknown {

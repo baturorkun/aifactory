@@ -80,6 +80,78 @@ test('project grounding inherits shared connection settings from AI Factory', ()
   }
 });
 
+test('regular project config loading ignores RAG service-only environment variables', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-rag-lazy-'));
+  const missingVariable = 'RAG_TEST_SOURCE_PATH_MUST_BE_LAZY';
+  const previousValue = process.env[missingVariable];
+  try {
+    delete process.env[missingVariable];
+    writeFileSync(
+      join(root, 'factory.config.json'),
+      JSON.stringify({
+        model: { provider: 'mock', name: 'mock' },
+        rag: {
+          database: { connectionString: '${RAG_TEST_DATABASE_URL_MUST_BE_LAZY}' },
+          sources: [
+            {
+              id: 'source-a',
+              type: 'filesystem',
+              rootPath: `\${${missingVariable}}`,
+            },
+          ],
+          embedding: {
+            provider: 'gemini',
+            model: 'gemini-embedding-001',
+            apiKey: '${RAG_TEST_API_KEY_MUST_BE_LAZY}',
+          },
+          grounding: {
+            enabled: true,
+            chatUrl: 'http://rag.example/query',
+            sourceIds: ['source-a'],
+          },
+        },
+      }),
+    );
+
+    const projectConfig = loadConfig(root);
+
+    assert.equal(projectConfig.rag.grounding.enabled, true);
+    assert.deepEqual(projectConfig.rag.grounding.sourceIds, ['source-a']);
+    assert.deepEqual(projectConfig.rag.sources, []);
+  } finally {
+    if (previousValue === undefined) delete process.env[missingVariable];
+    else process.env[missingVariable] = previousValue;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('regular project config loading still validates grounding environment variables', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-grounding-required-'));
+  const variable = 'RAG_TEST_GROUNDING_URL_MUST_EXIST';
+  const previousValue = process.env[variable];
+  try {
+    delete process.env[variable];
+    writeFileSync(
+      join(root, 'factory.config.json'),
+      JSON.stringify({
+        model: { provider: 'mock', name: 'mock' },
+        rag: {
+          grounding: {
+            enabled: true,
+            chatUrl: `\${${variable}}`,
+          },
+        },
+      }),
+    );
+
+    assert.throws(() => loadConfig(root), new RegExp(`Environment variable not set: ${variable}`));
+  } finally {
+    if (previousValue === undefined) delete process.env[variable];
+    else process.env[variable] = previousValue;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('remote query sends the project source filter and parses citations', async () => {
   let requestBody: unknown;
   const fetchImpl: typeof fetch = async (_input, init) => {

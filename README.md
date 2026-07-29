@@ -227,6 +227,11 @@ The Python template uses Python standard library commands by default.
 
 Each target project has a `factory.config.json`.
 
+Requirement and pipeline commands validate only the RAG `grounding` client
+settings they use. RAG database, source, embedding, LLM, authentication, and
+API-service settings are expanded and validated only by `factory rag ...`
+commands.
+
 New projects are generated with required model settings. Define every value in
 the target project's `.env` file or its CI/CD environment:
 
