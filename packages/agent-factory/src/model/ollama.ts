@@ -11,6 +11,7 @@ export interface OllamaConfig {
 interface OllamaChatResponse {
   message: { content: string };
   model: string;
+  done_reason?: string;
   prompt_eval_count?: number;
   eval_count?: number;
 }
@@ -65,6 +66,7 @@ export class OllamaAdapter implements ModelAdapter {
     return {
       content: data.message.content,
       model: data.model,
+      finishReason: data.done_reason,
       usage: {
         promptTokens: data.prompt_eval_count ?? 0,
         completionTokens: data.eval_count ?? 0,

@@ -1,6 +1,8 @@
 import { createHash } from 'crypto';
+import { writeFileSync } from 'fs';
+import { join } from 'path';
 import type { AgentRole, AgentStepRecord } from '@aifactory/contracts';
-import type { ModelAdapter } from '../model/adapter';
+import type { ModelAdapter, ModelResponse } from '../model/adapter';
 import { extractJSON as defaultExtractJSON } from '../utils/json';
 import { addStep, updateStep, writeStepOutput } from './manifest';
 
@@ -79,8 +81,22 @@ export async function runAgent(config: AgentRunConfig): Promise<AgentRunResult> 
       await new Promise((r) => setTimeout(r, 1_000 * Math.pow(2, attempt - 1)));
     }
 
+    let response: ModelResponse | undefined;
     try {
-      const response = await model.call({ systemPrompt, userPrompt });
+      const attemptPrompt =
+        attempt === 0
+          ? userPrompt
+          : `${userPrompt}\n\n` +
+            `RETRY REQUIREMENT: The previous response was not a complete, valid JSON value. ` +
+            `Return JSON only, keep patches minimal, escape file content correctly, and finish the complete JSON document. ` +
+            `Previous error: ${(lastError?.message ?? 'unknown').slice(0, 800)}`;
+      response = await model.call({ systemPrompt, userPrompt: attemptPrompt });
+      if (response.finishReason === 'MAX_TOKENS' || response.finishReason === 'length') {
+        throw new Error(
+          `Model output was truncated after ${response.usage.completionTokens || 'an unknown number of'} tokens. ` +
+            `Increase model.maxTokens or reduce the requested artifact size.`,
+        );
+      }
       const raw = extractJSON(response.content);
       const validated = validate(raw);
 
@@ -103,7 +119,24 @@ export async function runAgent(config: AgentRunConfig): Promise<AgentRunResult> 
         retries: attempt,
       };
     } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
+      const originalError = err instanceof Error ? err : new Error(String(err));
+      if (response) {
+        const rawBase = (
+          outputFileName ?? `${agent}${taskId ? `-${taskId}` : ''}-output.json`
+        ).replace(/\.json$/i, '');
+        writeFileSync(
+          join(runDir, 'steps', `${rawBase}-attempt-${attempt + 1}.raw.txt`),
+          response.content,
+          'utf8',
+        );
+        lastError = new Error(
+          `${originalError.message}\n` +
+            `Model finish reason: ${response.finishReason ?? 'not reported'}\n` +
+            `Response length: ${response.content.length} characters`,
+        );
+      } else {
+        lastError = originalError;
+      }
       if (attempt === maxRetries) break;
     }
   }

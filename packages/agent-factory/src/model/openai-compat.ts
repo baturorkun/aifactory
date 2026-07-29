@@ -9,7 +9,7 @@ export interface OpenAICompatConfig {
 }
 
 interface OpenAIChatResponse {
-  choices: Array<{ message: { content: string } }>;
+  choices: Array<{ message: { content: string }; finish_reason?: string }>;
   model: string;
   usage?: { prompt_tokens: number; completion_tokens: number };
 }
@@ -62,10 +62,12 @@ export class OpenAICompatAdapter implements ModelAdapter {
     }
 
     const data = (await response.json()) as OpenAIChatResponse;
-    const content = data.choices[0]?.message.content ?? '';
+    const choice = data.choices[0];
+    const content = choice?.message.content ?? '';
     return {
       content,
       model: data.model,
+      finishReason: choice?.finish_reason,
       usage: {
         promptTokens: data.usage?.prompt_tokens ?? 0,
         completionTokens: data.usage?.completion_tokens ?? 0,

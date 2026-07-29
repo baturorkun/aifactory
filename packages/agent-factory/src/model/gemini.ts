@@ -44,6 +44,7 @@ export class GeminiAdapter implements ModelAdapter {
   async call(req: ModelRequest): Promise<ModelResponse> {
     const model = encodeURIComponent(this.config.model);
     const url = `${this.baseUrl}/models/${model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+    const isGemini3 = /^gemini-3(?:[.-]|$)/i.test(this.config.model);
     const body = {
       systemInstruction: {
         parts: [{ text: req.systemPrompt }],
@@ -55,7 +56,9 @@ export class GeminiAdapter implements ModelAdapter {
         },
       ],
       generationConfig: {
-        temperature: req.temperature ?? this.config.temperature ?? 0.2,
+        ...(!isGemini3
+          ? { temperature: req.temperature ?? this.config.temperature ?? 0.2 }
+          : {}),
         maxOutputTokens: req.maxTokens ?? this.config.maxTokens ?? 8192,
         responseMimeType: 'application/json',
       },
@@ -65,16 +68,11 @@ export class GeminiAdapter implements ModelAdapter {
     const data = (await response.json()) as GeminiResponse;
     const candidate = data.candidates?.[0];
     const content = candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
-    if (candidate?.finishReason === 'MAX_TOKENS') {
-      throw new Error(
-        `Gemini output was truncated at ${data.usageMetadata?.candidatesTokenCount ?? 'unknown'} tokens. ` +
-          `Increase model.maxTokens or reduce the requested artifact size.`,
-      );
-    }
 
     return {
       content,
       model: this.config.model,
+      finishReason: candidate?.finishReason,
       usage: {
         promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
         completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,

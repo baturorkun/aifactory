@@ -14,6 +14,7 @@ export interface ModelResponse {
   content: string;
   model: string;
   usage: ModelUsage;
+  finishReason?: string;
 }
 
 export interface ModelAdapter {
