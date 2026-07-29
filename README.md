@@ -352,9 +352,10 @@ pnpm factory -- requirement new "Feature title" --mode handoff
 ```
 
 This reserves a metadata-rich draft on the base branch, pushes it, creates and
-pushes `factory/RQ-xxxx`, and switches the local worktree to that branch. Finish
-the generated description and acceptance criteria, optionally switch execution
-mode, and submit:
+pushes `factory/RQ-xxxx`, and switches the local worktree to that branch. The
+reservation commit uses `[skip ci]`, so the base-branch reservation and initial
+draft-branch push do not create pipelines. Finish the generated description and
+acceptance criteria, optionally switch execution mode, and submit:
 
 ```bash
 pnpm factory -- requirement mode RQ-0001 pipeline

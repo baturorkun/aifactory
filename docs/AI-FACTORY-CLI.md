@@ -36,7 +36,7 @@ pnpm factory -- approve <run-id>
 
 | Command | Description |
 |---|---|
-| `factory requirement new <title> --mode handoff` | Reserve a draft on main, create its branch, and switch to it |
+| `factory requirement new <title> --mode handoff` | Reserve a `[skip ci]` draft on main, create its branch, and switch to it |
 | `factory requirement mode <req-id> <handoff\|pipeline>` | Change execution mode locally |
 | `factory requirement submit <req-id>` | Validate and submit through the configured mode |
 | `factory requirement decision <req-id>` | Print the CI execution decision |

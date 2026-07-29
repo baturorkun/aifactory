@@ -14,6 +14,8 @@ stable `factory/RQ-xxxx` branch.
   execution mode, creator Git name/email, creation time, branch, and source
   commit metadata.
 - Commit and push the draft reservation to the configured default branch.
+- Mark the reservation commit with `[skip ci]` so neither its default-branch
+  push nor its initial requirement-branch push creates a pipeline.
 - Fork and push `factory/RQ-xxxx` from that exact commit, then switch the
   developer worktree to it.
 - Add `factory requirement mode <id> <mode>` without automatically committing
@@ -22,6 +24,9 @@ stable `factory/RQ-xxxx` branch.
 - Reject submit when the requirement lacks a substantive description or at
   least one acceptance criterion.
 - Prevent a requirement branch from modifying another requirement document.
+- Accept GitLab Runner detached-HEAD checkouts only when `GITLAB_CI`,
+  `CI_COMMIT_BRANCH`, and `CI_COMMIT_SHA` identify the expected branch and the
+  checked-out `HEAD` exactly matches that CI commit.
 - In handoff mode, mark the requirement ready locally and create the existing
   handoff package without committing or pushing.
 - In pipeline mode, mark the requirement ready, commit only its requirement

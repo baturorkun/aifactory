@@ -82,6 +82,23 @@ function currentBranch(root: string): string {
   return git(root, ['branch', '--show-current']);
 }
 
+function effectiveBranch(root: string): string {
+  const localBranch = currentBranch(root);
+  if (localBranch) return localBranch;
+
+  const ciBranch = process.env.CI_COMMIT_BRANCH;
+  const ciCommit = process.env.CI_COMMIT_SHA;
+  if (
+    process.env.GITLAB_CI === 'true' &&
+    ciBranch &&
+    ciCommit &&
+    git(root, ['rev-parse', 'HEAD']) === ciCommit
+  ) {
+    return ciBranch;
+  }
+  return '';
+}
+
 function parsePorcelainPath(line: string): string {
   const value = (
     line.match(/^[ MADRCU?!]{2}\s+(.*)$/)?.[1] ??
@@ -106,7 +123,7 @@ function assertActiveRequirementBranch(
   const id = assertRequirementId(requirementId);
   const root = projectRoot(config);
   const branch = requirementBranchName(id, config.requirementBranches.branchPrefix);
-  if (currentBranch(root) !== branch) {
+  if (effectiveBranch(root) !== branch) {
     throw new Error(`Requirement ${id} must be managed from branch ${branch}.`);
   }
   const requirementPath = findRequirementFile(id, resolve(config.paths.requirements));
@@ -143,7 +160,7 @@ function assertRequirementIsolation(
   );
   if (foreignFiles.length > 0) {
     throw new Error(
-      `Branch ${currentBranch(root)} may not modify other requirements: ${foreignFiles.join(', ')}`,
+      `Branch ${effectiveBranch(root)} may not modify other requirements: ${foreignFiles.join(', ')}`,
     );
   }
 }
@@ -278,7 +295,11 @@ export function createDraftRequirement(
     );
     const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
     git(root, ['add', requirementFile]);
-    git(root, ['commit', '-m', `requirement(${requirementId}): reserve draft`]);
+    git(root, [
+      'commit',
+      '-m',
+      `requirement(${requirementId}): reserve draft [skip ci]`,
+    ]);
     const push = spawnSync(
       'git',
       ['push', remote, `HEAD:${baseBranch}`],

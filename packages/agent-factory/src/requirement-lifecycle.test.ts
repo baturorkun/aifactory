@@ -105,6 +105,7 @@ test('new requirement reserves a draft on main and switches to its branch', () =
     assert.equal(result.requirementId, 'RQ-0002');
     assert.equal(result.branch, 'factory/RQ-0002');
     assert.equal(git(repo.root, 'branch', '--show-current'), result.branch);
+    assert.match(git(repo.root, 'log', '-1', '--format=%s'), /\[skip ci\]$/);
 
     const mainCopy = git(
       repo.root,
@@ -149,6 +150,28 @@ test('pipeline submit marks ready, commits only the requirement, and pushes the 
     assert.match(remoteCopy, /status: ready/);
     assert.match(remoteCopy, /executionMode: pipeline/);
     assert.equal(git(repo.root, 'status', '--porcelain'), '');
+
+    const commit = git(repo.root, 'rev-parse', 'HEAD');
+    git(repo.root, 'switch', '--detach', commit);
+    const previousGitlabCi = process.env.GITLAB_CI;
+    const previousCiBranch = process.env.CI_COMMIT_BRANCH;
+    const previousCiCommit = process.env.CI_COMMIT_SHA;
+    process.env.GITLAB_CI = 'true';
+    process.env.CI_COMMIT_BRANCH = created.branch;
+    process.env.CI_COMMIT_SHA = commit;
+    try {
+      assert.equal(
+        requirementExecutionDecision(created.requirementId, repo.config),
+        'run',
+      );
+    } finally {
+      if (previousGitlabCi === undefined) delete process.env.GITLAB_CI;
+      else process.env.GITLAB_CI = previousGitlabCi;
+      if (previousCiBranch === undefined) delete process.env.CI_COMMIT_BRANCH;
+      else process.env.CI_COMMIT_BRANCH = previousCiBranch;
+      if (previousCiCommit === undefined) delete process.env.CI_COMMIT_SHA;
+      else process.env.CI_COMMIT_SHA = previousCiCommit;
+    }
   } finally {
     repo.cleanup();
   }
@@ -197,4 +220,3 @@ test('submit rejects changes to another requirement', async () => {
     repo.cleanup();
   }
 });
-
