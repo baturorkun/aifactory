@@ -31,6 +31,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /ai_factory_requirement_branch:/);
     assert.match(ci, /git -C \.\.\/aifactory fetch origin main/);
     assert.match(ci, /git -C \.\.\/aifactory switch --detach FETCH_HEAD/);
+    assert.match(ci, /- factory\.config\.json/);
     assert.match(ci, /requirement decision/);
     assert.match(ci, /sync-requirement/);
     assert.match(ci, /RQ-\[0-9\]\+/);

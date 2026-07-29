@@ -166,6 +166,7 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '      changes:',
       '        - requirements/**/*.md',
       '        - requirements/**/*.markdown',
+      '        - factory.config.json',
       '      when: on_success',
       '    - when: never',
       '  before_script:',
