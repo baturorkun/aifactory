@@ -32,7 +32,7 @@ import {
 } from '../prompts/builders';
 import { parseRequirement } from '../requirements/parser';
 import { extractJSON } from '../utils/json';
-import { CODE_PATCH_RESPONSE_SCHEMA } from '../model/response-schemas';
+import { buildCodePatchResponseSchema } from '../model/response-schemas';
 import {
   applyArtifactToTarget,
   resolveTargetRoot,
@@ -164,6 +164,15 @@ function makeCodeValidator(task: Task, target: TargetProjectConfig) {
     });
     return { ...parsed, patches };
   };
+}
+
+function coderResponseSchema(task: Task): Record<string, unknown> {
+  const targetFiles = task.targetFiles;
+  const exactTargetFiles =
+    targetFiles?.length && targetFiles.every((targetPath) => extname(targetPath))
+      ? targetFiles
+      : undefined;
+  return buildCodePatchResponseSchema(exactTargetFiles);
 }
 
 // ============================================================
@@ -443,7 +452,7 @@ async function runTaskPipeline(
       ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
-      responseSchema: CODE_PATCH_RESPONSE_SCHEMA,
+      responseSchema: coderResponseSchema(task),
       validate: makeCodeValidator(task, config.targetProject),
       extractJSON,
       outputFileName: `coder-${task.id}-iter${iter}.json`,

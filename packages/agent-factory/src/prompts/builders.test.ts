@@ -54,6 +54,8 @@ test('coder receives existing target content and allowed paths', () => {
   assert.match(prompt, /function formatBuildDate\(\) \{\}/);
   assert.match(prompt, /package\.json/);
   assert.match(prompt, /mode "replace"/);
+  assert.match(prompt, /### Task Artifact Paths/);
+  assert.match(prompt, /Do not create tests or any other file outside this task scope/);
 });
 
 test('replace-mode file patches require exact find text', () => {

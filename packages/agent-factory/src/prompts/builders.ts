@@ -121,6 +121,16 @@ export function buildCoderPrompt(
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
   ];
 
+  if (task.targetFiles?.length) {
+    parts.push(
+      '',
+      '### Task Artifact Paths',
+      ...task.targetFiles.map((path) => `- ${path}`),
+      '',
+      'Every patch path must be one of the files above, or be inside a directory above. Do not create tests or any other file outside this task scope.',
+    );
+  }
+
   if (Object.keys(constraints).length > 0) {
     parts.push('', '### Project Constraints', '```json', JSON.stringify(constraints, null, 2), '```');
   }
