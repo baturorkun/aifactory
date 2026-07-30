@@ -42,6 +42,7 @@ export function updateManifest(
 export interface CreateRunOptions {
   executionMode?: RunManifest['executionMode'];
   handoffPath?: string;
+  fast?: boolean;
 }
 
 export function createRunDir(
@@ -59,6 +60,7 @@ export function createRunDir(
     runId,
     requirementId,
     executionMode: options.executionMode ?? 'agent',
+    fast: options.fast ?? false,
     handoffPath: options.handoffPath,
     status: 'queued',
     createdAt: new Date().toISOString(),

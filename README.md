@@ -422,6 +422,23 @@ Uses the configured provider.
 pnpm factory run RQ-0001-example --fast
 ```
 
+For requirement branches, store the choice in the requirement metadata:
+
+```bash
+pnpm factory requirement fast RQ-0001 on
+pnpm factory requirement fast RQ-0001 off
+```
+
+New pipeline requirements may enable it immediately:
+
+```bash
+pnpm factory requirement new "Example" --mode pipeline --fast
+```
+
+`pipelineFast: true` skips Tester, Reviewer, and Domain Guard. GitLab
+`sync-requirement` reads this setting automatically. The CLI updates only the
+requirement file; it does not commit or push the change.
+
 Fast mode skips some review agents and uses fewer LLM calls.
 
 ### Force mock mode

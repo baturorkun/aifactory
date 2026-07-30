@@ -14,9 +14,11 @@ import { FactoryConfigSchema, type FactoryConfig } from './config';
 import {
   createDraftRequirement,
   requirementExecutionDecision,
+  setRequirementFast,
   setRequirementMode,
   submitRequirement,
 } from './requirement-lifecycle';
+import { resolveRequirementFast } from './requirement-branches';
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -114,6 +116,7 @@ test('new requirement reserves a draft on main and switches to its branch', () =
       `main:${result.requirementFile}`,
     );
     assert.match(mainCopy, /status: draft/);
+    assert.match(mainCopy, /pipelineFast: false/);
     assert.match(mainCopy, /createdByName: "Developer Name"/);
     assert.match(mainCopy, /createdByEmail: "developer@example.com"/);
     assert.match(
@@ -133,6 +136,10 @@ test('pipeline submit marks ready, commits only the requirement, and pushes the 
     completeDraft(requirementPath);
     const updated = setRequirementMode(created.requirementId, 'pipeline', repo.config);
     assert.equal(updated.lifecycle?.executionMode, 'pipeline');
+    const fast = setRequirementFast(created.requirementId, true, repo.config);
+    assert.equal(fast.lifecycle?.pipelineFast, true);
+    assert.equal(resolveRequirementFast(created.requirementId, repo.config), true);
+    assert.equal(resolveRequirementFast(created.requirementId, repo.config, false), false);
 
     const submitted = await submitRequirement(created.requirementId, repo.config, {
       createHandoff: async () => {
@@ -140,6 +147,7 @@ test('pipeline submit marks ready, commits only the requirement, and pushes the 
       },
     });
     assert.equal(submitted.pushed, true);
+    assert.equal(submitted.pipelineFast, true);
     assert.equal(requirementExecutionDecision(created.requirementId, repo.config), 'run');
     const remoteCopy = git(
       repo.root,
@@ -149,6 +157,7 @@ test('pipeline submit marks ready, commits only the requirement, and pushes the 
     );
     assert.match(remoteCopy, /status: ready/);
     assert.match(remoteCopy, /executionMode: pipeline/);
+    assert.match(remoteCopy, /pipelineFast: true/);
     assert.equal(git(repo.root, 'status', '--porcelain'), '');
 
     const commit = git(repo.root, 'rev-parse', 'HEAD');

@@ -99,7 +99,7 @@ function parseMarkdown(id: string, markdown: string): Requirement {
 
 export function updateRequirementMetadata(
   markdown: string,
-  updates: Partial<Pick<RequirementLifecycle, 'status' | 'executionMode'>>,
+  updates: Partial<Pick<RequirementLifecycle, 'status' | 'executionMode' | 'pipelineFast'>>,
 ): string {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) {
@@ -108,8 +108,15 @@ export function updateRequirementMetadata(
   const lines = match[1].split(/\r?\n/);
   for (const [key, value] of Object.entries(updates)) {
     const index = lines.findIndex((line) => line.startsWith(`${key}:`));
-    if (index < 0) throw new Error(`Requirement metadata field is missing: ${key}`);
-    lines[index] = `${key}: ${value}`;
+    if (index < 0) {
+      if (key !== 'pipelineFast') {
+        throw new Error(`Requirement metadata field is missing: ${key}`);
+      }
+      const executionModeIndex = lines.findIndex((line) => line.startsWith('executionMode:'));
+      lines.splice(executionModeIndex + 1, 0, `${key}: ${value}`);
+    } else {
+      lines[index] = `${key}: ${value}`;
+    }
   }
   return `---\n${lines.join('\n')}\n---\n${markdown.slice(match[0].length)}`;
 }
@@ -154,6 +161,14 @@ function parseLifecycle(
   return RequirementLifecycleSchema.parse({
     status: metadata.status,
     executionMode: metadata.executionMode,
+    pipelineFast:
+      metadata.pipelineFast === undefined
+        ? false
+        : metadata.pipelineFast === 'true'
+          ? true
+          : metadata.pipelineFast === 'false'
+            ? false
+            : metadata.pipelineFast,
     createdByName: metadata.createdByName ?? '',
     createdByEmail: metadata.createdByEmail ?? '',
     createdAt: metadata.createdAt ?? '',

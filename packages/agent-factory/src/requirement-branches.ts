@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { FactoryConfig } from './config';
-import { findRequirementFile } from './requirements/parser';
+import { findRequirementFile, parseRequirement } from './requirements/parser';
 import { runPipeline, type PipelineOptions } from './orchestrator/pipeline';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 
@@ -15,6 +15,7 @@ export interface RequirementBranchMetadata {
   baseBranch: string;
   sourceCommit: string;
   lastRunId: string;
+  fast: boolean;
   updatedAt: string;
 }
 
@@ -60,6 +61,15 @@ export function requirementBranchName(
 ): string {
   assertRequirementId(requirementId);
   return `${branchPrefix}${requirementId.toUpperCase()}`;
+}
+
+export function resolveRequirementFast(
+  requirementId: string,
+  config: FactoryConfig,
+  override?: boolean,
+): boolean {
+  if (override !== undefined) return override;
+  return parseRequirement(requirementId, config.paths.requirements).lifecycle?.pipelineFast ?? false;
 }
 
 export function changedRequirementIds(
@@ -165,7 +175,8 @@ export async function syncRequirementBranch(
     };
   }
 
-  const runId = await runPipeline(requirementId, config, options);
+  const fast = resolveRequirementFast(requirementId, config, options.fast);
+  const runId = await runPipeline(requirementId, config, { ...options, fast });
   const runDir = resolve(config.paths.runs, runId);
   const manifest = readManifest(runDir);
   updateManifest(runDir, (current) => ({
@@ -189,6 +200,7 @@ export async function syncRequirementBranch(
     baseBranch: config.requirementBranches.baseBranch,
     sourceCommit: prepared.sourceCommit,
     lastRunId: runId,
+    fast,
     updatedAt: new Date().toISOString(),
   };
   const path = metadataPath(prepared.root, requirementId);

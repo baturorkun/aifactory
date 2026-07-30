@@ -43,6 +43,7 @@ test('agent retries invalid JSON with corrective guidance and preserves the raw 
     assert.deepEqual(result.output, { ok: true });
     assert.equal(model.requests.length, 2);
     assert.match(model.requests[1]?.userPrompt ?? '', /RETRY REQUIREMENT/);
+    assert.match(model.requests[1]?.userPrompt ?? '', /Never return find as an empty string/);
     const rawPath = join(runDir, 'steps', 'coder-task-1-attempt-1.raw.txt');
     assert.equal(existsSync(rawPath), true);
     assert.equal(readFileSync(rawPath, 'utf8'), '{"ok":');

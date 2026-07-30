@@ -28,6 +28,7 @@ import {
 import {
   createDraftRequirement,
   requirementExecutionDecision,
+  setRequirementFast,
   setRequirementMode,
   submitRequirement,
 } from './requirement-lifecycle';
@@ -52,7 +53,8 @@ requirement
   .command('new <title>')
   .description('Reserve the next requirement ID on main and switch to its draft branch')
   .option('--mode <mode>', 'Execution mode: handoff or pipeline', 'handoff')
-  .action((title: string, opts: { mode: string }) => {
+  .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline', false)
+  .action((title: string, opts: { mode: string; fast: boolean }) => {
     try {
       if (opts.mode !== 'handoff' && opts.mode !== 'pipeline') {
         throw new Error('Invalid mode. Choose handoff or pipeline.');
@@ -61,12 +63,37 @@ requirement
         title,
         opts.mode as RequirementExecutionMode,
         loadConfig(),
+        { pipelineFast: opts.fast },
       );
       console.log(chalk.green(`\n✓ Draft requirement created: ${chalk.bold(result.requirementId)}`));
       console.log(chalk.dim(`  File   : ${result.requirementFile}`));
       console.log(chalk.dim(`  Branch : ${result.branch}`));
       console.log(chalk.dim(`  Mode   : ${result.mode}`));
+      console.log(chalk.dim(`  Fast   : ${result.pipelineFast ? 'enabled' : 'disabled'}`));
       console.log(chalk.dim(`\n  Submit : pnpm factory -- requirement submit ${result.requirementId}\n`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('fast <reqId> <state>')
+  .description('Enable or disable the fast AI pipeline for a requirement')
+  .action((reqId: string, state: string) => {
+    try {
+      const normalized = state.toLowerCase();
+      if (!['on', 'off', 'true', 'false'].includes(normalized)) {
+        throw new Error('Invalid fast state. Choose on or off.');
+      }
+      const enabled = normalized === 'on' || normalized === 'true';
+      const updated = setRequirementFast(reqId, enabled, loadConfig());
+      console.log(
+        chalk.green(
+          `✓ ${updated.id} fast pipeline ${updated.lifecycle?.pipelineFast ? 'enabled' : 'disabled'}.`,
+        ),
+      );
+      console.log(chalk.dim('  The requirement file was updated locally; it was not committed or pushed.'));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -104,6 +131,7 @@ requirement
       });
       console.log(chalk.green(`\n✓ Requirement submitted: ${chalk.bold(result.requirementId)}`));
       console.log(chalk.dim(`  Mode   : ${result.mode}`));
+      console.log(chalk.dim(`  Fast   : ${result.pipelineFast ? 'enabled' : 'disabled'}`));
       console.log(chalk.dim(`  Push   : ${result.pushed ? 'completed' : 'not performed'}`));
       if (result.runId) {
         console.log(chalk.dim(`  Handoff: ${result.runId}`));
@@ -156,8 +184,8 @@ program
   .description('Create or update a requirement branch, run AI Factory, commit, and optionally push')
   .option('--source-ref <ref>', 'Commit containing the requirement update; defaults to configured remote/base branch')
   .option('--push', 'Push the synchronized branch to the configured remote', false)
-  .option('--fast', 'Skip tester/reviewer/domain-guard agents', false)
-  .action(async (reqId: string, opts: { sourceRef?: string; push: boolean; fast: boolean }) => {
+  .option('--fast', 'Override the requirement and use the fast AI pipeline')
+  .action(async (reqId: string, opts: { sourceRef?: string; push: boolean; fast?: boolean }) => {
     try {
       const config = loadConfig();
       const decision = requirementExecutionDecision(reqId, config);
@@ -783,6 +811,7 @@ function printRunSummary(manifest: RunManifest): void {
   console.log(chalk.bold(`Run: ${chalk.cyan(manifest.runId)}`));
   console.log(`  Requirement : ${manifest.requirementId}`);
   console.log(`  Mode        : ${manifest.executionMode}`);
+  console.log(`  Pipeline    : ${manifest.fast ? 'fast' : 'full'}`);
   console.log(`  Status      : ${statusLabel(manifest.status)}`);
   console.log(`  Created     : ${manifest.createdAt}`);
   if (manifest.steps.length > 0) {

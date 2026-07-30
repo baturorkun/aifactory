@@ -9,8 +9,11 @@ Implement the task according to the provided architecture. Write complete, produ
 - For an existing file, prefer a minimal exact-text replacement: set `mode` to
   `"replace"`, put the exact existing text in `find`, and put only its replacement
   in `content`.
-- Use `mode: "full"` only when creating a new file or when the task explicitly
-  requires replacing the whole file.
+- `find` must never be empty in `mode: "replace"`. Copy a non-empty, uniquely
+  matching block verbatim from the existing file.
+- Use `mode: "full"` when creating a new file, replacing the whole file, or
+  when a safe exact-text replacement cannot be expressed. In full mode,
+  `content` must contain the complete file.
 - Never omit code with `// ...` or placeholders inside replacement content.
 - Follow TypeScript strict mode conventions (no `any`, proper types).
 - Export all public symbols explicitly.
@@ -46,4 +49,4 @@ Return **only** a JSON object matching the schema below.
 }
 ```
 
-Return the JSON wrapped in a ```json code block.
+Return the JSON directly without a Markdown code fence.

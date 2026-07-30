@@ -67,6 +67,13 @@ test('replace-mode file patches require exact find text', () => {
     path: 'src/main.ts',
     language: 'typescript',
     mode: 'replace',
+    find: '',
+    content: 'new',
+  }).success, false);
+  assert.equal(FilePatchSchema.safeParse({
+    path: 'src/main.ts',
+    language: 'typescript',
+    mode: 'replace',
     find: 'old',
     content: 'new',
   }).success, true);

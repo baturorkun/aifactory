@@ -133,6 +133,7 @@ Then in `factory.config.json`:
 id: RQ-0001
 status: draft
 executionMode: handoff
+pipelineFast: false
 createdByName: "Developer"
 createdByEmail: "developer@example.com"
 createdAt: "2026-07-28T10:00:00.000Z"

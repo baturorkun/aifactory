@@ -197,7 +197,9 @@ export async function runPipeline(
 
   // -- Run directory
   const runId = generateRunId(requirementId);
-  const runDir = createRunDir(resolve(config.paths.runs), runId, requirementId);
+  const runDir = createRunDir(resolve(config.paths.runs), runId, requirementId, {
+    fast: Boolean(opts.fast),
+  });
   recordProjectGuidelines(runDir, projectGuidelines);
 
   // Save input copies for reproducibility
@@ -222,6 +224,7 @@ export async function runPipeline(
   console.log(`  Req      : ${requirement.title} (${requirement.id})`);
   console.log(`  Model    : ${primaryModel.name}`);
   console.log(`  Reviewer : ${reviewerModel.name}`);
+  console.log(`  Pipeline : ${opts.fast ? 'fast' : 'full'}`);
   if (effectiveConfig.targetProject.root) {
     console.log(`  Target   : ${resolveTargetRoot(effectiveConfig.targetProject)}`);
     console.log(

@@ -27,12 +27,14 @@ export interface NewRequirementResult {
   requirementFile: string;
   branch: string;
   mode: RequirementExecutionMode;
+  pipelineFast: boolean;
 }
 
 export interface SubmitRequirementResult {
   requirementId: string;
   mode: RequirementExecutionMode;
   status: 'ready';
+  pipelineFast: boolean;
   pushed: boolean;
   runId?: string;
 }
@@ -200,6 +202,7 @@ function draftMarkdown(input: {
   id: string;
   title: string;
   mode: RequirementExecutionMode;
+  pipelineFast: boolean;
   name: string;
   email: string;
   createdAt: string;
@@ -211,6 +214,7 @@ function draftMarkdown(input: {
     `id: ${input.id}`,
     'status: draft',
     `executionMode: ${input.mode}`,
+    `pipelineFast: ${input.pipelineFast}`,
     `createdByName: ${quoteMetadata(input.name)}`,
     `createdByEmail: ${quoteMetadata(input.email)}`,
     `createdAt: ${quoteMetadata(input.createdAt)}`,
@@ -247,6 +251,7 @@ export function createDraftRequirement(
   title: string,
   mode: RequirementExecutionMode,
   config: FactoryConfig,
+  options: { pipelineFast?: boolean } = {},
 ): NewRequirementResult {
   const normalizedTitle = title.trim();
   if (!normalizedTitle) throw new Error('Requirement title cannot be empty.');
@@ -285,6 +290,7 @@ export function createDraftRequirement(
         id: requirementId,
         title: normalizedTitle,
         mode,
+        pipelineFast: options.pipelineFast ?? false,
         name: authorName,
         email: authorEmail,
         createdAt: new Date().toISOString(),
@@ -306,7 +312,13 @@ export function createDraftRequirement(
       { cwd: root, encoding: 'utf8' },
     );
     if (push.status === 0) {
-      result = { requirementId, requirementFile, branch, mode };
+      result = {
+        requirementId,
+        requirementFile,
+        branch,
+        mode,
+        pipelineFast: options.pipelineFast ?? false,
+      };
       break;
     }
 
@@ -344,6 +356,21 @@ export function setRequirementMode(
   return parseRequirement(requirementId, config.paths.requirements);
 }
 
+export function setRequirementFast(
+  requirementId: string,
+  pipelineFast: boolean,
+  config: FactoryConfig,
+): Requirement {
+  const { requirementPath } = assertActiveRequirementBranch(requirementId, config);
+  const markdown = readFileSync(requirementPath, 'utf8');
+  writeFileSync(
+    requirementPath,
+    updateRequirementMetadata(markdown, { pipelineFast }),
+    'utf8',
+  );
+  return parseRequirement(requirementId, config.paths.requirements);
+}
+
 export async function submitRequirement(
   requirementId: string,
   config: FactoryConfig,
@@ -375,6 +402,7 @@ export async function submitRequirement(
       requirementId: id,
       mode: 'handoff',
       status: 'ready',
+      pipelineFast: requirement.lifecycle!.pipelineFast,
       pushed: false,
       runId,
     };
@@ -393,6 +421,7 @@ export async function submitRequirement(
     requirementId: id,
     mode: 'pipeline',
     status: 'ready',
+    pipelineFast: requirement.lifecycle!.pipelineFast,
     pushed: true,
   };
 }

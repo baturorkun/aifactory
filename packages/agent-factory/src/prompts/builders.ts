@@ -134,7 +134,7 @@ export function buildCoderPrompt(
     }
     parts.push(
       '',
-      'Preserve all unrelated existing code. Use mode "replace" with a small exact `find` block for existing files.',
+      'Preserve all unrelated existing code. Prefer mode "replace" with a small, non-empty, uniquely matching exact `find` block for existing files. Never return an empty `find`. If a safe exact replacement is impossible, use mode "full" and return the complete file content.',
     );
   }
 
@@ -160,7 +160,10 @@ export function buildCoderPrompt(
     }
   }
 
-  parts.push('', 'Return a **CodePatchOutput** JSON. Use exact-text replacement mode for existing files.');
+  parts.push(
+    '',
+    'Return a **CodePatchOutput** JSON. Every replace patch must have a non-empty exact `find`; full patches must contain the complete file.',
+  );
   return parts.join('\n');
 }
 

@@ -89,6 +89,10 @@ export async function runAgent(config: AgentRunConfig): Promise<AgentRunResult> 
           : `${userPrompt}\n\n` +
             `RETRY REQUIREMENT: The previous response was not a complete, valid JSON value. ` +
             `Return JSON only, keep patches minimal, escape file content correctly, and finish the complete JSON document. ` +
+            (agent === 'coder'
+              ? `For every patch with mode "replace", find must be a non-empty exact substring copied from the existing file. ` +
+                `Never return find as an empty string. If exact replacement is impossible, use mode "full" only with the complete file content. `
+              : '') +
             `Previous error: ${(lastError?.message ?? 'unknown').slice(0, 800)}`;
       response = await model.call({ systemPrompt, userPrompt: attemptPrompt });
       if (response.finishReason === 'MAX_TOKENS' || response.finishReason === 'length') {

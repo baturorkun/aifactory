@@ -74,13 +74,15 @@ export const FilePatchSchema = z.object({
   language: z.string().min(1),
   description: z.string().optional(),
   mode: z.enum(['full', 'replace']).default('full'),
-  find: z.string().min(1).optional(),
+  find: z.string().optional(),
 }).superRefine((patch, ctx) => {
-  if (patch.mode === 'replace' && !patch.find) {
+  if (patch.mode === 'replace' && !patch.find?.trim()) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['find'],
-      message: 'find is required when mode is replace',
+      message:
+        'replace mode requires a non-empty find string copied exactly from the existing file; ' +
+        'use full mode only with complete file content',
     });
   }
 });
@@ -220,6 +222,7 @@ export const RunManifestSchema = z.object({
   runId: z.string(),
   requirementId: z.string(),
   executionMode: z.enum(['agent', 'handoff']).default('agent'),
+  fast: z.boolean().default(false),
   handoffPath: z.string().optional(),
   projectGuidelines: z
     .object({
@@ -265,6 +268,7 @@ export type RequirementExecutionMode = z.infer<typeof RequirementExecutionModeSc
 export const RequirementLifecycleSchema = z.object({
   status: RequirementStatusSchema,
   executionMode: RequirementExecutionModeSchema,
+  pipelineFast: z.boolean().default(false),
   createdByName: z.string().min(1),
   createdByEmail: z.string().min(1),
   createdAt: z.string().datetime(),
