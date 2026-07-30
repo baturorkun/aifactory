@@ -3,13 +3,15 @@
  * prose before/after the JSON, or raw JSON directly.
  */
 export function extractJSON(content: string): unknown {
+  let lastParseError: unknown;
+
   // 1. Try ```json ... ``` block
   const jsonFence = content.match(/```json\s*\n([\s\S]*?)\n```/);
   if (jsonFence?.[1]) {
     try {
       return JSON.parse(jsonFence[1]);
-    } catch {
-      // fall through
+    } catch (error) {
+      lastParseError = error;
     }
   }
 
@@ -18,8 +20,8 @@ export function extractJSON(content: string): unknown {
   if (anyFence?.[1]) {
     try {
       return JSON.parse(anyFence[1]);
-    } catch {
-      // fall through
+    } catch (error) {
+      lastParseError = error;
     }
   }
 
@@ -28,8 +30,8 @@ export function extractJSON(content: string): unknown {
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
       return JSON.parse(trimmed);
-    } catch {
-      // fall through
+    } catch (error) {
+      lastParseError = error;
     }
   }
 
@@ -38,13 +40,18 @@ export function extractJSON(content: string): unknown {
   if (objectMatch?.[1]) {
     try {
       return JSON.parse(objectMatch[1]);
-    } catch {
-      // fall through
+    } catch (error) {
+      lastParseError = error;
     }
   }
 
   throw new Error(
     `Could not extract valid JSON from model output.\n` +
+      `JSON parser: ${formatParseError(lastParseError)}\n` +
       `Content preview (first 400 chars):\n${content.slice(0, 400)}`,
   );
+}
+
+function formatParseError(error: unknown): string {
+  return error instanceof Error ? error.message : 'No parseable JSON value found';
 }

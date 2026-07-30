@@ -61,6 +61,7 @@ export class GeminiAdapter implements ModelAdapter {
           : {}),
         maxOutputTokens: req.maxTokens ?? this.config.maxTokens ?? 8192,
         responseMimeType: 'application/json',
+        ...(req.responseSchema ? { responseSchema: req.responseSchema } : {}),
       },
     };
 

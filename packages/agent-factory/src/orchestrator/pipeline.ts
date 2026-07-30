@@ -32,6 +32,7 @@ import {
 } from '../prompts/builders';
 import { parseRequirement } from '../requirements/parser';
 import { extractJSON } from '../utils/json';
+import { CODE_PATCH_RESPONSE_SCHEMA } from '../model/response-schemas';
 import {
   applyArtifactToTarget,
   resolveTargetRoot,
@@ -442,6 +443,7 @@ async function runTaskPipeline(
       ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
+      responseSchema: CODE_PATCH_RESPONSE_SCHEMA,
       validate: makeCodeValidator(task, config.targetProject),
       extractJSON,
       outputFileName: `coder-${task.id}-iter${iter}.json`,

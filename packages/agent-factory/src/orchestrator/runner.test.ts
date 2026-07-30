@@ -42,11 +42,42 @@ test('agent retries invalid JSON with corrective guidance and preserves the raw 
 
     assert.deepEqual(result.output, { ok: true });
     assert.equal(model.requests.length, 2);
+    assert.deepEqual(model.requests[0]?.responseSchema, undefined);
     assert.match(model.requests[1]?.userPrompt ?? '', /RETRY REQUIREMENT/);
     assert.match(model.requests[1]?.userPrompt ?? '', /Never return find as an empty string/);
     const rawPath = join(runDir, 'steps', 'coder-task-1-attempt-1.raw.txt');
     assert.equal(existsSync(rawPath), true);
     assert.equal(readFileSync(rawPath, 'utf8'), '{"ok":');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('agent forwards the response schema to every model attempt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-runner-schema-'));
+  try {
+    const runDir = createRunDir(root, 'run-2', 'RQ-0001');
+    const model = new RetryModel();
+    const schema = {
+      type: 'object',
+      properties: { ok: { type: 'boolean' } },
+      required: ['ok'],
+    };
+    await runAgent({
+      agent: 'coder',
+      taskId: 'task-1',
+      runDir,
+      systemPrompt: 'system',
+      userPrompt: 'user',
+      model,
+      maxRetries: 1,
+      responseSchema: schema,
+      validate: (raw) => raw,
+    });
+
+    assert.equal(model.requests.length, 2);
+    assert.deepEqual(model.requests[0]?.responseSchema, schema);
+    assert.deepEqual(model.requests[1]?.responseSchema, schema);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

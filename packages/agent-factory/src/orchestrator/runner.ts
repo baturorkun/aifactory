@@ -19,6 +19,7 @@ export interface AgentRunConfig {
   model: ModelAdapter;
   maxRetries?: number;
   outputFileName?: string;
+  responseSchema?: Record<string, unknown>;
   validate: (raw: unknown) => unknown;
   extractJSON?: (content: string) => unknown;
 }
@@ -52,6 +53,7 @@ export async function runAgent(config: AgentRunConfig): Promise<AgentRunResult> 
     model,
     maxRetries = 3,
     outputFileName,
+    responseSchema,
     validate,
     extractJSON = defaultExtractJSON,
   } = config;
@@ -94,7 +96,11 @@ export async function runAgent(config: AgentRunConfig): Promise<AgentRunResult> 
                 `Never return find as an empty string. If exact replacement is impossible, use mode "full" only with the complete file content. `
               : '') +
             `Previous error: ${(lastError?.message ?? 'unknown').slice(0, 800)}`;
-      response = await model.call({ systemPrompt, userPrompt: attemptPrompt });
+      response = await model.call({
+        systemPrompt,
+        userPrompt: attemptPrompt,
+        responseSchema,
+      });
       if (response.finishReason === 'MAX_TOKENS' || response.finishReason === 'length') {
         throw new Error(
           `Model output was truncated after ${response.usage.completionTokens || 'an unknown number of'} tokens. ` +

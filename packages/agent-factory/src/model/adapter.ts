@@ -3,6 +3,11 @@ export interface ModelRequest {
   userPrompt: string;
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Optional JSON Schema for providers that support structured output.
+   * Providers without structured-output support may ignore it.
+   */
+  responseSchema?: Record<string, unknown>;
 }
 
 export interface ModelUsage {
