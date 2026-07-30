@@ -14,6 +14,7 @@ import {
   type TestOutput,
   type ReviewOutput,
   type DomainGuardOutput,
+  type GateResults,
   type Task,
   type Requirement,
 } from '@aifactory/contracts';
@@ -28,6 +29,7 @@ import {
   buildTesterPrompt,
   buildReviewerPrompt,
   buildDomainGuardPrompt,
+  buildQualityGateRepairPrompt,
   type FixContext,
 } from '../prompts/builders';
 import { parseRequirement } from '../requirements/parser';
@@ -48,7 +50,7 @@ import {
   updateGateResults,
 } from './manifest';
 import { runAgent } from './runner';
-import { runAllGates } from '@aifactory/quality-gates';
+import { runAllGates, type GateReport } from '@aifactory/quality-gates';
 import {
   buildGroundingQuestion,
   formatGroundingContext,
@@ -142,6 +144,17 @@ function existingTestPaths(target: TargetProjectConfig): string[] {
     .sort();
 }
 
+function existingArtifactFiles(
+  runDir: string,
+  target: TargetProjectConfig,
+): Array<{ path: string; content: string }> {
+  return [...new Set(readManifest(runDir).artifacts)].flatMap((artifactPath) => {
+    const absolutePath = validateConfiguredPath(target, artifactPath);
+    if (!absolutePath || !existsSync(absolutePath) || extname(artifactPath) === '') return [];
+    return [{ path: artifactPath, content: readFileSync(absolutePath, 'utf8') }];
+  });
+}
+
 function makeCodeValidator(task: Task, target: TargetProjectConfig) {
   return (raw: unknown): CodePatchOutput => {
     const parsed = CodePatchOutputSchema.parse(raw);
@@ -173,6 +186,20 @@ function coderResponseSchema(task: Task): Record<string, unknown> {
       ? targetFiles
       : undefined;
   return buildCodePatchResponseSchema(exactTargetFiles);
+}
+
+function hasRepairableGateFailure(results: GateResults): boolean {
+  return results.typeCheck === 'failed' || results.lint === 'failed' || results.tests === 'failed';
+}
+
+function hasUnsafeGateFailure(results: GateResults): boolean {
+  return results.schemaCheck === 'failed' || results.security === 'failed';
+}
+
+function readGateReports(runDir: string): GateReport[] {
+  const reportPath = join(runDir, 'gates', 'report.json');
+  if (!existsSync(reportPath)) return [];
+  return JSON.parse(readFileSync(reportPath, 'utf8')) as GateReport[];
 }
 
 // ============================================================
@@ -317,12 +344,31 @@ export async function runPipeline(
         shouldApplyArtifacts(effectiveConfig.targetProject, Boolean(opts.dryRun))
           ? resolveTargetRoot(effectiveConfig.targetProject)
           : undefined;
-      const gateResults = await runAllGates(runDir, process.cwd(), {
+      let gateResults = await runAllGates(runDir, process.cwd(), {
         targetRoot,
         artifactPaths: readManifest(runDir).artifacts,
         commands: effectiveConfig.targetProject.commands,
       });
       updateGateResults(runDir, gateResults);
+
+      if (
+        opts.fast &&
+        targetRoot &&
+        hasRepairableGateFailure(gateResults) &&
+        !hasUnsafeGateFailure(gateResults)
+      ) {
+        gateResults = await runFastQualityRepair({
+          requirement,
+          runDir,
+          config: effectiveConfig,
+          model: primaryModel,
+          promptRegistry,
+          projectGuidelines,
+          dryRun: Boolean(opts.dryRun),
+          initialResults: gateResults,
+        });
+        updateGateResults(runDir, gateResults);
+      }
     } else {
       console.log('\n  ▸ Gates: skipped');
       updateGateResults(runDir, {
@@ -350,6 +396,82 @@ export async function runPipeline(
   }
 
   return runId;
+}
+
+interface FastQualityRepairOptions {
+  requirement: Requirement;
+  runDir: string;
+  config: FactoryConfig;
+  model: ModelAdapter;
+  promptRegistry: PromptRegistry;
+  projectGuidelines?: ProjectGuidelinesContext;
+  dryRun: boolean;
+  initialResults: GateResults;
+}
+
+async function runFastQualityRepair(options: FastQualityRepairOptions): Promise<GateResults> {
+  const {
+    requirement,
+    runDir,
+    config,
+    model,
+    promptRegistry,
+    projectGuidelines,
+    dryRun,
+  } = options;
+  const repairTask: Task = {
+    id: 'quality-gates',
+    title: 'Repair final quality-gate failures',
+    description: 'Fix errors reported by the final project quality gates.',
+    dependsOn: [],
+    acceptanceCriteria: ['All configured quality gates pass.'],
+  };
+  let gateResults = options.initialResults;
+  const repairRounds = Math.max(1, config.pipeline.maxFixIterations - 1);
+
+  for (let round = 1; round <= repairRounds; round++) {
+    console.log(`\n  ▸ Fast quality repair ${round}/${repairRounds}...`);
+    const reports = readGateReports(runDir);
+    const codeResult = await runAgent({
+      agent: 'coder',
+      taskId: `quality-gates-${round}`,
+      runDir,
+      systemPrompt: withProjectGuidelines(promptRegistry.get('coder'), projectGuidelines),
+      userPrompt: buildQualityGateRepairPrompt(
+        requirement,
+        reports,
+        existingArtifactFiles(runDir, config.targetProject),
+        config.targetProject.allowedPaths,
+      ),
+      model,
+      maxRetries: config.pipeline.maxRetries,
+      responseSchema: buildCodePatchResponseSchema(),
+      validate: makeCodeValidator(repairTask, config.targetProject),
+      extractJSON,
+      outputFileName: `coder-quality-gates-iter${round}.json`,
+    });
+    const code = codeResult.output as CodePatchOutput;
+
+    for (const patch of code.patches) {
+      writeArtifact(runDir, patch.path, patch.content);
+      addArtifact(runDir, patch.path);
+      if (shouldApplyArtifacts(config.targetProject, dryRun)) {
+        applyArtifactToTarget(config.targetProject, patch.path, patch.content);
+      }
+    }
+
+    console.log('  ▸ Quality gates (after repair)...');
+    gateResults = await runAllGates(runDir, process.cwd(), {
+      targetRoot: resolveTargetRoot(config.targetProject),
+      artifactPaths: readManifest(runDir).artifacts,
+      commands: config.targetProject.commands,
+    });
+    updateGateResults(runDir, gateResults);
+
+    if (!hasRepairableGateFailure(gateResults) || hasUnsafeGateFailure(gateResults)) break;
+  }
+
+  return gateResults;
 }
 
 // ============================================================

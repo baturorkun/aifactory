@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ArchitectureOutput, Requirement, Task } from '@aifactory/contracts';
 import { FilePatchSchema } from '@aifactory/contracts';
-import { buildCoderPrompt, buildPlannerPrompt } from './builders';
+import {
+  buildCoderPrompt,
+  buildPlannerPrompt,
+  buildQualityGateRepairPrompt,
+} from './builders';
 import { buildTesterPrompt } from './builders';
 
 const requirement: Requirement = {
@@ -79,6 +83,24 @@ test('replace-mode file patches require exact find text', () => {
     find: 'old',
     content: 'new',
   }).success, true);
+});
+
+test('quality repair receives full gate errors and generated files', () => {
+  const prompt = buildQualityGateRepairPrompt(
+    requirement,
+    [{
+      gate: 'typeCheck',
+      status: 'failed',
+      output: 'Cannot find module ./colorResolver.js',
+      durationMs: 10,
+    }],
+    [{ path: 'src/render/canvasRenderer.ts', content: 'import "./colorResolver.js";' }],
+    ['src', 'tests'],
+  );
+
+  assert.match(prompt, /Cannot find module \.\/colorResolver\.js/);
+  assert.match(prompt, /src\/render\/canvasRenderer\.ts/);
+  assert.match(prompt, /You may create a missing source file/);
 });
 
 test('tester receives project constraints and existing browser harness conventions', () => {

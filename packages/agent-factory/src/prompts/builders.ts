@@ -9,6 +9,7 @@ import type {
   DomainGuardOutput,
 } from '@aifactory/contracts';
 import type { DomainRule } from '../config';
+import type { GateReport } from '@aifactory/quality-gates';
 
 // ============================================================
 // PLANNER
@@ -173,6 +174,49 @@ export function buildCoderPrompt(
   parts.push(
     '',
     'Return a **CodePatchOutput** JSON. Every replace patch must have a non-empty exact `find`; full patches must contain the complete file.',
+  );
+  return parts.join('\n');
+}
+
+export function buildQualityGateRepairPrompt(
+  requirement: Requirement,
+  reports: readonly GateReport[],
+  existingFiles: ReadonlyArray<{ path: string; content: string }>,
+  allowedPaths: readonly string[],
+): string {
+  const failedReports = reports.filter((report) => report.status === 'failed');
+  const parts = [
+    `## Quality Gate Repair — ${requirement.id}`,
+    `Requirement: ${requirement.title}`,
+    '',
+    'The implementation has already been generated, but final project quality gates failed.',
+    'Make the smallest coherent code changes needed to fix every reported error. Preserve unrelated behavior.',
+    '',
+    '### Failed Quality Gates',
+    ...failedReports.flatMap((report) => [
+      `#### ${report.gate}`,
+      '```text',
+      report.output,
+      '```',
+    ]),
+  ];
+
+  if (allowedPaths.length) {
+    parts.push('', '### Allowed Artifact Paths', ...allowedPaths.map((path) => `- ${path}`));
+  }
+
+  if (existingFiles.length) {
+    parts.push('', '### Generated Implementation Files');
+    for (const file of existingFiles) {
+      parts.push(`#### ${file.path}`, '```', file.content, '```');
+    }
+  }
+
+  parts.push(
+    '',
+    'Return a **CodePatchOutput** JSON containing only files required for these quality-gate fixes.',
+    'You may create a missing source file when the gate output proves it is required and its path is allowed.',
+    'For an existing file, use a precise non-empty replace patch when possible. Otherwise return the complete file with mode "full".',
   );
   return parts.join('\n');
 }
