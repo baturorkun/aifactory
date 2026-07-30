@@ -427,7 +427,7 @@ async function runFastQualityRepair(options: FastQualityRepairOptions): Promise<
     acceptanceCriteria: ['All configured quality gates pass.'],
   };
   let gateResults = options.initialResults;
-  const repairRounds = Math.max(1, config.pipeline.maxFixIterations - 1);
+  const repairRounds = config.pipeline.maxFixIterations;
 
   for (let round = 1; round <= repairRounds; round++) {
     console.log(`\n  ▸ Fast quality repair ${round}/${repairRounds}...`);
