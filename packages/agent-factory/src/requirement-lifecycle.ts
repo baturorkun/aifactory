@@ -423,7 +423,13 @@ async function synchronizeRequirementPlatform(
   suppliedAdapter?: RepositoryPlatformAdapter,
 ): Promise<RequirementPlatformSyncResult> {
   const { root, branch, requirementPath } = assertActiveRequirementBranch(requirementId, config);
-  const adapter = suppliedAdapter ?? new GitLabRepositoryPlatform(resolved.settings);
+  const adapter = suppliedAdapter ?? new GitLabRepositoryPlatform({
+    ...resolved.settings,
+    gitIdentity: {
+      name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+      email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+    },
+  });
   if (adapter.provider !== 'gitlab') {
     throw new Error(`Repository provider mismatch: expected gitlab, received ${adapter.provider}.`);
   }

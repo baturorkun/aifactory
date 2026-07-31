@@ -29,6 +29,15 @@ interface GitLabNote {
   body?: string;
 }
 
+interface GitLabUser {
+  id: number;
+  username: string;
+  name?: string;
+  email?: string;
+  public_email?: string | null;
+  bot?: boolean;
+}
+
 function asWorkItem(issue: GitLabIssue): WorkItem {
   return {
     iid: issue.iid,
@@ -55,7 +64,9 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
   readonly provider = 'gitlab' as const;
   readonly targetBranch: string;
   readonly lifecycleLabels: readonly string[];
+  private readonly apiBase: string;
   private readonly apiRoot: string;
+  private assigneeUserIdPromise?: Promise<number | undefined>;
 
   constructor(
     private readonly settings: GitLabPlatformSettings,
@@ -63,7 +74,8 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
   ) {
     this.targetBranch = settings.targetBranch;
     this.lifecycleLabels = Object.values(settings.labels);
-    this.apiRoot = `${settings.baseUrl}/api/v4/projects/${encodeURIComponent(settings.projectId)}`;
+    this.apiBase = `${settings.baseUrl}/api/v4`;
+    this.apiRoot = `${this.apiBase}/projects/${encodeURIComponent(settings.projectId)}`;
   }
 
   async getWorkItem(iid: number): Promise<WorkItem | undefined> {
@@ -85,14 +97,44 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
     description: string;
     labels: string[];
   }): Promise<WorkItem> {
+    const assigneeId = await this.assigneeUserId();
     return asWorkItem(await this.request<GitLabIssue>('/issues', {
       method: 'POST',
       body: {
         title: input.title,
         description: input.description,
         labels: input.labels.join(','),
+        ...(assigneeId === undefined ? {} : { assignee_id: assigneeId }),
       },
     }));
+  }
+
+  private async assigneeUserId(): Promise<number | undefined> {
+    this.assigneeUserIdPromise ??= this.resolveAssigneeUserId();
+    return this.assigneeUserIdPromise;
+  }
+
+  private async resolveAssigneeUserId(): Promise<number | undefined> {
+    const identity = this.settings.gitIdentity;
+    const search = identity?.name?.trim() || identity?.email?.trim();
+    if (!search) return undefined;
+
+    const users = await this.request<GitLabUser[]>(
+      `/users?search=${encodeURIComponent(search)}&active=true&per_page=100`,
+      { global: true },
+    );
+    const expectedName = identity?.name?.trim().toLowerCase();
+    const expectedEmail = identity?.email?.trim().toLowerCase();
+    const matches = users.filter((user) => {
+      if (user.bot) return false;
+      const names = [user.name, user.username].filter(Boolean).map((value) => value!.toLowerCase());
+      const emails = [user.email, user.public_email].filter(Boolean).map((value) => value!.toLowerCase());
+      return Boolean(
+        (expectedName && names.includes(expectedName)) ||
+        (expectedEmail && emails.includes(expectedEmail)),
+      );
+    });
+    return matches.length === 1 ? matches[0].id : undefined;
   }
 
   async setWorkItemLifecycleLabel(workItem: WorkItem, label: string): Promise<WorkItem> {
@@ -148,12 +190,17 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
 
   private async request<T>(
     path: string,
-    options: { method?: 'GET' | 'POST' | 'PUT'; body?: Record<string, unknown>; allowNotFound?: boolean } = {},
+    options: {
+      method?: 'GET' | 'POST' | 'PUT';
+      body?: Record<string, unknown>;
+      allowNotFound?: boolean;
+      global?: boolean;
+    } = {},
   ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
-      const response = await this.fetchFn(`${this.apiRoot}${path}`, {
+      const response = await this.fetchFn(`${options.global ? this.apiBase : this.apiRoot}${path}`, {
         method: options.method ?? 'GET',
         headers: {
           'PRIVATE-TOKEN': this.settings.token,

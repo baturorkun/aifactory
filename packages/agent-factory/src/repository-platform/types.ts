@@ -58,6 +58,10 @@ export interface GitLabPlatformSettings {
   token: string;
   targetBranch: string;
   removeSourceBranchOnMerge: boolean;
+  gitIdentity?: {
+    name?: string;
+    email?: string;
+  };
   labels: {
     draft: string;
     ready: string;
