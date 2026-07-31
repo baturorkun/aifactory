@@ -30,6 +30,22 @@
       "test": "pnpm test"
     }
   },
+  "repositoryPlatforms": {
+    "gitlab": {
+      "baseUrl": "${GITLAB_URL:-}",
+      "projectId": "${GITLAB_PROJECT_ID:-}",
+      "token": "${GITLAB_TOKEN:-}",
+      "targetBranch": "main",
+      "removeSourceBranchOnMerge": true,
+      "labels": {
+        "draft": "factory::draft",
+        "ready": "factory::ready",
+        "running": "factory::running",
+        "needsFix": "factory::needs-fix",
+        "passed": "factory::passed"
+      }
+    }
+  },
   "domain": {
     "rules": []
   },

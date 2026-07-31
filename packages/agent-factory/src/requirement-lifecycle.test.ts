@@ -17,8 +17,81 @@ import {
   setRequirementFast,
   setRequirementMode,
   submitRequirement,
+  syncRequirementPlatform,
 } from './requirement-lifecycle';
 import { resolveRequirementFast } from './requirement-branches';
+import type {
+  ChangeRequest,
+  RepositoryPlatformAdapter,
+  WorkItem,
+} from './repository-platform/types';
+
+class FakeGitLabPlatform implements RepositoryPlatformAdapter {
+  readonly provider = 'gitlab' as const;
+  readonly targetBranch = 'main';
+  readonly lifecycleLabels = [
+    'factory::draft',
+    'factory::ready',
+    'factory::running',
+    'factory::needs-fix',
+    'factory::passed',
+  ];
+  workItem?: WorkItem;
+  changeRequest?: ChangeRequest;
+  comments: string[] = [];
+
+  async getWorkItem(iid: number): Promise<WorkItem | undefined> {
+    return this.workItem?.iid === iid ? this.workItem : undefined;
+  }
+  async findWorkItem(marker: string): Promise<WorkItem | undefined> {
+    return this.workItem?.description.includes(marker) ? this.workItem : undefined;
+  }
+  async createWorkItem(input: { title: string; description: string; labels: string[] }): Promise<WorkItem> {
+    this.workItem = {
+      iid: 12,
+      title: input.title,
+      description: input.description,
+      url: 'https://gitlab.example.test/group/project/-/issues/12',
+      state: 'opened',
+      labels: input.labels,
+    };
+    return this.workItem;
+  }
+  async setWorkItemLifecycleLabel(workItem: WorkItem, label: string): Promise<WorkItem> {
+    workItem.labels = [label];
+    return workItem;
+  }
+  async addWorkItemComment(_workItem: WorkItem, body: string, marker: string): Promise<void> {
+    if (!this.comments.some((comment) => comment.includes(marker))) {
+      this.comments.push(`${body}\n${marker}`);
+    }
+  }
+  async getChangeRequest(iid: number): Promise<ChangeRequest | undefined> {
+    return this.changeRequest?.iid === iid ? this.changeRequest : undefined;
+  }
+  async findChangeRequest(sourceBranch: string, targetBranch: string): Promise<ChangeRequest | undefined> {
+    return this.changeRequest?.sourceBranch === sourceBranch &&
+      this.changeRequest.targetBranch === targetBranch
+      ? this.changeRequest
+      : undefined;
+  }
+  async createDraftChangeRequest(input: {
+    title: string;
+    description: string;
+    sourceBranch: string;
+    targetBranch: string;
+  }): Promise<ChangeRequest> {
+    this.changeRequest = {
+      iid: 21,
+      title: `Draft: ${input.title}`,
+      url: 'https://gitlab.example.test/group/project/-/merge_requests/21',
+      state: 'opened',
+      sourceBranch: input.sourceBranch,
+      targetBranch: input.targetBranch,
+    };
+    return this.changeRequest;
+  }
+}
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -96,13 +169,14 @@ function completeDraft(path: string): void {
   writeFileSync(path, markdown);
 }
 
-test('new requirement reserves a draft on main and switches to its branch', () => {
+test('new requirement reserves a draft on main and switches to its branch', async () => {
   const repo = makeRepository();
   try {
-    const result = createDraftRequirement(
+    const result = await createDraftRequirement(
       'Yeni özellik',
       'handoff',
       repo.config,
+      { environment: {} },
     );
     assert.equal(result.requirementId, 'RQ-0002');
     assert.equal(result.branch, 'factory/RQ-0002');
@@ -131,7 +205,12 @@ test('new requirement reserves a draft on main and switches to its branch', () =
 test('pipeline submit marks ready, commits only the requirement, and pushes the branch', async () => {
   const repo = makeRepository();
   try {
-    const created = createDraftRequirement('Pipeline feature', 'handoff', repo.config);
+    const created = await createDraftRequirement(
+      'Pipeline feature',
+      'handoff',
+      repo.config,
+      { environment: {} },
+    );
     const requirementPath = join(repo.root, created.requirementFile);
     completeDraft(requirementPath);
     const updated = setRequirementMode(created.requirementId, 'pipeline', repo.config);
@@ -189,7 +268,12 @@ test('pipeline submit marks ready, commits only the requirement, and pushes the 
 test('handoff submit stays local and returns the handoff run ID', async () => {
   const repo = makeRepository();
   try {
-    const created = createDraftRequirement('Handoff feature', 'handoff', repo.config);
+    const created = await createDraftRequirement(
+      'Handoff feature',
+      'handoff',
+      repo.config,
+      { environment: {} },
+    );
     completeDraft(join(repo.root, created.requirementFile));
     const submitted = await submitRequirement(created.requirementId, repo.config, {
       createHandoff: async () => '20260728123000-RQ-0002',
@@ -213,7 +297,12 @@ test('handoff submit stays local and returns the handoff run ID', async () => {
 test('submit rejects changes to another requirement', async () => {
   const repo = makeRepository();
   try {
-    const created = createDraftRequirement('Isolated feature', 'pipeline', repo.config);
+    const created = await createDraftRequirement(
+      'Isolated feature',
+      'pipeline',
+      repo.config,
+      { environment: {} },
+    );
     completeDraft(join(repo.root, created.requirementFile));
     writeFileSync(
       join(repo.root, 'requirements', 'RQ-0001-existing.md'),
@@ -225,6 +314,46 @@ test('submit rejects changes to another requirement', async () => {
       }),
       /Only .* may have uncommitted changes/,
     );
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('new requirement links a GitLab Issue and Draft MR through the platform adapter', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeGitLabPlatform();
+  try {
+    const created = await createDraftRequirement('GitLab feature', 'handoff', repo.config, {
+      environment: {
+        GITLAB_URL: 'https://gitlab.example.test',
+        GITLAB_PROJECT_ID: 'group/project',
+        GITLAB_TOKEN: 'secret',
+      },
+      platformAdapter: adapter,
+    });
+    assert.equal(created.repositoryProvider, 'gitlab');
+    assert.equal(created.workItem?.iid, 12);
+    assert.equal(created.changeRequest?.iid, 21);
+    const markdown = readFileSync(join(repo.root, created.requirementFile), 'utf8');
+    assert.match(markdown, /repositoryProvider: gitlab/);
+    assert.match(markdown, /gitlabIssueIid: 12/);
+    assert.match(markdown, /gitlabMergeRequestIid: 21/);
+    assert.equal(adapter.comments.length, 2);
+    assert.match(git(repo.root, 'log', '-2', '--format=%s'), /\[skip ci\]/);
+    assert.equal(git(repo.root, 'status', '--porcelain'), '');
+    const headBeforeRetry = git(repo.root, 'rev-parse', 'HEAD');
+    const recovered = await syncRequirementPlatform(created.requirementId, repo.config, {
+      environment: {
+        GITLAB_URL: 'https://gitlab.example.test',
+        GITLAB_PROJECT_ID: 'group/project',
+        GITLAB_TOKEN: 'secret',
+      },
+      platformAdapter: adapter,
+    });
+    assert.equal(recovered.workItem.iid, 12);
+    assert.equal(recovered.changeRequest.iid, 21);
+    assert.equal(adapter.comments.length, 2);
+    assert.equal(git(repo.root, 'rev-parse', 'HEAD'), headBeforeRetry);
   } finally {
     repo.cleanup();
   }

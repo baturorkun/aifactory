@@ -99,7 +99,7 @@ function parseMarkdown(id: string, markdown: string): Requirement {
 
 export function updateRequirementMetadata(
   markdown: string,
-  updates: Partial<Pick<RequirementLifecycle, 'status' | 'executionMode' | 'pipelineFast'>>,
+  updates: Partial<RequirementLifecycle>,
 ): string {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) {
@@ -108,17 +108,25 @@ export function updateRequirementMetadata(
   const lines = match[1].split(/\r?\n/);
   for (const [key, value] of Object.entries(updates)) {
     const index = lines.findIndex((line) => line.startsWith(`${key}:`));
+    const serialized = serializeMetadataValue(key, value);
     if (index < 0) {
-      if (key !== 'pipelineFast') {
-        throw new Error(`Requirement metadata field is missing: ${key}`);
-      }
-      const executionModeIndex = lines.findIndex((line) => line.startsWith('executionMode:'));
-      lines.splice(executionModeIndex + 1, 0, `${key}: ${value}`);
+      const anchor = key === 'pipelineFast'
+        ? lines.findIndex((line) => line.startsWith('executionMode:'))
+        : lines.findIndex((line) => line.startsWith('createdFromCommit:'));
+      lines.splice(anchor >= 0 ? anchor + 1 : lines.length, 0, `${key}: ${serialized}`);
     } else {
-      lines[index] = `${key}: ${value}`;
+      lines[index] = `${key}: ${serialized}`;
     }
   }
   return `---\n${lines.join('\n')}\n---\n${markdown.slice(match[0].length)}`;
+}
+
+function serializeMetadataValue(key: string, value: unknown): string {
+  if (typeof value !== 'string') return String(value);
+  if (key === 'status' || key === 'executionMode' || key === 'repositoryProvider') {
+    return value;
+  }
+  return JSON.stringify(value);
 }
 
 function splitFrontmatter(markdown: string): {
@@ -174,7 +182,17 @@ function parseLifecycle(
     createdAt: metadata.createdAt ?? '',
     branch: metadata.branch ?? '',
     createdFromCommit: metadata.createdFromCommit ?? '',
+    repositoryProvider: metadata.repositoryProvider || undefined,
+    gitlabIssueIid: parseOptionalPositiveInteger(metadata.gitlabIssueIid),
+    gitlabIssueUrl: metadata.gitlabIssueUrl || undefined,
+    gitlabMergeRequestIid: parseOptionalPositiveInteger(metadata.gitlabMergeRequestIid),
+    gitlabMergeRequestUrl: metadata.gitlabMergeRequestUrl || undefined,
   });
+}
+
+function parseOptionalPositiveInteger(value: string | undefined): number | undefined {
+  if (value === undefined || value === '') return undefined;
+  return Number(value);
 }
 
 function splitSections(lines: string[]): Record<string, string> {

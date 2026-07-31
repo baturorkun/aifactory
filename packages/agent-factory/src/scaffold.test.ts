@@ -28,6 +28,14 @@ test('new projects enable the draft requirement branch workflow', () => {
         branchPrefix: string;
         baseBranch: string;
       };
+      repositoryPlatforms: {
+        gitlab: {
+          baseUrl: string;
+          projectId: string;
+          token: string;
+          targetBranch: string;
+        };
+      };
     };
     assert.deepEqual(config.model, {
       provider: '${AI_PROVIDER}',
@@ -38,6 +46,10 @@ test('new projects enable the draft requirement branch workflow', () => {
       maxTokens: 32768,
     });
     const ci = readFileSync(join(result.projectRoot, '.gitlab-ci.yml'), 'utf8');
+    const packageJson = JSON.parse(
+      readFileSync(join(result.projectRoot, 'package.json'), 'utf8'),
+    ) as { scripts?: Record<string, string> };
+    assert.equal(packageJson.scripts?.factory, undefined);
     assert.deepEqual(config.requirementBranches, {
       enabled: true,
       branchPrefix: 'factory/',
@@ -50,7 +62,27 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /- factory\.config\.json/);
     assert.match(ci, /requirement decision/);
     assert.match(ci, /sync-requirement/);
+    assert.match(ci, /--project "\$CI_PROJECT_DIR"/);
+    assert.match(ci, /cd \.\.\/aifactory/);
     assert.match(ci, /RQ-\[0-9\]\+/);
+    assert.deepEqual(
+      {
+        baseUrl: config.repositoryPlatforms.gitlab.baseUrl,
+        projectId: config.repositoryPlatforms.gitlab.projectId,
+        token: config.repositoryPlatforms.gitlab.token,
+        targetBranch: config.repositoryPlatforms.gitlab.targetBranch,
+      },
+      {
+        baseUrl: '${GITLAB_URL:-}',
+        projectId: '${GITLAB_PROJECT_ID:-}',
+        token: '${GITLAB_TOKEN:-}',
+        targetBranch: 'main',
+      },
+    );
+    const envExample = readFileSync(join(result.projectRoot, '.env.example'), 'utf8');
+    assert.match(envExample, /GITLAB_URL=/);
+    assert.match(envExample, /GITLAB_PROJECT_ID=/);
+    assert.match(envExample, /GITLAB_TOKEN=/);
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

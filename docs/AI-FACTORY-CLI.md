@@ -9,25 +9,25 @@ API-less, requirement-driven, multi-agent code generation.
 pnpm install
 
 # 2. Reserve a draft requirement and switch to its branch
-pnpm factory -- requirement new "My feature" --mode handoff
+pnpm factory -- --project ../myproject requirement new "My feature" --mode handoff
 
 # 3. Complete the generated requirement, then submit it
-pnpm factory -- requirement submit RQ-0001
+pnpm factory -- --project ../myproject requirement submit RQ-0001
 
 # 4. (Optional) Add constraints
 # → constraints/RQ-0001.json
 
 # 5. Run the pipeline directly (dry-run uses mock model — no LLM needed)
-pnpm factory -- run RQ-0001 --dry-run
+pnpm factory -- --project ../myproject run RQ-0001 --dry-run
 
 # 6. Check status
-pnpm factory -- status
+pnpm factory -- --project ../myproject status
 
 # 7. See what was produced
-pnpm factory -- artifacts <run-id>
+pnpm factory -- --project ../myproject artifacts <run-id>
 
 # 8. Approve when satisfied
-pnpm factory -- approve <run-id>
+pnpm factory -- --project ../myproject approve <run-id>
 ```
 
 ---
@@ -36,7 +36,8 @@ pnpm factory -- approve <run-id>
 
 | Command | Description |
 |---|---|
-| `factory requirement new <title> --mode handoff` | Reserve a `[skip ci]` draft on main, create its branch, and switch to it |
+| `factory requirement new <title> --mode handoff [--platform gitlab]` | Reserve a `[skip ci]` draft, create its branch, and create linked GitLab resources when configured |
+| `factory requirement gitlab-sync <req-id>` | Create or recover the linked GitLab Issue and Draft Merge Request |
 | `factory requirement mode <req-id> <handoff\|pipeline>` | Change execution mode locally |
 | `factory requirement submit <req-id>` | Validate and submit through the configured mode |
 | `factory requirement decision <req-id>` | Print the CI execution decision |

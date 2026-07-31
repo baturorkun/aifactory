@@ -27,6 +27,9 @@ test('lifecycle frontmatter is parsed and can be updated without changing the bo
     'createdAt: "2026-07-28T10:00:00.000Z"',
     'branch: "factory/RQ-0017"',
     'createdFromCommit: "abc123"',
+    'repositoryProvider: gitlab',
+    'gitlabIssueIid: 42',
+    'gitlabIssueUrl: "https://gitlab.example.test/group/project/-/issues/42"',
     '---',
     '# RQ-0017 - Lifecycle',
     '',
@@ -46,6 +49,12 @@ test('lifecycle frontmatter is parsed and can be updated without changing the bo
   assert.equal(requirement.lifecycle?.executionMode, 'pipeline');
   assert.equal(requirement.lifecycle?.pipelineFast, false);
   assert.equal(requirement.lifecycle?.createdByName, 'Batur');
+  assert.equal(requirement.lifecycle?.repositoryProvider, 'gitlab');
+  assert.equal(requirement.lifecycle?.gitlabIssueIid, 42);
+  assert.equal(
+    requirement.lifecycle?.gitlabIssueUrl,
+    'https://gitlab.example.test/group/project/-/issues/42',
+  );
   assert.match(updated, /# RQ-0017 - Lifecycle/);
 
   const fast = updateRequirementMetadata(updated, { pipelineFast: true });

@@ -274,6 +274,11 @@ export const RequirementLifecycleSchema = z.object({
   createdAt: z.string().datetime(),
   branch: z.string().min(1),
   createdFromCommit: z.string().min(1),
+  repositoryProvider: z.literal('gitlab').optional(),
+  gitlabIssueIid: z.number().int().positive().optional(),
+  gitlabIssueUrl: z.string().url().optional(),
+  gitlabMergeRequestIid: z.number().int().positive().optional(),
+  gitlabMergeRequestUrl: z.string().url().optional(),
 });
 export type RequirementLifecycle = z.infer<typeof RequirementLifecycleSchema>;
 

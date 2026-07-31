@@ -18,6 +18,14 @@ import {
   updateRequirementMetadata,
 } from './requirements/parser';
 import { requirementBranchName } from './requirement-branches';
+import { GitLabRepositoryPlatform } from './repository-platform/gitlab';
+import { resolveRepositoryPlatform } from './repository-platform/resolve';
+import type {
+  RepositoryPlatformAdapter,
+  ResolvedRepositoryPlatform,
+  WorkItem,
+  ChangeRequest,
+} from './repository-platform/types';
 
 const REQUIREMENT_ID_PATTERN = /^RQ-(\d+)$/i;
 const REQUIREMENT_FILE_PATTERN = /^(RQ-(\d+))(?:[-.].*)?\.(?:md|markdown)$/i;
@@ -28,6 +36,9 @@ export interface NewRequirementResult {
   branch: string;
   mode: RequirementExecutionMode;
   pipelineFast: boolean;
+  repositoryProvider?: 'gitlab';
+  workItem?: WorkItem;
+  changeRequest?: ChangeRequest;
 }
 
 export interface SubmitRequirementResult {
@@ -44,6 +55,21 @@ interface SubmitDependencies {
     requirementId: string,
     config: FactoryConfig,
   ) => Promise<string>;
+  platformAdapter?: RepositoryPlatformAdapter;
+}
+
+interface NewRequirementOptions {
+  pipelineFast?: boolean;
+  platform?: string;
+  platformAdapter?: RepositoryPlatformAdapter;
+  environment?: Record<string, string | undefined>;
+}
+
+export interface RequirementPlatformSyncResult {
+  requirementId: string;
+  provider: 'gitlab';
+  workItem: WorkItem;
+  changeRequest: ChangeRequest;
 }
 
 function git(
@@ -247,14 +273,19 @@ function validateReady(requirement: Requirement): void {
   }
 }
 
-export function createDraftRequirement(
+export async function createDraftRequirement(
   title: string,
   mode: RequirementExecutionMode,
   config: FactoryConfig,
-  options: { pipelineFast?: boolean } = {},
-): NewRequirementResult {
+  options: NewRequirementOptions = {},
+): Promise<NewRequirementResult> {
   const normalizedTitle = title.trim();
   if (!normalizedTitle) throw new Error('Requirement title cannot be empty.');
+  const resolvedPlatform = resolveRepositoryPlatform(
+    config,
+    options.platform,
+    options.environment ?? process.env,
+  );
   const root = projectRoot(config);
   const baseBranch = config.requirementBranches.baseBranch;
   const remote = config.requirementBranches.remote;
@@ -338,7 +369,192 @@ export function createDraftRequirement(
 
   git(root, ['switch', '--create', result.branch]);
   git(root, ['push', '--set-upstream', remote, result.branch]);
+  if (resolvedPlatform.provider === 'gitlab') {
+    try {
+      const linked = await synchronizeRequirementPlatform(
+        result.requirementId,
+        config,
+        resolvedPlatform,
+        options.platformAdapter,
+      );
+      result.repositoryProvider = linked.provider;
+      result.workItem = linked.workItem;
+      result.changeRequest = linked.changeRequest;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `${message}\nRequirement ${result.requirementId} and branch ${result.branch} were created. ` +
+        `Recover with: pnpm factory -- requirement gitlab-sync ${result.requirementId}`,
+      );
+    }
+  }
   return result;
+}
+
+export async function syncRequirementPlatform(
+  requirementId: string,
+  config: FactoryConfig,
+  options: {
+    platform?: string;
+    platformAdapter?: RepositoryPlatformAdapter;
+    environment?: Record<string, string | undefined>;
+  } = {},
+): Promise<RequirementPlatformSyncResult> {
+  const resolved = resolveRepositoryPlatform(
+    config,
+    options.platform ?? 'gitlab',
+    options.environment ?? process.env,
+  );
+  if (resolved.provider !== 'gitlab') {
+    throw new Error('GitLab integration is not enabled.');
+  }
+  return synchronizeRequirementPlatform(
+    assertRequirementId(requirementId),
+    config,
+    resolved,
+    options.platformAdapter,
+  );
+}
+
+async function synchronizeRequirementPlatform(
+  requirementId: string,
+  config: FactoryConfig,
+  resolved: Extract<ResolvedRepositoryPlatform, { provider: 'gitlab' }>,
+  suppliedAdapter?: RepositoryPlatformAdapter,
+): Promise<RequirementPlatformSyncResult> {
+  const { root, branch, requirementPath } = assertActiveRequirementBranch(requirementId, config);
+  const adapter = suppliedAdapter ?? new GitLabRepositoryPlatform(resolved.settings);
+  if (adapter.provider !== 'gitlab') {
+    throw new Error(`Repository provider mismatch: expected gitlab, received ${adapter.provider}.`);
+  }
+  let requirement = parseRequirement(requirementId, config.paths.requirements);
+  if (!requirement.lifecycle) {
+    throw new Error(`Requirement ${requirementId} has no lifecycle metadata.`);
+  }
+  if (
+    requirement.lifecycle.repositoryProvider &&
+    requirement.lifecycle.repositoryProvider !== adapter.provider
+  ) {
+    throw new Error(
+      `Requirement ${requirementId} is linked to ${requirement.lifecycle.repositoryProvider}, not ${adapter.provider}.`,
+    );
+  }
+  const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
+  const marker = `<!-- aifactory:requirement:${requirementId} -->`;
+  const issueTitle = requirement.title;
+  const issueDescription = [
+    marker,
+    '',
+    `AI Factory requirement **${requirementId}**.`,
+    '',
+    `- Branch: \`${branch}\``,
+    `- Execution mode: \`${requirement.lifecycle.executionMode}\``,
+    `- Requirement: \`${requirementFile}\``,
+  ].join('\n');
+
+  let workItem = requirement.lifecycle.gitlabIssueIid
+    ? await adapter.getWorkItem(requirement.lifecycle.gitlabIssueIid)
+    : undefined;
+  workItem ??= await adapter.findWorkItem(marker);
+  workItem ??= await adapter.createWorkItem({
+    title: issueTitle,
+    description: issueDescription,
+    labels: [resolved.settings.labels.draft],
+  });
+  verifyWorkItem(workItem, requirementId, marker);
+  workItem = await adapter.setWorkItemLifecycleLabel(
+    workItem,
+    requirement.lifecycle.status === 'draft'
+      ? resolved.settings.labels.draft
+      : resolved.settings.labels.ready,
+  );
+  updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, {
+    repositoryProvider: 'gitlab',
+    gitlabIssueIid: workItem.iid,
+    gitlabIssueUrl: workItem.url,
+  });
+
+  requirement = parseRequirement(requirementId, config.paths.requirements);
+  let changeRequest = requirement.lifecycle?.gitlabMergeRequestIid
+    ? await adapter.getChangeRequest(requirement.lifecycle.gitlabMergeRequestIid)
+    : undefined;
+  changeRequest ??= await adapter.findChangeRequest(branch, adapter.targetBranch);
+  changeRequest ??= await adapter.createDraftChangeRequest({
+    title: issueTitle,
+    description: [
+      `Implements **${requirementId}**.`,
+      '',
+      `Requirement: \`${requirementFile}\``,
+      `Closes #${workItem.iid}`,
+    ].join('\n'),
+    sourceBranch: branch,
+    targetBranch: adapter.targetBranch,
+  });
+  verifyChangeRequest(changeRequest, branch, adapter.targetBranch);
+  updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, {
+    repositoryProvider: 'gitlab',
+    gitlabIssueIid: workItem.iid,
+    gitlabIssueUrl: workItem.url,
+    gitlabMergeRequestIid: changeRequest.iid,
+    gitlabMergeRequestUrl: changeRequest.url,
+  });
+
+  const noteMarker = `<!-- aifactory:requirement-link:${requirementId} -->`;
+  await adapter.addWorkItemComment(
+    workItem,
+    [
+      `AI Factory linked ${requirementId}.`,
+      '',
+      `- Branch: \`${branch}\``,
+      `- Execution mode: \`${requirement.lifecycle!.executionMode}\``,
+      `- Draft change request: ${changeRequest.url}`,
+    ].join('\n'),
+    noteMarker,
+  );
+  const statusMarker = `<!-- aifactory:requirement-status:${requirementId}:${requirement.lifecycle!.status} -->`;
+  await adapter.addWorkItemComment(
+    workItem,
+    `AI Factory status for **${requirementId}**: \`${requirement.lifecycle!.status}\`.`,
+    statusMarker,
+  );
+
+  return { requirementId, provider: 'gitlab', workItem, changeRequest };
+}
+
+function updateAndPushLinkMetadata(
+  root: string,
+  branch: string,
+  requirementPath: string,
+  requirementFile: string,
+  config: FactoryConfig,
+  updates: Partial<NonNullable<Requirement['lifecycle']>>,
+): void {
+  const current = readFileSync(requirementPath, 'utf8');
+  const updated = updateRequirementMetadata(current, updates);
+  if (updated === current) return;
+  writeFileSync(requirementPath, updated, 'utf8');
+  git(root, ['add', requirementFile]);
+  git(root, ['commit', '-m', `requirement: link repository metadata [skip ci]`]);
+  git(root, ['push', config.requirementBranches.remote, `HEAD:${branch}`]);
+}
+
+function verifyWorkItem(workItem: WorkItem, requirementId: string, marker: string): void {
+  if (!workItem.title.startsWith(`${requirementId} -`) || !workItem.description.includes(marker)) {
+    throw new Error(`GitLab Issue #${workItem.iid} does not belong to ${requirementId}.`);
+  }
+}
+
+function verifyChangeRequest(
+  changeRequest: ChangeRequest,
+  sourceBranch: string,
+  targetBranch: string,
+): void {
+  if (
+    changeRequest.sourceBranch !== sourceBranch ||
+    changeRequest.targetBranch !== targetBranch
+  ) {
+    throw new Error(`GitLab Merge Request !${changeRequest.iid} has mismatched branches.`);
+  }
 }
 
 export function setRequirementMode(
@@ -397,6 +613,12 @@ export async function submitRequirement(
   }
 
   if (requirement.lifecycle!.executionMode === 'handoff') {
+    if (requirement.lifecycle!.repositoryProvider === 'gitlab') {
+      await syncRequirementPlatform(id, config, {
+        platform: 'gitlab',
+        platformAdapter: dependencies.platformAdapter,
+      });
+    }
     const runId = await dependencies.createHandoff(id, config);
     return {
       requirementId: id,
@@ -409,6 +631,12 @@ export async function submitRequirement(
   }
 
   const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
+  if (requirement.lifecycle!.repositoryProvider === 'gitlab') {
+    await syncRequirementPlatform(id, config, {
+      platform: 'gitlab',
+      platformAdapter: dependencies.platformAdapter,
+    });
+  }
   git(root, ['add', requirementFile]);
   const staged = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: root });
   if (staged.status === 1) {

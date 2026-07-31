@@ -34,9 +34,9 @@ The normal order is:
 
 1. Install the core `aifactory` repo.
 2. Create a target project with `factory new`.
-3. Move into the target project directory.
+3. Stay in the `aifactory` directory and select the target with `--project`.
 4. Add requirements and constraints in the target project.
-5. Run `handoff`, `run`, `status`, `logs`, and other factory commands from the target project.
+5. Run `handoff`, `run`, `status`, `logs`, and other commands from `aifactory`.
 
 ```bash
 cd agentic/aifactory
@@ -46,20 +46,19 @@ pnpm -r run typecheck
 # Create a sibling target project.
 pnpm factory new myproject --template python
 
-# From this point on, work inside the target project.
-cd ../myproject
-
 # Add requirement files under requirements/ and constraints/.
-pnpm factory handoff RQ-0001-example
-pnpm factory run RQ-0001-example
-pnpm factory status
+pnpm factory -- --project ../myproject handoff RQ-0001-example
+pnpm factory -- --project ../myproject run RQ-0001-example
+pnpm factory -- --project ../myproject status
 ```
 
-Important: `factory new` is normally run from the core repo. Most other commands are normally run from the target project.
+Important: all `factory` commands are run from the core `aifactory` repo.
+`--project <path>` selects the consumer project. The same path may be supplied
+through `AIFACTORY_PROJECT`.
 
 ## Choose An Execution Mode
 
-After a target project exists and a requirement is written, choose one of these modes from inside the target project:
+After a target project exists and a requirement is written, choose one of these modes from the `aifactory` directory with `--project <path>`:
 
 | Mode | Command | Calls external LLM API? | Writes application code? | Purpose |
 |---|---|---:|---:|---|
@@ -345,25 +344,31 @@ For native Ollama provider config, use `provider: ollama` in `factory.config.jso
 
 ## Main Commands
 
-Run these from the target project directory.
+Run these from the `aifactory` directory and select the target project.
 
 ### Create and submit a requirement branch
 
 Start from a clean, current configured base branch:
 
 ```bash
-pnpm factory -- requirement new "Feature title" --mode handoff
+pnpm factory -- --project ../myproject requirement new "Feature title" --mode handoff
 ```
 
 This reserves a metadata-rich draft on the base branch, pushes it, creates and
-pushes `factory/RQ-xxxx`, and switches the local worktree to that branch. The
+pushes `factory/RQ-xxxx`, and switches the local worktree to that branch. If
+the project `.env` contains `GITLAB_URL`, `GITLAB_PROJECT_ID`, and
+`GITLAB_TOKEN`, AI Factory also creates a linked GitLab Issue and Draft Merge
+Request and stores their links in requirement metadata. Use
+`--platform gitlab` for explicit selection, `--platform none` for branch-only
+behavior, or recover an interrupted link operation with
+`pnpm factory -- --project ../myproject requirement gitlab-sync RQ-xxxx`. The
 reservation commit uses `[skip ci]`, so the base-branch reservation and initial
-draft-branch push do not create pipelines. Finish the generated description and
+draft/linkage pushes do not create pipelines. Finish the generated description and
 acceptance criteria, optionally switch execution mode, and submit:
 
 ```bash
-pnpm factory -- requirement mode RQ-0001 pipeline
-pnpm factory -- requirement submit RQ-0001
+pnpm factory -- --project ../myproject requirement mode RQ-0001 pipeline
+pnpm factory -- --project ../myproject requirement submit RQ-0001
 ```
 
 Handoff submit creates a local handoff package without committing or pushing.

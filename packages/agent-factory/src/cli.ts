@@ -31,15 +31,33 @@ import {
   setRequirementFast,
   setRequirementMode,
   submitRequirement,
+  syncRequirementPlatform,
 } from './requirement-lifecycle';
 import type { RequirementExecutionMode } from '@aifactory/contracts';
 
 const program = new Command();
+const factoryInvocationDirectory = process.cwd();
 
 program
   .name('factory')
   .description('AI Factory — requirement-driven, multi-agent code generation')
+  .option(
+    '--project <path>',
+    'Target project directory containing factory.config.json',
+    process.env.AIFACTORY_PROJECT,
+  )
   .version('0.1.0');
+
+program.hook('preAction', (_command, actionCommand) => {
+  if (actionCommand.name() === 'new') return;
+  const project = actionCommand.optsWithGlobals<{ project?: string }>().project;
+  if (!project) return;
+  const target = resolve(factoryInvocationDirectory, project);
+  if (!existsSync(target)) {
+    throw new Error(`Target project directory not found: ${target}`);
+  }
+  process.chdir(target);
+});
 
 // ============================================================
 // factory requirement ...
@@ -53,24 +71,46 @@ requirement
   .command('new <title>')
   .description('Reserve the next requirement ID on main and switch to its draft branch')
   .option('--mode <mode>', 'Execution mode: handoff or pipeline', 'handoff')
+  .option('--platform <platform>', 'Repository platform: gitlab or none')
   .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline', false)
-  .action((title: string, opts: { mode: string; fast: boolean }) => {
+  .action(async (title: string, opts: { mode: string; fast: boolean; platform?: string }) => {
     try {
       if (opts.mode !== 'handoff' && opts.mode !== 'pipeline') {
         throw new Error('Invalid mode. Choose handoff or pipeline.');
       }
-      const result = createDraftRequirement(
+      const result = await createDraftRequirement(
         title,
         opts.mode as RequirementExecutionMode,
         loadConfig(),
-        { pipelineFast: opts.fast },
+        { pipelineFast: opts.fast, platform: opts.platform },
       );
       console.log(chalk.green(`\n✓ Draft requirement created: ${chalk.bold(result.requirementId)}`));
       console.log(chalk.dim(`  File   : ${result.requirementFile}`));
       console.log(chalk.dim(`  Branch : ${result.branch}`));
       console.log(chalk.dim(`  Mode   : ${result.mode}`));
       console.log(chalk.dim(`  Fast   : ${result.pipelineFast ? 'enabled' : 'disabled'}`));
+      if (result.repositoryProvider === 'gitlab' && result.workItem && result.changeRequest) {
+        console.log(chalk.dim(`  Issue  : #${result.workItem.iid} ${result.workItem.url}`));
+        console.log(chalk.dim(`  Draft MR: !${result.changeRequest.iid} ${result.changeRequest.url}`));
+      }
       console.log(chalk.dim(`\n  Submit : pnpm factory -- requirement submit ${result.requirementId}\n`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('gitlab-sync <reqId>')
+  .description('Create or recover the linked GitLab Issue and Draft Merge Request')
+  .action(async (reqId: string) => {
+    try {
+      const result = await syncRequirementPlatform(reqId, loadConfig(), {
+        platform: 'gitlab',
+      });
+      console.log(chalk.green(`✓ ${result.requirementId} synchronized with GitLab.`));
+      console.log(chalk.dim(`  Issue   : #${result.workItem.iid} ${result.workItem.url}`));
+      console.log(chalk.dim(`  Draft MR: !${result.changeRequest.iid} ${result.changeRequest.url}`));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

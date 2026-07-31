@@ -12,7 +12,6 @@ export type NewProjectOptions = {
 export type NewProjectResult = {
   projectName: string;
   projectRoot: string;
-  factoryScript: string;
   template: ProjectTemplate;
 };
 
@@ -48,14 +47,12 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8');
 }
 
-function writeCommonFiles(projectRoot: string, projectName: string, factoryScript: string): void {
+function writeCommonFiles(projectRoot: string, projectName: string): void {
   writeJson(resolve(projectRoot, 'package.json'), {
     name: projectName,
     private: true,
     version: '0.1.0',
-    scripts: {
-      factory: factoryScript,
-    },
+    scripts: {},
   });
 
   writeFileSync(
@@ -85,6 +82,11 @@ function writeCommonFiles(projectRoot: string, projectName: string, factoryScrip
       '# RAG_API_KEY=replace_me',
       '# ENTRA_TENANT_ID=replace_me',
       '# ENTRA_AUDIENCE=api://replace_me',
+      '',
+      '# Optional repository-platform integration:',
+      '# GITLAB_URL=https://gitlab.example.com',
+      '# GITLAB_PROJECT_ID=group/project',
+      '# GITLAB_TOKEN=replace_me',
       '',
     ].join('\n'),
     'utf8',
@@ -191,10 +193,11 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '  script:',
       '    - |',
       '      REQUIREMENT_ID="${CI_COMMIT_BRANCH#factory/}"',
-      '      DECISION="$(pnpm --silent factory -- requirement decision "$REQUIREMENT_ID")"',
+      '      cd ../aifactory',
+      '      DECISION="$(pnpm --silent factory -- --project "$CI_PROJECT_DIR" requirement decision "$REQUIREMENT_ID")"',
       '      case "$DECISION" in',
       '        run|legacy)',
-      '          pnpm factory -- sync-requirement "$REQUIREMENT_ID" --source-ref "$CI_COMMIT_SHA" --push',
+      '          pnpm factory -- --project "$CI_PROJECT_DIR" sync-requirement "$REQUIREMENT_ID" --source-ref "$CI_COMMIT_SHA" --push',
       '          ;;',
       '        draft)',
       '          echo "$REQUIREMENT_ID is still draft; AI Factory execution is skipped."',
@@ -276,6 +279,22 @@ function writeFactoryConfig(
       branchPrefix: 'factory/',
       baseBranch: 'main',
       remote: 'origin',
+    },
+    repositoryPlatforms: {
+      gitlab: {
+        baseUrl: '${GITLAB_URL:-}',
+        projectId: '${GITLAB_PROJECT_ID:-}',
+        token: '${GITLAB_TOKEN:-}',
+        targetBranch: 'main',
+        removeSourceBranchOnMerge: true,
+        labels: {
+          draft: 'factory::draft',
+          ready: 'factory::ready',
+          running: 'factory::running',
+          needsFix: 'factory::needs-fix',
+          passed: 'factory::passed',
+        },
+      },
     },
     domain: {
       rules: [],
@@ -464,8 +483,6 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   }
 
   const factoryRoot = resolve(__dirname, '../../..');
-  const factoryBin = resolve(factoryRoot, 'packages/agent-factory/bin/factory.js');
-  const factoryScript = toPackageScriptPath(projectRoot, factoryBin);
   const tscScript = toPackageScriptPath(projectRoot, resolve(factoryRoot, 'node_modules/.bin/tsc'));
   const promptsPath = toPackageScriptPath(projectRoot, resolve(factoryRoot, 'packages/agent-factory/prompts'));
 
@@ -474,7 +491,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
     mkdirSync(resolve(projectRoot, dir), { recursive: true });
   }
 
-  writeCommonFiles(projectRoot, projectName, factoryScript);
+  writeCommonFiles(projectRoot, projectName);
   writeFileSync(
     resolve(projectRoot, 'PROJECT_GUIDELINES.md'),
     [
@@ -513,5 +530,5 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   writeFileSync(resolve(projectRoot, 'runs/.gitkeep'), '', 'utf8');
   writeFileSync(resolve(projectRoot, 'templates/.gitkeep'), '', 'utf8');
 
-  return { projectName, projectRoot, factoryScript, template: options.template };
+  return { projectName, projectRoot, template: options.template };
 }

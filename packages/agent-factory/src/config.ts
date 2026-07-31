@@ -109,6 +109,25 @@ const RequirementBranchesSchema = z.object({
   remote: z.string().min(1).default('origin'),
 });
 
+const GitLabLabelsSchema = z.object({
+  draft: z.string().optional(),
+  ready: z.string().optional(),
+  running: z.string().optional(),
+  needsFix: z.string().optional(),
+  passed: z.string().optional(),
+});
+
+const RepositoryPlatformsSchema = z.object({
+  gitlab: z.object({
+    baseUrl: z.string().optional(),
+    projectId: z.string().optional(),
+    token: z.string().optional(),
+    targetBranch: z.string().optional(),
+    removeSourceBranchOnMerge: z.boolean().default(true),
+    labels: GitLabLabelsSchema.default({}),
+  }).optional(),
+});
+
 const RagSourceSchema = z.object({
   id: z.string().min(1),
   type: z.literal('filesystem').default('filesystem'),
@@ -227,6 +246,7 @@ export const FactoryConfigSchema = z.object({
   targetProject: TargetProjectSchema.default({}),
   projectGuidelines: ProjectGuidelinesSchema.default({}),
   requirementBranches: RequirementBranchesSchema.default({}),
+  repositoryPlatforms: RepositoryPlatformsSchema.default({}),
   rag: RagConfigSchema.default({}),
 });
 
