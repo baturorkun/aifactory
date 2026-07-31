@@ -37,6 +37,8 @@ import type { RequirementExecutionMode } from '@aifactory/contracts';
 
 const program = new Command();
 const factoryInvocationDirectory = process.cwd();
+const factoryRepositoryDirectory = resolve(__dirname, '../../..');
+process.env.AIFACTORY_HOME ??= factoryRepositoryDirectory;
 
 program
   .name('factory')
