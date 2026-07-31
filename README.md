@@ -54,7 +54,9 @@ pnpm factory -- --project ../myproject status
 
 Important: all `factory` commands are run from the core `aifactory` repo.
 `--project <path>` selects the consumer project. The same path may be supplied
-through `AIFACTORY_PROJECT`.
+through `AIFACTORY_PROJECT`. A bare name such as `--project arinc661-studio`
+resolves to a sibling directory beside `aifactory`; explicit relative and
+absolute paths retain their normal path meaning.
 
 ## Choose An Execution Mode
 

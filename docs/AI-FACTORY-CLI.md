@@ -2,6 +2,10 @@
 
 API-less, requirement-driven, multi-agent code generation.
 
+Run commands from the `aifactory` directory. A bare selector such as
+`--project arinc661-studio` targets the sibling directory
+`../arinc661-studio`; explicit relative or absolute paths are also supported.
+
 ## Quick Start
 
 ```bash

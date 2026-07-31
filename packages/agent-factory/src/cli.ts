@@ -34,6 +34,7 @@ import {
   syncRequirementPlatform,
 } from './requirement-lifecycle';
 import type { RequirementExecutionMode } from '@aifactory/contracts';
+import { resolveTargetProjectPath } from './project-context';
 
 const program = new Command();
 const factoryInvocationDirectory = process.cwd();
@@ -54,7 +55,11 @@ program.hook('preAction', (_command, actionCommand) => {
   if (actionCommand.name() === 'new') return;
   const project = actionCommand.optsWithGlobals<{ project?: string }>().project;
   if (!project) return;
-  const target = resolve(factoryInvocationDirectory, project);
+  const target = resolveTargetProjectPath(
+    factoryRepositoryDirectory,
+    factoryInvocationDirectory,
+    project,
+  );
   if (!existsSync(target)) {
     throw new Error(`Target project directory not found: ${target}`);
   }
