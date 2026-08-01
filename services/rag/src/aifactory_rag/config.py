@@ -35,9 +35,81 @@ class RagSourceConfig(BaseModel):
             "**/*.pdf",
             "**/*.docx",
             "**/*.pptx",
+            "**/*.py",
+            "**/*.pyi",
+            "**/*.js",
+            "**/*.jsx",
+            "**/*.mjs",
+            "**/*.cjs",
+            "**/*.ts",
+            "**/*.tsx",
+            "**/*.mts",
+            "**/*.cts",
+            "**/*.java",
+            "**/*.kt",
+            "**/*.kts",
+            "**/*.go",
+            "**/*.rs",
+            "**/*.c",
+            "**/*.h",
+            "**/*.cc",
+            "**/*.cpp",
+            "**/*.cxx",
+            "**/*.hh",
+            "**/*.hpp",
+            "**/*.hxx",
+            "**/*.cs",
+            "**/*.fs",
+            "**/*.fsx",
+            "**/*.rb",
+            "**/*.php",
+            "**/*.swift",
+            "**/*.scala",
+            "**/*.sh",
+            "**/*.bash",
+            "**/*.zsh",
+            "**/*.fish",
+            "**/*.ps1",
+            "**/*.sql",
+            "**/*.yaml",
+            "**/*.yml",
+            "**/*.toml",
+            "**/*.ini",
+            "**/*.cfg",
+            "**/*.conf",
+            "**/*.xml",
+            "**/*.vue",
+            "**/*.svelte",
+            "**/*.proto",
+            "**/*.graphql",
+            "**/*.gql",
+            "**/*.dml",
+            "**/*.simics",
+            "**/Dockerfile",
+            "**/Makefile",
+            "**/Rakefile",
+            "**/Gemfile",
+            "**/Procfile",
+            "**/Jenkinsfile",
         ]
     )
-    exclude: list[str] = Field(default_factory=lambda: ["**/~$*", "**/.DS_Store"])
+    exclude: list[str] = Field(
+        default_factory=lambda: [
+            "**/~$*",
+            "**/.DS_Store",
+            "**/.git/**",
+            "**/node_modules/**",
+            "**/.venv/**",
+            "**/venv/**",
+            "**/__pycache__/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/coverage/**",
+            "**/*.min.js",
+            "**/*.map",
+            "**/*.lock",
+        ]
+    )
 
 
 class RagIngestConfig(BaseModel):
@@ -135,8 +207,11 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
         raise FileNotFoundError(f"Config file not found: {path}")
 
     raw = json.loads(path.read_text(encoding="utf-8"))
-    expanded = _expand_env(raw)
-    return FactoryConfig.model_validate(expanded)
+    rag_raw = raw.get("rag", {})
+    if not isinstance(rag_raw, dict):
+        raise ValueError("factory.config.json field 'rag' must be an object")
+    expanded_rag = _expand_env(rag_raw)
+    return FactoryConfig.model_validate({"rag": expanded_rag})
 
 
 def find_source(config: RagConfig, source_id: str) -> RagSourceConfig:

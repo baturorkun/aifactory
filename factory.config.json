@@ -57,23 +57,22 @@
       {
         "id": "${RAG_SOURCE_1_ID:-source-1}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_1_PATH:-./references/source-1}",
-        "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
-        "exclude": ["**/~$*", "**/.DS_Store"]
+        "rootPath": "${RAG_SOURCE_1_PATH:-./references/source-1}"
       },
       {
         "id": "${RAG_SOURCE_2_ID:-source-2}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}",
-        "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
-        "exclude": ["**/~$*", "**/.DS_Store"]
+        "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}"
       },
       {
         "id": "${RAG_SOURCE_3_ID:-source-3}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}",
-        "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
-        "exclude": ["**/~$*", "**/.DS_Store"]
+        "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}"
+      },
+      {
+        "id": "${RAG_SOURCE_4_ID:-source-4}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_4_PATH:-./references/source-4}"
       }
     ],
     "ingest": {

@@ -23,7 +23,7 @@ AI Factory does not install Docker/Podman and does not manage `podman machine`. 
 
 ## Configure Sources
 
-Add a mounted fileserver path to `factory.config.json`:
+Add a mounted fileserver or source repository path to `factory.config.json`:
 
 ```json
 {
@@ -32,12 +32,43 @@ Add a mounted fileserver path to `factory.config.json`:
       {
         "id": "fileserver",
         "type": "filesystem",
-        "rootPath": "/mnt/company-share/docs",
-        "include": ["**/*.txt", "**/*.md", "**/*.json", "**/*.csv", "**/*.html", "**/*.htm", "**/*.pdf", "**/*.docx", "**/*.pptx"],
-        "exclude": ["**/~$*", "**/.DS_Store"]
+        "rootPath": "/mnt/company-share/docs"
       }
     ]
   }
+}
+```
+
+When `include` and `exclude` are omitted, the defaults ingest common document,
+configuration, and source-code formats. Python, JavaScript/TypeScript, Java,
+Kotlin, Go, Rust, C/C++, C#, Ruby, PHP, Swift, Scala, shell, SQL, Vue, Svelte,
+Proto, and GraphQL files are supported, together with common extensionless build
+files such as `Dockerfile` and `Makefile`. Wind River/Intel Simics DML models
+(`.dml`) and command scripts (`.simics`) are also supported. Generated or dependency trees such as
+`.git`, `node_modules`, `.venv`, `dist`, `build`, and `coverage` are excluded.
+
+To ingest code, point a source root at the repository and narrow the patterns
+if needed:
+
+```json
+{
+  "id": "application-code",
+  "type": "filesystem",
+  "rootPath": "/srv/repos/application",
+  "include": ["**/*.py", "**/*.ts", "**/*.tsx", "**/Dockerfile"],
+  "exclude": ["**/.git/**", "**/node_modules/**", "**/.venv/**", "**/dist/**"]
+}
+```
+
+For a Simics examples tree, a focused source can use:
+
+```json
+{
+  "id": "simics-examples",
+  "type": "filesystem",
+  "rootPath": "/opt/simics/examples",
+  "include": ["**/*.dml", "**/*.simics", "**/*.py", "**/*.c", "**/*.h", "**/Makefile"],
+  "exclude": ["**/.git/**", "**/build/**", "**/__pycache__/**"]
 }
 ```
 

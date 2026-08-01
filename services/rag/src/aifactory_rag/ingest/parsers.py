@@ -5,12 +5,74 @@ import json
 from io import StringIO
 from pathlib import Path
 
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".json", ".csv", ".html", ".htm", ".pdf", ".docx", ".pptx"}
+PLAIN_TEXT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".py",
+    ".pyi",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
+    ".java",
+    ".kt",
+    ".kts",
+    ".go",
+    ".rs",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".hh",
+    ".hpp",
+    ".hxx",
+    ".cs",
+    ".fs",
+    ".fsx",
+    ".rb",
+    ".php",
+    ".swift",
+    ".scala",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".fish",
+    ".ps1",
+    ".sql",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".xml",
+    ".vue",
+    ".svelte",
+    ".proto",
+    ".graphql",
+    ".gql",
+    ".dml",
+    ".simics",
+}
+PLAIN_TEXT_FILENAMES = {
+    "dockerfile",
+    "makefile",
+    "rakefile",
+    "gemfile",
+    "procfile",
+    "jenkinsfile",
+}
+SUPPORTED_EXTENSIONS = PLAIN_TEXT_EXTENSIONS | {".json", ".csv", ".html", ".htm", ".pdf", ".docx", ".pptx"}
 
 
 def parse_file(path: Path) -> str:
     extension = path.suffix.lower()
-    if extension in {".txt", ".md"}:
+    if extension in PLAIN_TEXT_EXTENSIONS or path.name.lower() in PLAIN_TEXT_FILENAMES:
         return path.read_text(encoding="utf-8", errors="replace")
     if extension == ".json":
         data = json.loads(path.read_text(encoding="utf-8"))
