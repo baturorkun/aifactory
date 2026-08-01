@@ -26,6 +26,7 @@ def answer_question(
             "documentId": chunk.document_id,
             "chunkId": chunk.chunk_id,
             "relativePath": chunk.relative_path,
+            "pageNumbers": list(chunk.page_numbers),
             "score": chunk.score,
         }
         for chunk in chunks
@@ -38,13 +39,18 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
     if not chunks:
         return "No matching source content was found for this question."
 
-    context = "\n\n".join(
-        f"[source {index + 1}: {chunk.relative_path}]\n{chunk.text}"
-        for index, chunk in enumerate(chunks)
-    )
+    context_parts: list[str] = []
+    for chunk in chunks:
+        page_label = ""
+        if chunk.page_numbers:
+            noun = "page" if len(chunk.page_numbers) == 1 else "pages"
+            page_label = f"; {noun} {', '.join(str(page) for page in chunk.page_numbers)}"
+        context_parts.append(f"[document: {chunk.relative_path}{page_label}]\n{chunk.text}")
+    context = "\n\n".join(context_parts)
     prompt = (
         "Answer the question using only the provided source context. "
-        "If the context is insufficient, say so. Include concise source references by path.\n\n"
+        "If the context is insufficient, say so. Cite supporting evidence using the document "
+        "filename and page number when available. Do not use source numbers such as 'source 1'.\n\n"
         f"Question:\n{question}\n\n"
         f"Source context:\n{context}"
     )

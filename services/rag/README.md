@@ -12,14 +12,55 @@ pnpm factory rag install
 This creates `.venv-rag/` automatically and installs the Python service there.
 Use `AIFACTORY_RAG_PYTHON=/path/to/python` only when you want to provide your own Python environment.
 
-## Start PostgreSQL + pgvector
+## Start The RAG Stack
 
 ```bash
 pnpm factory rag env up
-pnpm factory rag db migrate
 ```
 
-AI Factory does not install Docker/Podman and does not manage `podman machine`. It only uses an already working `podman compose` or `docker compose` runtime.
+This builds and starts PostgreSQL + pgvector, the FastAPI query service, and the
+web chat. Database migrations run automatically when the API container starts.
+Open `http://localhost:8080` for chat or use `http://localhost:8765/query`
+directly. Override the published ports with `RAG_WEB_PORT` and `RAG_API_PORT`.
+The web UI loads configured source IDs, lets users restrict each question to a
+subset, shows downloadable source paths beneath each answer, and keeps up to 50
+chat sessions in the current browser's local storage. These custom-UI sessions
+are browser-local and are not shared across users or devices.
+
+By default, the web container proxies to an API already running on the host at
+`http://host.docker.internal:8765`. Override this with
+`RAG_WEB_API_UPSTREAM`. Docker receives a host-gateway mapping automatically;
+Podman deployments may use `http://host.containers.internal:8765` instead.
+
+Both services bind to `127.0.0.1` by default. To make chat reachable from other
+machines, explicitly set `RAG_WEB_BIND=0.0.0.0`. Set `RAG_API_BIND=0.0.0.0` only
+when clients also need direct API access. Before exposing either service,
+configure authentication or protect it with a trusted reverse proxy/firewall.
+Compose interpolation and container runtime settings are loaded explicitly from
+the root `.env` file. Shell variables can override those values for one command.
+
+AI Factory does not install Docker/Podman and does not manage `podman machine`.
+It only uses an already working `podman compose` or `docker compose` runtime.
+If the API is already installed as a systemd service on port 8765, stop that
+service or publish the container on another host port with `RAG_API_PORT`.
+
+Start or stop services individually when dependencies are already healthy:
+
+```bash
+pnpm factory rag env start postgres
+pnpm factory rag env start rag-api
+pnpm factory rag env start rag-web
+
+pnpm factory rag env stop rag-web
+pnpm factory rag env stop rag-api
+pnpm factory rag env stop postgres
+```
+
+Start the services in the order shown above when you want explicit control.
+Compose still enforces declared dependencies: starting `rag-api` also starts a
+missing PostgreSQL service. `rag-web` has no container dependency because it is
+designed to reuse an API already running on the host. Use
+`pnpm factory rag env status` to inspect service state.
 
 ## Configure Sources
 
@@ -117,6 +158,12 @@ Gemini document embeddings use `batchEmbedContents`, the configured `rag.ingest.
 
 Completed chunk batches are checkpointed in PostgreSQL. Re-running the same source file resumes compatible checkpoints unless `--force`, file content, or chunking settings changed.
 
+Long-running ingest reconnects automatically when PostgreSQL is restarted or a
+connection is administratively terminated. The interrupted file is retried and
+continues from compatible chunk checkpoints. Configure the bounded recovery
+window with `rag.ingest.databaseReconnectRetries` and
+`rag.ingest.databaseReconnectDelaySeconds`.
+
 FastAPI exposes:
 
 - `GET /health`
@@ -125,6 +172,11 @@ FastAPI exposes:
 - `GET /ingest-runs/{id}`
 - `GET /sources`
 - `GET /documents`
+- `GET /documents/download?sourceId=<id>&relativePath=<path>`
+
+Document downloads require the same API authentication as queries. Only active
+indexed documents can be downloaded, and resolved paths must remain inside the
+configured source root. The web chat renders cited sources as download links.
 
 `POST /query` accepts an optional `sourceIds` array. When supplied, retrieval is
 limited to those configured sources.

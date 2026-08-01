@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Chat with AI Factory RAG sources">
+    <title>AI Factory · RAG Chat</title>
+    <link rel="stylesheet" href="/styles.css?v=20260801-6">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">AF</div>
+          <div>
+            <strong>AI Factory</strong>
+            <span>Grounded knowledge</span>
+          </div>
+        </div>
+
+        <section class="session-panel" aria-labelledby="sessions-title">
+          <div class="section-heading">
+            <h2 id="sessions-title">Chats</h2>
+            <button id="new-chat" class="text-button" type="button">+ New</button>
+          </div>
+          <div id="session-list" class="session-list" aria-live="polite"></div>
+        </section>
+
+        <section class="source-panel" aria-labelledby="sources-title">
+          <div class="section-heading">
+            <h2 id="sources-title">Sources</h2>
+            <button id="select-all" class="text-button" type="button">Select all</button>
+          </div>
+          <p class="section-copy">Limit answers to the collections you trust for this question.</p>
+          <div id="source-list" class="source-list" aria-live="polite">
+            <div class="source-skeleton"></div>
+            <div class="source-skeleton short"></div>
+          </div>
+        </section>
+
+        <div class="sidebar-footer">
+          <span id="health-dot" class="health-dot" aria-hidden="true"></span>
+          <span id="health-label">Connecting to RAG API…</span>
+        </div>
+      </aside>
+
+      <main class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">RAG QUERY</p>
+            <h1>Ask your engineering knowledge</h1>
+          </div>
+          <button id="clear-chat" class="secondary-button" type="button">Clear chat</button>
+        </header>
+
+        <section id="messages" class="messages" aria-live="polite" aria-label="Conversation">
+          <div class="welcome-card">
+            <div class="welcome-icon" aria-hidden="true">⌁</div>
+            <p class="eyebrow">SOURCE-GROUNDED ANSWERS</p>
+            <h2>Explore documentation and code in one place.</h2>
+            <p>Select one or more sources, then ask about APIs, architecture, examples, or implementation details.</p>
+            <div class="suggestions" aria-label="Suggested questions">
+              <button type="button" class="suggestion">How is a Simics device initialized?</button>
+              <button type="button" class="suggestion">Find an example using PCIe interfaces.</button>
+              <button type="button" class="suggestion">Explain the project structure.</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="composer-wrap">
+          <form id="chat-form" class="composer">
+            <label class="sr-only" for="question">Question</label>
+            <textarea id="question" name="question" rows="1" maxlength="8000" placeholder="Ask a question about your sources…" required></textarea>
+            <button id="send-button" class="send-button" type="submit" aria-label="Send question">
+              <span>Ask</span>
+              <span aria-hidden="true">↗</span>
+            </button>
+          </form>
+          <p class="composer-note">Enter to send · Shift + Enter for a new line · Answers are grounded in selected sources</p>
+        </div>
+      </main>
+    </div>
+    <script src="/app.js?v=20260801-6" defer></script>
+  </body>
+</html>

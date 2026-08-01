@@ -1,0 +1,11 @@
+.env
+.git
+.venv-rag
+node_modules
+coverage
+dist
+build
+runs
+handoffs
+**/__pycache__
+**/*.pyc

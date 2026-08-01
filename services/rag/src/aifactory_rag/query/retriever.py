@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from aifactory_rag.config import RagConfig, require_ingest_config
 from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import create_embedding_adapter
+
+PAGE_MARKER = re.compile(r"\[page\s+(\d+)\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,24 @@ class RetrievedChunk:
     text: str
     score: float
     metadata: dict[str, Any]
+    page_numbers: tuple[int, ...] = ()
+
+
+def infer_page_numbers(text: str, previous_page_text: str | None = None) -> tuple[int, ...]:
+    """Return every PDF page represented by a chunk, preserving document order."""
+    matches = list(PAGE_MARKER.finditer(text))
+    pages: list[int] = []
+
+    # A chunk can start in the middle of a page and reach the next page marker.
+    # In that case the preceding marker identifies the initial text's page.
+    starts_mid_page = not matches or bool(text[:matches[0].start()].strip())
+    if starts_mid_page and previous_page_text:
+        previous_matches = list(PAGE_MARKER.finditer(previous_page_text))
+        if previous_matches:
+            pages.append(int(previous_matches[-1].group(1)))
+
+    pages.extend(int(match.group(1)) for match in matches)
+    return tuple(dict.fromkeys(pages))
 
 
 def retrieve(
@@ -45,6 +66,15 @@ def retrieve(
                   d.relative_path,
                   c.text,
                   c.metadata,
+                  (
+                    SELECT previous.text
+                    FROM rag_chunks previous
+                    WHERE previous.document_id = c.document_id
+                      AND previous.chunk_index < c.chunk_index
+                      AND previous.text ~ '\\[page [0-9]+\\]'
+                    ORDER BY previous.chunk_index DESC
+                    LIMIT 1
+                  ) AS previous_page_text,
                   1 - (c.embedding <=> %s::vector) AS score
                 FROM rag_chunks c
                 JOIN rag_documents d ON d.id = c.document_id
@@ -68,6 +98,7 @@ def retrieve(
             text=row["text"],
             score=float(row["score"]),
             metadata=row["metadata"] or {},
+            page_numbers=infer_page_numbers(row["text"], row.get("previous_page_text")),
         )
         for row in rows
     ]

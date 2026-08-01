@@ -5,8 +5,8 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter
-from typing import Any
+from time import perf_counter, sleep
+from typing import Any, Callable, TypeVar
 
 import psycopg
 
@@ -16,6 +16,9 @@ from aifactory_rag.embeddings import EmbeddingAdapter, create_embedding_adapter
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.parsers import parse_file
 from aifactory_rag.ingest.sources import SourceFile, normalize_subdir, scan_files
+
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -61,7 +64,8 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
     if len(files) > 10:
         print(f"  ... {len(files) - 10} more", flush=True)
 
-    with connect(config.database.connection_string) as conn:
+    conn = connect(config.database.connection_string)
+    try:
         _upsert_source(conn, source)
         run_id = _start_run(conn, source.id)
         summary = IngestSummary(run_id=run_id, source_id=source.id, status="running", subdir=normalized_subdir, scanned_count=len(files))
@@ -77,37 +81,159 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                 print(f"{progress} START {file.relative_path}", flush=True)
                 seen.add(file.relative_path)
                 try:
-                    outcome = _ingest_file(conn, config, source, file, embed_model, force)
+                    conn, outcome = _run_with_database_retries(
+                        conn,
+                        config,
+                        f"ingesting {file.relative_path}",
+                        lambda current: _ingest_file_and_commit(
+                            current, config, source, file, embed_model, force,
+                        ),
+                    )
                     if outcome == "inserted":
                         summary.inserted_count += 1
                     elif outcome == "updated":
                         summary.updated_count += 1
                     elif outcome == "skipped":
                         summary.skipped_count += 1
-                    conn.commit()
                     print(f"{progress} DONE  {outcome:<8} {file.relative_path} ({_format_duration(perf_counter() - file_started)})", flush=True)
                 except Exception as exc:
-                    conn.rollback()
+                    _safe_rollback(conn)
                     summary.error_count += 1
-                    _record_file_error(conn, run_id, source.id, file.relative_path, "ingest", exc)
-                    conn.commit()
+                    conn, _ = _run_with_database_retries(
+                        conn,
+                        config,
+                        f"recording the error for {file.relative_path}",
+                        lambda current: _record_file_error_and_commit(
+                            current, run_id, source.id, file.relative_path, "ingest", exc,
+                        ),
+                    )
                     print(f"{progress} ERROR {file.relative_path} ({_format_duration(perf_counter() - file_started)}): {exc}", flush=True)
 
-            summary.deleted_count = _mark_deleted(conn, source.id, seen, normalized_subdir)
             summary.status = "failed" if summary.error_count else "passed"
             summary.duration_seconds = round(perf_counter() - run_started, 3)
-            _finish_run(conn, summary)
-            conn.commit()
+            conn, summary.deleted_count = _run_with_database_retries(
+                conn,
+                config,
+                "finalizing the ingest run",
+                lambda current: _finalize_successful_run(
+                    current, summary, source.id, seen, normalized_subdir,
+                ),
+            )
             print(f"RAG ingest finished: {summary.status} in {_format_duration(summary.duration_seconds)}", flush=True)
             return summary
         except Exception as exc:
-            conn.rollback()
+            _safe_rollback(conn)
             summary.status = "failed"
             summary.duration_seconds = round(perf_counter() - run_started, 3)
-            _finish_run(conn, summary, error=str(exc))
-            conn.commit()
+            try:
+                conn, _ = _run_with_database_retries(
+                    conn,
+                    config,
+                    "recording the failed ingest run",
+                    lambda current: _finish_failed_run_and_commit(current, summary, exc),
+                )
+            except Exception as finish_exc:
+                print(f"RAG ingest could not record failed run {summary.run_id}: {finish_exc}", flush=True)
             print(f"RAG ingest failed after {_format_duration(summary.duration_seconds)}: {exc}", flush=True)
             raise
+    finally:
+        _safe_close(conn)
+
+
+def _run_with_database_retries(
+    conn: psycopg.Connection,
+    config: RagConfig,
+    action: str,
+    operation: Callable[[psycopg.Connection], T],
+) -> tuple[psycopg.Connection, T]:
+    retries = config.ingest.database_reconnect_retries
+    delay = config.ingest.database_reconnect_delay_seconds
+    current = conn
+    attempt = 0
+
+    while True:
+        try:
+            if current.closed:
+                current = connect(config.database.connection_string)
+            return current, operation(current)
+        except (psycopg.InterfaceError, psycopg.OperationalError) as exc:
+            _safe_close(current)
+            if attempt >= retries:
+                raise
+            attempt += 1
+            print(
+                f"  DB reconnect [{attempt}/{retries}] while {action}; retrying in {delay:.1f}s: {exc}",
+                flush=True,
+            )
+            sleep(delay)
+            try:
+                current = connect(config.database.connection_string)
+            except psycopg.OperationalError:
+                # The next loop iteration applies the same bounded retry policy.
+                continue
+
+
+def _safe_rollback(conn: psycopg.Connection) -> None:
+    try:
+        if not conn.closed:
+            conn.rollback()
+    except psycopg.Error:
+        pass
+
+
+def _safe_close(conn: psycopg.Connection) -> None:
+    try:
+        conn.close()
+    except psycopg.Error:
+        pass
+
+
+def _ingest_file_and_commit(
+    conn: psycopg.Connection,
+    config: RagConfig,
+    source: RagSourceConfig,
+    file: SourceFile,
+    embed_model: EmbeddingAdapter,
+    force: bool,
+) -> str:
+    outcome = _ingest_file(conn, config, source, file, embed_model, force)
+    conn.commit()
+    return outcome
+
+
+def _record_file_error_and_commit(
+    conn: psycopg.Connection,
+    run_id: int,
+    source_id: str,
+    path: str,
+    stage: str,
+    exc: Exception,
+) -> None:
+    _record_file_error(conn, run_id, source_id, path, stage, exc)
+    conn.commit()
+
+
+def _finalize_successful_run(
+    conn: psycopg.Connection,
+    summary: IngestSummary,
+    source_id: str,
+    seen: set[str],
+    subdir: str | None,
+) -> int:
+    deleted_count = _mark_deleted(conn, source_id, seen, subdir)
+    summary.deleted_count = deleted_count
+    _finish_run(conn, summary)
+    conn.commit()
+    return deleted_count
+
+
+def _finish_failed_run_and_commit(
+    conn: psycopg.Connection,
+    summary: IngestSummary,
+    exc: Exception,
+) -> None:
+    _finish_run(conn, summary, error=str(exc))
+    conn.commit()
 
 
 def _ingest_file(

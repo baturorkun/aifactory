@@ -12,7 +12,13 @@ import {
 } from './orchestrator/handoff';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
-import { installRagPython, runRagEnv, runRagPython } from './rag/python-runner';
+import {
+  installRagPython,
+  parseRagEnvService,
+  RAG_ENV_SERVICES,
+  runRagEnv,
+  runRagPython,
+} from './rag/python-runner';
 import { queryConfiguredRag } from './rag/grounding-client';
 import {
   installRagService,
@@ -584,7 +590,7 @@ const ragEnv = rag.command('env').description('Manage the local RAG container en
 
 ragEnv
   .command('up')
-  .description('Create and start PostgreSQL + pgvector using Podman/Docker Compose')
+  .description('Build and start PostgreSQL, the RAG API, and web chat using Podman/Docker Compose')
   .action(() => runRagCommand(() => runRagEnv('up')));
 
 ragEnv
@@ -596,6 +602,20 @@ ragEnv
   .command('status')
   .description('Show RAG compose container status')
   .action(() => runRagCommand(() => runRagEnv('status')));
+
+ragEnv
+  .command('start <service>')
+  .description(`Build and start one RAG service and its declared dependencies: ${RAG_ENV_SERVICES.join(', ')}`)
+  .action((service: string) =>
+    runRagCommand(() => runRagEnv('start', parseRagEnvService(service))),
+  );
+
+ragEnv
+  .command('stop <service>')
+  .description(`Stop one RAG service: ${RAG_ENV_SERVICES.join(', ')}`)
+  .action((service: string) =>
+    runRagCommand(() => runRagEnv('stop', parseRagEnvService(service))),
+  );
 
 const ragDb = rag.command('db').description('Manage the RAG database');
 

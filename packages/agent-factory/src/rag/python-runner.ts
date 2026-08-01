@@ -2,12 +2,16 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 
-export type RagEnvCommand = 'up' | 'down' | 'status';
+export const RAG_ENV_SERVICES = ['postgres', 'rag-api', 'rag-web'] as const;
+
+export type RagEnvService = (typeof RAG_ENV_SERVICES)[number];
+export type RagEnvCommand = 'up' | 'down' | 'status' | 'start' | 'stop';
 
 const CORE_ROOT = resolve(__dirname, '../../../..');
 const RAG_SERVICE_ROOT = resolve(CORE_ROOT, 'services/rag');
 const RAG_SOURCE_ROOT = resolve(RAG_SERVICE_ROOT, 'src');
 const RAG_COMPOSE_FILE = resolve(CORE_ROOT, 'infra/rag/compose.yaml');
+const RAG_COMPOSE_ENV_FILE = resolve(CORE_ROOT, '.env');
 const RAG_VENV_ROOT = resolve(CORE_ROOT, '.venv-rag');
 
 export function runRagPython(args: string[], cwd: string = process.cwd()): void {
@@ -55,16 +59,50 @@ export function installRagPython(): void {
   runPythonCommand(installPython, ['-m', 'pip', 'install', '-e', RAG_SERVICE_ROOT], 'install RAG Python dependencies');
 }
 
-export function runRagEnv(command: RagEnvCommand): void {
+export function parseRagEnvService(service: string): RagEnvService {
+  if (RAG_ENV_SERVICES.includes(service as RagEnvService)) {
+    return service as RagEnvService;
+  }
+  throw new Error(
+    `Unknown RAG service "${service}". Choose one of: ${RAG_ENV_SERVICES.join(', ')}.`,
+  );
+}
+
+export function ragEnvComposeArgs(
+  composeArgs: string[],
+  command: RagEnvCommand,
+  service?: RagEnvService,
+): string[] {
+  if ((command === 'start' || command === 'stop') && !service) {
+    throw new Error(`RAG service is required for env ${command}.`);
+  }
+  if (command !== 'start' && command !== 'stop' && service) {
+    throw new Error(`RAG service cannot be supplied for env ${command}.`);
+  }
+
+  const prefix = [
+    ...composeArgs,
+    '--env-file',
+    RAG_COMPOSE_ENV_FILE,
+    '-f',
+    RAG_COMPOSE_FILE,
+  ];
+  if (command === 'up') return [...prefix, 'up', '-d', '--build'];
+  if (command === 'down') return [...prefix, 'down'];
+  if (command === 'status') return [...prefix, 'ps'];
+  if (command === 'start') {
+    return [...prefix, 'up', '-d', '--build', service!];
+  }
+  return [...prefix, 'stop', service!];
+}
+
+export function runRagEnv(command: RagEnvCommand, service?: RagEnvService): void {
   if (!existsSync(RAG_COMPOSE_FILE)) {
     throw new Error(`RAG compose file not found: ${RAG_COMPOSE_FILE}`);
   }
 
   const runtime = findComposeRuntime();
-  const args =
-    command === 'up' ? [...runtime.args, '-f', RAG_COMPOSE_FILE, 'up', '-d']
-    : command === 'down' ? [...runtime.args, '-f', RAG_COMPOSE_FILE, 'down']
-    : [...runtime.args, '-f', RAG_COMPOSE_FILE, 'ps'];
+  const args = ragEnvComposeArgs(runtime.args, command, service);
 
   const result = spawnSync(runtime.bin, args, {
     cwd: resolve(CORE_ROOT, 'infra/rag'),

@@ -116,6 +116,8 @@ class RagIngestConfig(BaseModel):
     chunk_size: int = Field(default=1200, alias="chunkSize")
     chunk_overlap: int = Field(default=150, alias="chunkOverlap")
     batch_size: int = Field(default=50, alias="batchSize")
+    database_reconnect_retries: int = Field(default=12, ge=0, alias="databaseReconnectRetries")
+    database_reconnect_delay_seconds: float = Field(default=5.0, gt=0, alias="databaseReconnectDelaySeconds")
 
 
 class RagEmbeddingConfig(BaseModel):

@@ -18,5 +18,39 @@ services:
       timeout: 5s
       retries: 20
 
+  rag-api:
+    build:
+      context: ../..
+      dockerfile: services/rag/Dockerfile
+    container_name: aifactory-rag-api
+    restart: unless-stopped
+    env_file:
+      - ../../.env
+    environment:
+      RAG_DATABASE_URL: postgresql://${RAG_POSTGRES_USER:-aifactory_rag}:${RAG_POSTGRES_PASSWORD:-aifactory_rag}@postgres:5432/${RAG_POSTGRES_DB:-aifactory_rag}
+    ports:
+      - "${RAG_API_BIND:-127.0.0.1}:${RAG_API_PORT:-8765}:8765"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  rag-web:
+    build:
+      context: ../..
+      dockerfile: services/rag-web/Dockerfile
+    container_name: aifactory-rag-web
+    restart: unless-stopped
+    environment:
+      RAG_WEB_API_UPSTREAM: ${RAG_WEB_API_UPSTREAM:-http://host.docker.internal:8765}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${RAG_WEB_BIND:-127.0.0.1}:${RAG_WEB_PORT:-8080}:8080"
+
 volumes:
   aifactory_rag_pgdata:

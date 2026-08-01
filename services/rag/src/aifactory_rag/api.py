@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from aifactory_rag.auth.entra import user_from_claims, validate_request
-from aifactory_rag.config import FactoryConfig, load_factory_config
+from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
 from aifactory_rag.query.responder import answer_question
@@ -22,6 +23,20 @@ class IngestRunRequest(BaseModel):
     sourceId: str
     force: bool = False
     subdir: str | None = None
+
+
+def resolve_source_file(source: RagSourceConfig, relative_path: str) -> Path:
+    requested = Path(relative_path)
+    if not relative_path.strip() or requested.is_absolute():
+        raise ValueError("Document path must be relative to its configured source")
+
+    root = Path(source.root_path).expanduser().resolve()
+    resolved = (root / requested).resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("Document path resolves outside its configured source") from exc
+    return resolved
 
 
 def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
@@ -83,6 +98,40 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         query_text += " ORDER BY source_id, relative_path LIMIT 500"
         with connect(factory_config.rag.database.connection_string) as conn:
             return fetch_all(conn, query_text, params)
+
+    @app.get("/documents/download")
+    def download_document(
+        sourceId: str,
+        relativePath: str,
+        _: dict[str, Any] = Depends(auth_claims),
+    ) -> FileResponse:
+        try:
+            source = find_source(factory_config.rag, sourceId)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="RAG source not found") from exc
+        try:
+            path = resolve_source_file(source, relativePath)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        with connect(factory_config.rag.database.connection_string) as conn:
+            indexed = fetch_one(
+                conn,
+                """
+                SELECT id
+                FROM rag_documents
+                WHERE source_id = %s AND relative_path = %s AND status = 'active'
+                """,
+                (sourceId, relativePath),
+            )
+        if not indexed or not path.is_file():
+            raise HTTPException(status_code=404, detail="Active indexed document not found")
+
+        return FileResponse(
+            path,
+            filename=path.name,
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.post("/db/migrate")
     def migrate_db(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, str]:

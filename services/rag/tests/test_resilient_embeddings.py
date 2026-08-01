@@ -5,10 +5,16 @@ import unittest
 from unittest.mock import patch
 
 import httpx
+import psycopg
 
 from aifactory_rag.config import RagConfig, RagEmbeddingConfig
 from aifactory_rag.embeddings import GeminiEmbeddingAdapter
-from aifactory_rag.ingest.pipeline import _can_resume, _replace_chunks
+from aifactory_rag.ingest.pipeline import (
+    _can_resume,
+    _replace_chunks,
+    _run_with_database_retries,
+    _safe_rollback,
+)
 
 
 class FakeCursor:
@@ -136,6 +142,55 @@ class ResilientEmbeddingTests(unittest.TestCase):
         self.assertEqual(adapter.batches, [["two", "three"], ["four"]])
         self.assertEqual(connection.inserted_indices, [2, 3, 4])
         self.assertEqual(connection.commit_count, 2)
+
+    @patch("aifactory_rag.ingest.pipeline.sleep", lambda _: None)
+    def test_database_operation_reconnects_and_retries_after_admin_shutdown(self) -> None:
+        config = RagConfig.model_validate(
+            {
+                "database": {"connectionString": "postgresql://test"},
+                "ingest": {
+                    "databaseReconnectRetries": 2,
+                    "databaseReconnectDelaySeconds": 0.01,
+                },
+            }
+        )
+
+        class RetryConnection:
+            def __init__(self, name: str) -> None:
+                self.name = name
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        interrupted = RetryConnection("interrupted")
+        recovered = RetryConnection("recovered")
+        attempts: list[str] = []
+
+        def operation(connection: RetryConnection) -> str:
+            attempts.append(connection.name)
+            if connection.name == "interrupted":
+                raise psycopg.OperationalError("terminating connection due to administrator command")
+            return "inserted"
+
+        with patch("aifactory_rag.ingest.pipeline.connect", return_value=recovered) as reconnect:
+            connection, result = _run_with_database_retries(  # type: ignore[arg-type]
+                interrupted, config, "ingesting example.dml", operation,  # type: ignore[arg-type]
+            )
+
+        self.assertIs(connection, recovered)
+        self.assertEqual(result, "inserted")
+        self.assertEqual(attempts, ["interrupted", "recovered"])
+        reconnect.assert_called_once_with("postgresql://test")
+
+    def test_safe_rollback_does_not_mask_a_lost_connection(self) -> None:
+        class LostConnection:
+            closed = False
+
+            def rollback(self) -> None:
+                raise psycopg.OperationalError("connection is lost")
+
+        _safe_rollback(LostConnection())  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

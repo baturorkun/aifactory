@@ -78,7 +78,9 @@
     "ingest": {
       "chunkSize": 1200,
       "chunkOverlap": 150,
-      "batchSize": 50
+      "batchSize": 50,
+      "databaseReconnectRetries": 12,
+      "databaseReconnectDelaySeconds": 5
     },
     "embedding": {
       "provider": "${RAG_EMBEDDING_PROVIDER:-gemini}",
