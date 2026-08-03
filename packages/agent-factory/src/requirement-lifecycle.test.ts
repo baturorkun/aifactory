@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { FactoryConfigSchema, type FactoryConfig } from './config';
 import {
+  cancelRequirement,
   createDraftRequirement,
   requirementExecutionDecision,
   setRequirementFast,
@@ -39,6 +40,7 @@ class FakeGitLabPlatform implements RepositoryPlatformAdapter {
   workItem?: WorkItem;
   changeRequest?: ChangeRequest;
   comments: string[] = [];
+  closedChangeRequests = 0;
 
   async getWorkItem(iid: number): Promise<WorkItem | undefined> {
     return this.workItem?.iid === iid ? this.workItem : undefined;
@@ -90,6 +92,13 @@ class FakeGitLabPlatform implements RepositoryPlatformAdapter {
       targetBranch: input.targetBranch,
     };
     return this.changeRequest;
+  }
+  async closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest> {
+    if (changeRequest.state === 'opened') {
+      changeRequest.state = 'closed';
+      this.closedChangeRequests += 1;
+    }
+    return changeRequest;
   }
 }
 
@@ -197,6 +206,54 @@ test('new requirement reserves a draft on main and switches to its branch', asyn
       git(repo.root, `--git-dir=${repo.remote}`, 'show-ref', result.branch),
       /refs\/heads\/factory\/RQ-0002/,
     );
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('cancel marks main, deletes requirement branches, and is idempotent', async () => {
+  const repo = makeRepository();
+  try {
+    const created = await createDraftRequirement(
+      'Cancelled feature',
+      'handoff',
+      repo.config,
+      { environment: {} },
+    );
+    const cancelled = await cancelRequirement(created.requirementId, repo.config, {
+      reason: 'No longer needed',
+      environment: {},
+    });
+
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(cancelled.pushed, true);
+    assert.equal(cancelled.localBranchDeleted, true);
+    assert.equal(cancelled.remoteBranchDeleted, true);
+    assert.equal(git(repo.root, 'branch', '--show-current'), 'main');
+    const mainCopy = git(
+      repo.root,
+      `--git-dir=${repo.remote}`,
+      'show',
+      `main:${created.requirementFile}`,
+    );
+    assert.match(mainCopy, /status: cancelled/);
+    assert.match(mainCopy, /cancelledAt: "/);
+    assert.match(mainCopy, /cancellationReason: "No longer needed"/);
+    assert.notEqual(
+      spawnSync('git', ['show-ref', '--verify', `refs/heads/${created.branch}`], { cwd: repo.root }).status,
+      0,
+    );
+    assert.notEqual(
+      spawnSync('git', [`--git-dir=${repo.remote}`, 'show-ref', '--verify', `refs/heads/${created.branch}`]).status,
+      0,
+    );
+
+    const repeated = await cancelRequirement(created.requirementId, repo.config, {
+      environment: {},
+    });
+    assert.equal(repeated.pushed, false);
+    assert.equal(repeated.localBranchDeleted, false);
+    assert.equal(repeated.remoteBranchDeleted, false);
   } finally {
     repo.cleanup();
   }
@@ -354,6 +411,35 @@ test('new requirement links a GitLab Issue and Draft MR through the platform ada
     assert.equal(recovered.changeRequest.iid, 21);
     assert.equal(adapter.comments.length, 2);
     assert.equal(git(repo.root, 'rev-parse', 'HEAD'), headBeforeRetry);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('cancel closes an existing GitLab MR before deleting its branch', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeGitLabPlatform();
+  const environment = {
+    GITLAB_URL: 'https://gitlab.example.test',
+    GITLAB_PROJECT_ID: 'group/project',
+    GITLAB_TOKEN: 'secret',
+  };
+  try {
+    const created = await createDraftRequirement('Cancelled GitLab feature', 'handoff', repo.config, {
+      environment,
+      platformAdapter: adapter,
+    });
+    const result = await cancelRequirement(created.requirementId, repo.config, {
+      reason: 'Superseded',
+      environment,
+      platformAdapter: adapter,
+    });
+
+    assert.equal(result.changeRequest?.iid, 21);
+    assert.equal(result.changeRequest?.state, 'closed');
+    assert.equal(adapter.closedChangeRequests, 1);
+    assert.equal(result.remoteBranchDeleted, true);
+    assert.equal(result.localBranchDeleted, true);
   } finally {
     repo.cleanup();
   }

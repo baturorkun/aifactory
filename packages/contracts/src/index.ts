@@ -259,7 +259,7 @@ export type RunManifest = z.infer<typeof RunManifestSchema>;
 // REQUIREMENT
 // ============================================================
 
-export const RequirementStatusSchema = z.enum(['draft', 'ready', 'completed']);
+export const RequirementStatusSchema = z.enum(['draft', 'ready', 'completed', 'cancelled']);
 export type RequirementStatus = z.infer<typeof RequirementStatusSchema>;
 
 export const RequirementExecutionModeSchema = z.enum(['handoff', 'pipeline']);
@@ -272,6 +272,8 @@ export const RequirementLifecycleSchema = z.object({
   createdByName: z.string().min(1),
   createdByEmail: z.string().min(1),
   createdAt: z.string().datetime(),
+  cancelledAt: z.string().datetime().optional(),
+  cancellationReason: z.string().min(1).optional(),
   branch: z.string().min(1),
   createdFromCommit: z.string().min(1),
   repositoryProvider: z.literal('gitlab').optional(),

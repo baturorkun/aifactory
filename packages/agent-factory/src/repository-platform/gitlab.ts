@@ -188,6 +188,17 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
     }));
   }
 
+  async closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest> {
+    if (changeRequest.state !== 'opened') return changeRequest;
+    return asChangeRequest(await this.request<GitLabMergeRequest>(
+      `/merge_requests/${changeRequest.iid}`,
+      {
+        method: 'PUT',
+        body: { state_event: 'close' },
+      },
+    ));
+  }
+
   private async request<T>(
     path: string,
     options: {

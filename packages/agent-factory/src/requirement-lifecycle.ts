@@ -72,6 +72,25 @@ export interface RequirementPlatformSyncResult {
   changeRequest: ChangeRequest;
 }
 
+export interface CancelRequirementResult {
+  requirementId: string;
+  status: 'cancelled';
+  baseBranch: string;
+  requirementFile: string;
+  branch: string;
+  pushed: boolean;
+  localBranchDeleted: boolean;
+  remoteBranchDeleted: boolean;
+  changeRequest?: ChangeRequest;
+}
+
+interface CancelRequirementOptions {
+  reason?: string;
+  platform?: string;
+  platformAdapter?: RepositoryPlatformAdapter;
+  environment?: Record<string, string | undefined>;
+}
+
 function git(
   cwd: string,
   args: string[],
@@ -416,6 +435,109 @@ export async function syncRequirementPlatform(
   );
 }
 
+export async function cancelRequirement(
+  requirementId: string,
+  config: FactoryConfig,
+  options: CancelRequirementOptions = {},
+): Promise<CancelRequirementResult> {
+  const id = assertRequirementId(requirementId);
+  const root = projectRoot(config);
+  const baseBranch = config.requirementBranches.baseBranch;
+  const remote = config.requirementBranches.remote;
+  const branch = requirementBranchName(id, config.requirementBranches.branchPrefix);
+  const activeBranch = currentBranch(root);
+  if (activeBranch !== baseBranch && activeBranch !== branch) {
+    throw new Error(`Cancel ${id} from ${baseBranch} or ${branch}, not ${activeBranch || 'detached HEAD'}.`);
+  }
+  assertClean(root);
+
+  const resolvedPlatform = resolveRepositoryPlatform(
+    config,
+    options.platform,
+    options.environment ?? process.env,
+  );
+
+  git(root, ['fetch', remote, baseBranch]);
+  if (activeBranch !== baseBranch) git(root, ['switch', baseBranch]);
+  git(root, ['merge', '--ff-only', `${remote}/${baseBranch}`]);
+
+  const requirementsDir = resolve(config.paths.requirements);
+  const requirementPath = findRequirementFile(id, requirementsDir);
+  if (!requirementPath) throw new Error(`Requirement file not found on ${baseBranch}: ${id}`);
+  let requirement = parseRequirement(id, requirementsDir);
+  if (!requirement.lifecycle) {
+    throw new Error(`Requirement ${id} has no lifecycle metadata.`);
+  }
+  if (requirement.lifecycle.status === 'completed') {
+    throw new Error(`Requirement ${id} is completed and cannot be cancelled.`);
+  }
+
+  const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
+  let pushed = false;
+  if (requirement.lifecycle.status !== 'cancelled') {
+    const reason = options.reason?.trim();
+    writeFileSync(
+      requirementPath,
+      updateRequirementMetadata(requirement.rawMarkdown, {
+        status: 'cancelled',
+        cancelledAt: new Date().toISOString(),
+        ...(reason ? { cancellationReason: reason } : {}),
+      }),
+      'utf8',
+    );
+    git(root, ['add', requirementFile]);
+    git(root, ['commit', '-m', `requirement(${id}): cancel [skip ci]`]);
+    git(root, ['push', remote, `HEAD:${baseBranch}`]);
+    pushed = true;
+    requirement = parseRequirement(id, requirementsDir);
+  }
+
+  let changeRequest: ChangeRequest | undefined;
+  if (resolvedPlatform.provider === 'gitlab') {
+    const adapter = options.platformAdapter ?? new GitLabRepositoryPlatform({
+      ...resolvedPlatform.settings,
+      gitIdentity: {
+        name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+        email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+      },
+    });
+    if (adapter.provider !== 'gitlab') {
+      throw new Error(`Repository provider mismatch: expected gitlab, received ${adapter.provider}.`);
+    }
+    changeRequest = requirement.lifecycle?.gitlabMergeRequestIid
+      ? await adapter.getChangeRequest(requirement.lifecycle.gitlabMergeRequestIid)
+      : undefined;
+    changeRequest ??= await adapter.findChangeRequest(branch, adapter.targetBranch);
+    if (changeRequest) changeRequest = await adapter.closeChangeRequest(changeRequest);
+  }
+
+  const remoteBranchExists = Boolean(git(
+    root,
+    ['ls-remote', '--heads', remote, `refs/heads/${branch}`],
+    { allowFailure: true },
+  ));
+  if (remoteBranchExists) git(root, ['push', remote, '--delete', branch]);
+
+  const localBranchExists = Boolean(git(
+    root,
+    ['show-ref', '--verify', `refs/heads/${branch}`],
+    { allowFailure: true },
+  ));
+  if (localBranchExists) git(root, ['branch', '-D', branch]);
+
+  return {
+    requirementId: id,
+    status: 'cancelled',
+    baseBranch,
+    requirementFile,
+    branch,
+    pushed,
+    localBranchDeleted: localBranchExists,
+    remoteBranchDeleted: remoteBranchExists,
+    changeRequest,
+  };
+}
+
 async function synchronizeRequirementPlatform(
   requirementId: string,
   config: FactoryConfig,
@@ -608,6 +730,9 @@ export async function submitRequirement(
   validateReady(requirement);
   if (requirement.lifecycle.status === 'completed') {
     throw new Error(`Requirement ${id} is already completed.`);
+  }
+  if (requirement.lifecycle.status === 'cancelled') {
+    throw new Error(`Requirement ${id} is cancelled and cannot be submitted.`);
   }
   if (requirement.lifecycle.status === 'draft') {
     writeFileSync(

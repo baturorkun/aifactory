@@ -32,6 +32,7 @@ import {
   syncRequirementBranch,
 } from './requirement-branches';
 import {
+  cancelRequirement,
   createDraftRequirement,
   requirementExecutionDecision,
   setRequirementFast,
@@ -124,6 +125,26 @@ requirement
       console.log(chalk.green(`✓ ${result.requirementId} synchronized with GitLab.`));
       console.log(chalk.dim(`  Issue   : #${result.workItem.iid} ${result.workItem.url}`));
       console.log(chalk.dim(`  Draft MR: !${result.changeRequest.iid} ${result.changeRequest.url}`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('cancel <reqId>')
+  .description('Cancel a requirement on the base branch and remove its requirement branch')
+  .option('--reason <reason>', 'Record why the requirement was cancelled')
+  .option('--platform <platform>', 'Repository platform: gitlab or none')
+  .action(async (reqId: string, opts: { reason?: string; platform?: string }) => {
+    try {
+      const result = await cancelRequirement(reqId, loadConfig(), opts);
+      console.log(chalk.green(`✓ ${result.requirementId} cancelled on ${result.baseBranch}.`));
+      console.log(chalk.dim(`  Record : ${result.requirementFile}`));
+      console.log(chalk.dim(`  Push   : ${result.pushed ? 'cancel status pushed' : 'already cancelled'}`));
+      console.log(chalk.dim(`  MR     : ${result.changeRequest ? `!${result.changeRequest.iid} ${result.changeRequest.state}` : 'not found or platform disabled'}`));
+      console.log(chalk.dim(`  Remote : ${result.remoteBranchDeleted ? `${result.branch} deleted` : 'branch not present'}`));
+      console.log(chalk.dim(`  Local  : ${result.localBranchDeleted ? `${result.branch} deleted` : 'branch not present'}`));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

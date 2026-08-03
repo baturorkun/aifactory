@@ -180,6 +180,8 @@ function parseLifecycle(
     createdByName: metadata.createdByName ?? '',
     createdByEmail: metadata.createdByEmail ?? '',
     createdAt: metadata.createdAt ?? '',
+    cancelledAt: metadata.cancelledAt || undefined,
+    cancellationReason: metadata.cancellationReason || undefined,
     branch: metadata.branch ?? '',
     createdFromCommit: metadata.createdFromCommit ?? '',
     repositoryProvider: metadata.repositoryProvider || undefined,

@@ -50,6 +50,7 @@ export interface RepositoryPlatformAdapter {
     sourceBranch: string;
     targetBranch: string;
   }): Promise<ChangeRequest>;
+  closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest>;
 }
 
 export interface GitLabPlatformSettings {

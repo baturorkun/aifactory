@@ -373,6 +373,20 @@ pnpm factory -- --project ../myproject requirement mode RQ-0001 pipeline
 pnpm factory -- --project ../myproject requirement submit RQ-0001
 ```
 
+Cancel a requirement from its requirement branch or the configured base branch:
+
+```bash
+pnpm factory -- --project ../myproject requirement cancel RQ-0001 \
+  --reason "No longer needed"
+```
+
+Cancellation commits and pushes `status: cancelled` to the requirement record on
+the base branch, closes the matching GitLab Merge Request when GitLab is
+configured, and deletes the local and remote requirement branch when present.
+The requirement file remains on the base branch as an audit record, and the
+operation is safe to retry after partial cleanup. Use `--platform none` to skip
+GitLab synchronization explicitly.
+
 Handoff submit creates a local handoff package without committing or pushing.
 Pipeline submit commits only the requirement document and pushes its branch so
 GitLab CI can run the existing agent pipeline. Draft pushes never start code

@@ -52,6 +52,16 @@ test('GitLab adapter creates typed Issues and Draft Merge Requests', async () =>
         target_branch: 'main',
       });
     }
+    if (url.endsWith('/merge_requests/9')) {
+      return Response.json({
+        iid: 9,
+        title: 'Draft: RQ-0007 - Platform',
+        web_url: 'https://gitlab.example.test/group/project/-/merge_requests/9',
+        state: 'closed',
+        source_branch: 'factory/RQ-0007',
+        target_branch: 'main',
+      });
+    }
     throw new Error(`Unexpected request: ${url}`);
   };
   const adapter = new GitLabRepositoryPlatform(settings, fetchMock);
@@ -66,14 +76,18 @@ test('GitLab adapter creates typed Issues and Draft Merge Requests', async () =>
     sourceBranch: 'factory/RQ-0007',
     targetBranch: 'main',
   });
+  const closedMr = await adapter.closeChangeRequest(mr);
   assert.equal(issue.iid, 7);
   assert.equal(mr.iid, 9);
+  assert.equal(closedMr.state, 'closed');
   assert.match(requests[1].url, /projects\/group%2Fproject\/issues$/);
   const issueBody = JSON.parse(String(requests[1].init?.body)) as Record<string, unknown>;
   assert.equal(issueBody.assignee_id, 123);
   const mrBody = JSON.parse(String(requests[2].init?.body)) as Record<string, unknown>;
   assert.equal(mrBody.title, 'Draft: RQ-0007 - Platform');
   assert.equal(mrBody.remove_source_branch, true);
+  const closeBody = JSON.parse(String(requests[3].init?.body)) as Record<string, unknown>;
+  assert.equal(closeBody.state_event, 'close');
   assert.equal(requests.some((request) => request.url.endsWith('/merge')), false);
 });
 

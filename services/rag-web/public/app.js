@@ -298,17 +298,18 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
       chip.download = '';
       chip.title = `Download ${source.relativePath}`;
       const sortedPages = [...pages].sort((left, right) => left - right);
-      const pageLabel = document.createElement('span');
-      pageLabel.className = 'source-pages';
-      pageLabel.textContent = sortedPages.length
-        ? `${sortedPages.length === 1 ? 'Page' : 'Pages'} ${sortedPages.join(', ')}`
-        : 'Page unavailable';
       const pathLabel = document.createElement('span');
       pathLabel.className = 'source-path';
       pathLabel.textContent = source.relativePath;
       const sourceDetails = document.createElement('span');
       sourceDetails.className = 'source-details';
-      sourceDetails.append(pageLabel, pathLabel);
+      if (sortedPages.length) {
+        const pageLabel = document.createElement('span');
+        pageLabel.className = 'source-pages';
+        pageLabel.textContent = `${sortedPages.length === 1 ? 'Page' : 'Pages'} ${sortedPages.join(', ')}`;
+        sourceDetails.append(pageLabel);
+      }
+      sourceDetails.append(pathLabel);
       const downloadLabel = document.createElement('span');
       downloadLabel.className = 'source-download';
       downloadLabel.textContent = '↓ Download';
