@@ -65,6 +65,19 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /--project "\$CI_PROJECT_DIR"/);
     assert.match(ci, /cd \.\.\/aifactory/);
     assert.match(ci, /RQ-\[0-9\]\+/);
+    assert.match(ci, /container_image:/);
+    assert.match(ci, /stages:\n  - ai_factory\n  - build\n  - package\n  - image\n  - deploy/);
+    assert.match(ci, /default:\n  tags:\n    - linux/);
+    assert.match(ci, /container_image:\n  stage: image/);
+    assert.match(ci, /deploy_container:/);
+    assert.match(ci, /DEPLOY_PORT: "8282"/);
+    assert.match(ci, /--publish "\$\{DEPLOY_PORT\}:8282"/);
+    assert.match(ci, /docker push "\$CONTAINER_IMAGE"/);
+    assert.match(ci, /DOCKER_HOST: "unix:\/\/\/var\/run\/docker\.sock"/);
+    assert.match(readFileSync(join(result.projectRoot, 'Dockerfile'), 'utf8'), /FROM nginx:1\.27-alpine/);
+    assert.match(readFileSync(join(result.projectRoot, 'Dockerfile'), 'utf8'), /EXPOSE 8282/);
+    assert.match(readFileSync(join(result.projectRoot, 'nginx.conf'), 'utf8'), /listen 8282;/);
+    assert.match(readFileSync(join(result.projectRoot, '.dockerignore'), 'utf8'), /node_modules/);
     assert.deepEqual(
       {
         baseUrl: config.repositoryPlatforms.gitlab.baseUrl,

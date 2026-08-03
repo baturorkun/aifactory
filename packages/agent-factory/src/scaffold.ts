@@ -140,16 +140,29 @@ function writeReferencesReadme(projectRoot: string): void {
   );
 }
 
-function writeGitlabCi(projectRoot: string, projectName: string): void {
+function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean): void {
   writeFileSync(
     resolve(projectRoot, '.gitlab-ci.yml'),
     [
       'stages:',
       '  - ai_factory',
+      ...(deployable ? ['  - build', '  - package', '  - image', '  - deploy'] : []),
+      '',
+      'default:',
+      '  tags:',
+      '    - linux',
       '',
       'variables:',
       '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
       '  AIFACTORY_REPO_URL: "https://github.com/baturorkun/aifactory.git"',
+      ...(deployable
+        ? [
+            '  CONTAINER_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"',
+            '  CONTAINER_IMAGE_LATEST: "$CI_REGISTRY_IMAGE:latest"',
+            '  CONTAINER_NAME: "$CI_PROJECT_PATH_SLUG"',
+            '  DEPLOY_PORT: "8282"',
+          ]
+        : []),
       '',
       'cache:',
       '  key: "$CI_COMMIT_REF_SLUG"',
@@ -187,7 +200,7 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '    - pnpm install --frozen-lockfile',
       '    - pnpm -r run typecheck',
       '    - cd "$CI_PROJECT_DIR"',
-      '    - pnpm install --frozen-lockfile',
+      '    - if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install --no-frozen-lockfile; fi',
       '    - git config user.name "AI Factory"',
       '    - git config user.email "ai-factory@local"',
       '  script:',
@@ -228,6 +241,136 @@ function writeGitlabCi(projectRoot: string, projectName: string): void {
       '      - tsconfig.build.json',
       '      - pyproject.toml',
       '      - tests/',
+      ...(deployable
+        ? [
+            '',
+            'container_image:',
+            '  stage: image',
+            '  image: docker:27.5.1-cli',
+            '  # The build runner must support privileged Docker-in-Docker services.',
+            '  services:',
+            '    - name: docker:27.5.1-dind',
+            '      alias: docker',
+            '  variables:',
+            '    DOCKER_HOST: "tcp://docker:2375"',
+            '    DOCKER_TLS_CERTDIR: ""',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\'',
+            '    - when: never',
+            '  before_script:',
+            '    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"',
+            '  script:',
+            '    - docker build --pull --tag "$CONTAINER_IMAGE" --tag "$CONTAINER_IMAGE_LATEST" .',
+            '    - docker push "$CONTAINER_IMAGE"',
+            '    - docker push "$CONTAINER_IMAGE_LATEST"',
+            '',
+            'deploy_container:',
+            '  stage: deploy',
+            '  image: docker:27.5.1-cli',
+            '  # The deployment runner must mount the host Docker socket at /var/run/docker.sock.',
+            '  needs:',
+            '    - container_image',
+            '  resource_group: "$CI_PROJECT_PATH_SLUG-production"',
+            '  variables:',
+            '    DOCKER_HOST: "unix:///var/run/docker.sock"',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\'',
+            '    - when: never',
+            '  before_script:',
+            '    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"',
+            '  script:',
+            '    - docker pull "$CONTAINER_IMAGE"',
+            '    - if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then docker rm --force "$CONTAINER_NAME"; fi',
+            '    - docker run --detach --name "$CONTAINER_NAME" --restart unless-stopped --publish "${DEPLOY_PORT}:8282" "$CONTAINER_IMAGE"',
+            '  environment:',
+            '    name: production',
+          ]
+        : []),
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeContainerFiles(projectRoot: string): void {
+  writeFileSync(
+    resolve(projectRoot, 'Dockerfile'),
+    [
+      'FROM node:20-alpine AS build',
+      '',
+      'WORKDIR /app',
+      '',
+      'RUN npm install --global typescript@5.4.5',
+      '',
+      'COPY tsconfig.json tsconfig.build.json ./',
+      'COPY src ./src',
+      '',
+      'RUN tsc --project tsconfig.build.json',
+      '',
+      'FROM nginx:1.27-alpine',
+      '',
+      'COPY nginx.conf /etc/nginx/conf.d/default.conf',
+      'COPY public /usr/share/nginx/html/public',
+      'COPY src/styles.css /usr/share/nginx/html/src/styles.css',
+      'COPY --from=build /app/dist /usr/share/nginx/html/dist',
+      '',
+      'EXPOSE 8282',
+      '',
+      'HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --output-document=- http://127.0.0.1:8282/healthz || exit 1',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'nginx.conf'),
+    [
+      'server {',
+      '    listen 8282;',
+      '    server_name _;',
+      '',
+      '    root /usr/share/nginx/html;',
+      '    index index.html;',
+      '',
+      '    location = /healthz {',
+      '        access_log off;',
+      '        default_type text/plain;',
+      '        return 200 "ok\\n";',
+      '    }',
+      '',
+      '    location = / {',
+      '        try_files /public/index.html =404;',
+      '    }',
+      '',
+      '    location / {',
+      '        try_files $uri $uri/ =404;',
+      '    }',
+      '',
+      '    location ~* \\.(?:css|js|svg|png|jpe?g|webp|woff2?)$ {',
+      '        expires 1h;',
+      '        add_header Cache-Control "public, max-age=3600";',
+      '        try_files $uri =404;',
+      '    }',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, '.dockerignore'),
+    [
+      '.git',
+      '.gitlab',
+      '.env',
+      'node_modules',
+      'dist',
+      'runs',
+      'handoffs',
+      'references',
+      'requirements',
+      'constraints',
+      '*.md',
       '',
     ].join('\n'),
     'utf8',
@@ -506,14 +649,15 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
     'utf8',
   );
   writeReferencesReadme(projectRoot);
-  writeGitlabCi(projectRoot, projectName);
+  writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts');
 
   if (options.template === 'vanilla-ts') {
-    writeFactoryConfig(projectRoot, promptsPath, ['public', 'src', 'tests', ...TYPESCRIPT_CONFIG_PATHS], {
+    writeFactoryConfig(projectRoot, promptsPath, ['public', 'src', 'tests', 'Dockerfile', 'nginx.conf', '.dockerignore', '.gitlab-ci.yml', ...TYPESCRIPT_CONFIG_PATHS], {
       typeCheck: 'pnpm typecheck',
       test: undefined,
     });
     writeVanillaTsTemplate(projectRoot, projectName, tscScript);
+    writeContainerFiles(projectRoot);
   } else if (options.template === 'python') {
     writeFactoryConfig(projectRoot, promptsPath, ['src', 'tests'], {
       typeCheck: 'pnpm typecheck',
