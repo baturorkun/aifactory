@@ -69,9 +69,12 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /package_offline:/);
     assert.match(ci, /docker_image:/);
     assert.match(ci, /stages:\n  - ai_factory\n  - build\n  - package\n  - image\n  - deploy/);
-    assert.match(ci, /default:\n  tags:\n    - linux/);
+    assert.match(ci, /ai_factory_requirement_branch:\n  image: node:20-bullseye\n  tags:\n    - linux/);
+    assert.match(ci, /build_static:\n  stage: build\n  image: node:20-alpine\n  tags:\n    - linux/);
+    assert.match(ci, /docker_image:\n  stage: image\n  image: docker:27-cli\n  tags:\n    - linux/);
     assert.match(ci, /docker_image:\n  stage: image/);
     assert.match(ci, /deploy_linux:/);
+    assert.match(ci, /deploy_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH'\n      when: on_success/);
     assert.match(ci, /APP_PORT: "8282"/);
     assert.match(ci, /--publish "\$APP_PORT:8282"/);
     assert.match(ci, /docker save "\$LOCAL_DOCKER_IMAGE"/);
