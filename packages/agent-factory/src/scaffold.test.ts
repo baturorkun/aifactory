@@ -77,6 +77,10 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /deploy_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH'\n      when: on_success/);
     assert.match(ci, /deploy_preview_linux:/);
     assert.match(ci, /deploy_preview_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH && \$CI_COMMIT_BRANCH != \$CI_DEFAULT_BRANCH'\n      when: on_success/);
+    assert.match(ci, /on_stop: stop_preview_linux/);
+    assert.match(ci, /stop_preview_linux:[\s\S]*?GIT_STRATEGY: none/);
+    assert.match(ci, /stop_preview_linux:[\s\S]*?docker rm --force "\$PREVIEW_CONTAINER_NAME"/);
+    assert.match(ci, /stop_preview_linux:[\s\S]*?action: stop/);
     assert.match(ci, /APP_PORT: "8282"/);
     assert.match(ci, /--publish "\$APP_PORT:8282"/);
     assert.doesNotMatch(ci, /APP_PREVIEW_PORT: "8283"/);
