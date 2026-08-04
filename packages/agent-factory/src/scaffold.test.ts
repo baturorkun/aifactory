@@ -74,9 +74,14 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /docker_image:\n  stage: image\n  image: docker:27-cli\n  tags:\n    - linux/);
     assert.match(ci, /docker_image:\n  stage: image/);
     assert.match(ci, /deploy_linux:/);
-    assert.match(ci, /deploy_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH'\n      when: on_success/);
+    assert.match(ci, /deploy_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH'\n      when: on_success/);
+    assert.match(ci, /deploy_preview_linux:/);
+    assert.match(ci, /deploy_preview_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH && \$CI_COMMIT_BRANCH != \$CI_DEFAULT_BRANCH'\n      when: on_success/);
     assert.match(ci, /APP_PORT: "8282"/);
+    assert.match(ci, /APP_PREVIEW_PORT: "8283"/);
     assert.match(ci, /--publish "\$APP_PORT:8282"/);
+    assert.match(ci, /--publish "\$APP_PREVIEW_PORT:8282"/);
+    assert.match(ci, /PREVIEW_CONTAINER_NAME: "lifecycle-project-preview"/);
     assert.match(ci, /docker save "\$LOCAL_DOCKER_IMAGE"/);
     assert.match(ci, /docker load --input lifecycle-project-image\.tar/);
     assert.match(ci, /DOCKER_HOST: "unix:\/\/\/var\/run\/docker\.sock"/);
