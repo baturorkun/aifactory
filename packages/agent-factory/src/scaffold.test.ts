@@ -85,8 +85,11 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /--publish "\$APP_PORT:8282"/);
     assert.doesNotMatch(ci, /APP_PREVIEW_PORT: "8283"/);
     assert.match(ci, /PREVIEW_CONTAINER_NAME="\$CONTAINER_NAME-preview-\$CI_COMMIT_REF_SLUG"/);
-    assert.match(ci, /PREVIEW_PORT="81\$\{REQUIREMENT_NUMBER\}"/);
-    assert.match(ci, /PREVIEW_PORT="81\$\{CI_PIPELINE_ID\}"/);
+    assert.match(ci, /\^\(factory-\)\?rq-\[0-9\]\+\(\$\|-\)/);
+    assert.match(ci, /DEPLOYMENT_ID="\$REQUIREMENT_NUMBER"/);
+    assert.match(ci, /DEPLOYMENT_ID="\$CI_PIPELINE_ID"/);
+    assert.match(ci, /LEGACY_PREVIEW_PORT="81\$\{DEPLOYMENT_ID\}"/);
+    assert.match(ci, /PREVIEW_PORT=\$\(\(20000 \+ DEPLOYMENT_ID % 40000\)\)/);
     assert.match(ci, /--publish "\$PREVIEW_PORT:8282"/);
     assert.match(ci, /docker rm --force "\$PREVIEW_CONTAINER_NAME"/);
     assert.match(ci, /docker save "\$LOCAL_DOCKER_IMAGE"/);
