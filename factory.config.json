@@ -49,6 +49,12 @@
   "domain": {
     "rules": []
   },
+  "requirementBranches": {
+    "enabled": true,
+    "branchPrefix": "factory/",
+    "baseBranch": "main",
+    "remote": "origin"
+  },
   "rag": {
     "database": {
       "connectionString": "${RAG_DATABASE_URL:-postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag}"
