@@ -276,11 +276,15 @@ export const RequirementLifecycleSchema = z.object({
   cancellationReason: z.string().min(1).optional(),
   branch: z.string().min(1),
   createdFromCommit: z.string().min(1),
-  repositoryProvider: z.literal('gitlab').optional(),
+  repositoryProvider: z.enum(['gitlab', 'github']).optional(),
   gitlabIssueIid: z.number().int().positive().optional(),
   gitlabIssueUrl: z.string().url().optional(),
   gitlabMergeRequestIid: z.number().int().positive().optional(),
   gitlabMergeRequestUrl: z.string().url().optional(),
+  githubIssueIid: z.number().int().positive().optional(),
+  githubIssueUrl: z.string().url().optional(),
+  githubPullRequestIid: z.number().int().positive().optional(),
+  githubPullRequestUrl: z.string().url().optional(),
 });
 export type RequirementLifecycle = z.infer<typeof RequirementLifecycleSchema>;
 

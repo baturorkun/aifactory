@@ -26,6 +26,19 @@ test('repository platform resolution auto-detects complete GitLab credentials', 
   }
 });
 
+test('repository platform resolution auto-detects complete GitHub credentials', () => {
+  const resolved = resolveRepositoryPlatform(config, undefined, {
+    GITHUB_TOKEN: 'ghp_secret',
+    GITHUB_REPOSITORY: 'owner/repo',
+  });
+  assert.equal(resolved.provider, 'github');
+  if (resolved.provider === 'github') {
+    assert.equal(resolved.settings.baseUrl, 'https://api.github.com');
+    assert.equal(resolved.settings.repository, 'owner/repo');
+    assert.equal(resolved.settings.targetBranch, 'main');
+  }
+});
+
 test('repository platform resolution safely reports partial GitLab configuration', () => {
   assert.throws(
     () => resolveRepositoryPlatform(config, undefined, { GITLAB_URL: 'https://gitlab.example.test' }),
@@ -33,30 +46,48 @@ test('repository platform resolution safely reports partial GitLab configuration
   );
 });
 
-test('explicit GitLab selection validates only GitLab and unsupported providers fail', () => {
-  const resolved = resolveRepositoryPlatform(config, 'gitlab', {
+test('repository platform resolution safely reports partial GitHub configuration', () => {
+  assert.throws(
+    () => resolveRepositoryPlatform(config, undefined, { GITHUB_TOKEN: 'token' }),
+    /Missing: GITHUB_REPOSITORY/,
+  );
+});
+
+test('explicit platform selection validates requested platform', () => {
+  const resolvedGitLab = resolveRepositoryPlatform(config, 'gitlab', {
     GITLAB_URL: 'https://gitlab.example.test',
     GITLAB_PROJECT_ID: '42',
     GITLAB_TOKEN: 'token',
     GITHUB_TOKEN: 'github-token',
     GITHUB_REPOSITORY: 'owner/repo',
   });
-  assert.equal(resolved.provider, 'gitlab');
+  assert.equal(resolvedGitLab.provider, 'gitlab');
+
+  const resolvedGitHub = resolveRepositoryPlatform(config, 'github', {
+    GITLAB_URL: 'https://gitlab.example.test',
+    GITLAB_PROJECT_ID: '42',
+    GITLAB_TOKEN: 'token',
+    GITHUB_TOKEN: 'github-token',
+    GITHUB_REPOSITORY: 'owner/repo',
+  });
+  assert.equal(resolvedGitHub.provider, 'github');
+
   assert.throws(
-    () => resolveRepositoryPlatform(config, 'github', {}),
-    /adapter is not installed: github/,
+    () => resolveRepositoryPlatform(config, 'unknown_platform', {}),
+    /adapter is not installed: unknown_platform/,
   );
 });
 
 test('auto-detection rejects ambiguous complete providers', () => {
   assert.throws(
-    () => resolveRepositoryPlatform(config, undefined, {
-      GITLAB_URL: 'https://gitlab.example.test',
-      GITLAB_PROJECT_ID: '42',
-      GITLAB_TOKEN: 'token',
-      GITHUB_TOKEN: 'github-token',
-      GITHUB_REPOSITORY: 'owner/repo',
-    }),
+    () =>
+      resolveRepositoryPlatform(config, undefined, {
+        GITLAB_URL: 'https://gitlab.example.test',
+        GITLAB_PROJECT_ID: '42',
+        GITLAB_TOKEN: 'token',
+        GITHUB_TOKEN: 'github-token',
+        GITHUB_REPOSITORY: 'owner/repo',
+      }),
     /Multiple repository platforms/,
   );
 });

@@ -189,6 +189,10 @@ function parseLifecycle(
     gitlabIssueUrl: metadata.gitlabIssueUrl || undefined,
     gitlabMergeRequestIid: parseOptionalPositiveInteger(metadata.gitlabMergeRequestIid),
     gitlabMergeRequestUrl: metadata.gitlabMergeRequestUrl || undefined,
+    githubIssueIid: parseOptionalPositiveInteger(metadata.githubIssueIid),
+    githubIssueUrl: metadata.githubIssueUrl || undefined,
+    githubPullRequestIid: parseOptionalPositiveInteger(metadata.githubPullRequestIid),
+    githubPullRequestUrl: metadata.githubPullRequestUrl || undefined,
   });
 }
 
