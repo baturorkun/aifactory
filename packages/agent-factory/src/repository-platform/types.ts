@@ -1,4 +1,4 @@
-export type RepositoryProviderName = 'gitlab';
+export type RepositoryProviderName = 'gitlab' | 'github';
 
 export interface WorkItem {
   iid: number;
@@ -72,6 +72,25 @@ export interface GitLabPlatformSettings {
   };
 }
 
+export interface GitHubPlatformSettings {
+  baseUrl: string;
+  repository: string;
+  token: string;
+  targetBranch: string;
+  gitIdentity?: {
+    name?: string;
+    email?: string;
+  };
+  labels: {
+    draft: string;
+    ready: string;
+    running: string;
+    needsFix: string;
+    passed: string;
+  };
+}
+
 export type ResolvedRepositoryPlatform =
   | { provider: 'none' }
-  | { provider: 'gitlab'; settings: GitLabPlatformSettings };
+  | { provider: 'gitlab'; settings: GitLabPlatformSettings }
+  | { provider: 'github'; settings: GitHubPlatformSettings };

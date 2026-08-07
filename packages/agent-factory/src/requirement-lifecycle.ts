@@ -19,6 +19,7 @@ import {
 } from './requirements/parser';
 import { requirementBranchName } from './requirement-branches';
 import { GitLabRepositoryPlatform } from './repository-platform/gitlab';
+import { GitHubRepositoryPlatform } from './repository-platform/github';
 import { resolveRepositoryPlatform } from './repository-platform/resolve';
 import type {
   RepositoryPlatformAdapter,
@@ -36,7 +37,7 @@ export interface NewRequirementResult {
   branch: string;
   mode: RequirementExecutionMode;
   pipelineFast: boolean;
-  repositoryProvider?: 'gitlab';
+  repositoryProvider?: 'gitlab' | 'github';
   workItem?: WorkItem;
   changeRequest?: ChangeRequest;
 }
@@ -67,7 +68,7 @@ interface NewRequirementOptions {
 
 export interface RequirementPlatformSyncResult {
   requirementId: string;
-  provider: 'gitlab';
+  provider: 'gitlab' | 'github';
   workItem: WorkItem;
   changeRequest: ChangeRequest;
 }
@@ -184,7 +185,7 @@ function assertRequirementIsolation(
   requirementPath: string,
   config: FactoryConfig,
 ): void {
-  const id = assertRequirementId(requirementId);
+  assertRequirementId(requirementId);
   const requirementRelative = relative(root, requirementPath).replace(/\\/g, '/');
   const otherWorkingChanges = changedPaths(root).filter((path) => path !== requirementRelative);
   if (otherWorkingChanges.length > 0) {
@@ -388,7 +389,7 @@ export async function createDraftRequirement(
 
   git(root, ['switch', '--create', result.branch]);
   git(root, ['push', '--set-upstream', remote, result.branch]);
-  if (resolvedPlatform.provider === 'gitlab') {
+  if (resolvedPlatform.provider !== 'none') {
     try {
       const linked = await synchronizeRequirementPlatform(
         result.requirementId,
@@ -403,7 +404,7 @@ export async function createDraftRequirement(
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
         `${message}\nRequirement ${result.requirementId} and branch ${result.branch} were created. ` +
-        `Recover with: pnpm factory -- requirement gitlab-sync ${result.requirementId}`,
+        `Recover with: pnpm factory -- requirement platform-sync ${result.requirementId}`,
       );
     }
   }
@@ -421,11 +422,11 @@ export async function syncRequirementPlatform(
 ): Promise<RequirementPlatformSyncResult> {
   const resolved = resolveRepositoryPlatform(
     config,
-    options.platform ?? 'gitlab',
+    options.platform,
     options.environment ?? process.env,
   );
-  if (resolved.provider !== 'gitlab') {
-    throw new Error('GitLab integration is not enabled.');
+  if (resolved.provider === 'none') {
+    throw new Error('Repository platform integration is not enabled.');
   }
   return synchronizeRequirementPlatform(
     assertRequirementId(requirementId),
@@ -493,20 +494,29 @@ export async function cancelRequirement(
   }
 
   let changeRequest: ChangeRequest | undefined;
-  if (resolvedPlatform.provider === 'gitlab') {
-    const adapter = options.platformAdapter ?? new GitLabRepositoryPlatform({
-      ...resolvedPlatform.settings,
-      gitIdentity: {
-        name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
-        email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
-      },
-    });
-    if (adapter.provider !== 'gitlab') {
-      throw new Error(`Repository provider mismatch: expected gitlab, received ${adapter.provider}.`);
+  if (resolvedPlatform.provider !== 'none') {
+    const adapter = options.platformAdapter ?? (
+      resolvedPlatform.provider === 'gitlab'
+        ? new GitLabRepositoryPlatform({
+            ...resolvedPlatform.settings,
+            gitIdentity: {
+              name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+              email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+            },
+          })
+        : new GitHubRepositoryPlatform({
+            ...resolvedPlatform.settings,
+            gitIdentity: {
+              name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+              email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+            },
+          })
+    );
+    if (adapter.provider !== resolvedPlatform.provider) {
+      throw new Error(`Repository provider mismatch: expected ${resolvedPlatform.provider}, received ${adapter.provider}.`);
     }
-    changeRequest = requirement.lifecycle?.gitlabMergeRequestIid
-      ? await adapter.getChangeRequest(requirement.lifecycle.gitlabMergeRequestIid)
-      : undefined;
+    const crIid = requirement.lifecycle?.gitlabMergeRequestIid ?? requirement.lifecycle?.githubPullRequestIid;
+    changeRequest = crIid ? await adapter.getChangeRequest(crIid) : undefined;
     changeRequest ??= await adapter.findChangeRequest(branch, adapter.targetBranch);
     if (changeRequest) changeRequest = await adapter.closeChangeRequest(changeRequest);
   }
@@ -541,19 +551,29 @@ export async function cancelRequirement(
 async function synchronizeRequirementPlatform(
   requirementId: string,
   config: FactoryConfig,
-  resolved: Extract<ResolvedRepositoryPlatform, { provider: 'gitlab' }>,
+  resolved: Exclude<ResolvedRepositoryPlatform, { provider: 'none' }>,
   suppliedAdapter?: RepositoryPlatformAdapter,
 ): Promise<RequirementPlatformSyncResult> {
   const { root, branch, requirementPath } = assertActiveRequirementBranch(requirementId, config);
-  const adapter = suppliedAdapter ?? new GitLabRepositoryPlatform({
-    ...resolved.settings,
-    gitIdentity: {
-      name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
-      email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
-    },
-  });
-  if (adapter.provider !== 'gitlab') {
-    throw new Error(`Repository provider mismatch: expected gitlab, received ${adapter.provider}.`);
+  const adapter = suppliedAdapter ?? (
+    resolved.provider === 'gitlab'
+      ? new GitLabRepositoryPlatform({
+          ...resolved.settings,
+          gitIdentity: {
+            name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+            email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+          },
+        })
+      : new GitHubRepositoryPlatform({
+          ...resolved.settings,
+          gitIdentity: {
+            name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+            email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+          },
+        })
+  );
+  if (adapter.provider !== resolved.provider) {
+    throw new Error(`Repository provider mismatch: expected ${resolved.provider}, received ${adapter.provider}.`);
   }
   let requirement = parseRequirement(requirementId, config.paths.requirements);
   if (!requirement.lifecycle) {
@@ -580,8 +600,9 @@ async function synchronizeRequirementPlatform(
     `- Requirement: \`${requirementFile}\``,
   ].join('\n');
 
-  let workItem = requirement.lifecycle.gitlabIssueIid
-    ? await adapter.getWorkItem(requirement.lifecycle.gitlabIssueIid)
+  const existingIssueIid = requirement.lifecycle.gitlabIssueIid ?? requirement.lifecycle.githubIssueIid;
+  let workItem = existingIssueIid
+    ? await adapter.getWorkItem(existingIssueIid)
     : undefined;
   workItem ??= await adapter.findWorkItem(marker);
   workItem ??= await adapter.createWorkItem({
@@ -596,15 +617,17 @@ async function synchronizeRequirementPlatform(
       ? resolved.settings.labels.draft
       : resolved.settings.labels.ready,
   );
-  updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, {
-    repositoryProvider: 'gitlab',
-    gitlabIssueIid: workItem.iid,
-    gitlabIssueUrl: workItem.url,
-  });
+
+  const issueMetadata = resolved.provider === 'gitlab'
+    ? { repositoryProvider: 'gitlab' as const, gitlabIssueIid: workItem.iid, gitlabIssueUrl: workItem.url }
+    : { repositoryProvider: 'github' as const, githubIssueIid: workItem.iid, githubIssueUrl: workItem.url };
+
+  updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, issueMetadata);
 
   requirement = parseRequirement(requirementId, config.paths.requirements);
-  let changeRequest = requirement.lifecycle?.gitlabMergeRequestIid
-    ? await adapter.getChangeRequest(requirement.lifecycle.gitlabMergeRequestIid)
+  const existingCrIid = requirement.lifecycle?.gitlabMergeRequestIid ?? requirement.lifecycle?.githubPullRequestIid;
+  let changeRequest = existingCrIid
+    ? await adapter.getChangeRequest(existingCrIid)
     : undefined;
   changeRequest ??= await adapter.findChangeRequest(branch, adapter.targetBranch);
   changeRequest ??= await adapter.createDraftChangeRequest({
@@ -619,13 +642,24 @@ async function synchronizeRequirementPlatform(
     targetBranch: adapter.targetBranch,
   });
   verifyChangeRequest(changeRequest, branch, adapter.targetBranch);
-  updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, {
-    repositoryProvider: 'gitlab',
-    gitlabIssueIid: workItem.iid,
-    gitlabIssueUrl: workItem.url,
-    gitlabMergeRequestIid: changeRequest.iid,
-    gitlabMergeRequestUrl: changeRequest.url,
-  });
+
+  const fullMetadata = resolved.provider === 'gitlab'
+    ? {
+        repositoryProvider: 'gitlab' as const,
+        gitlabIssueIid: workItem.iid,
+        gitlabIssueUrl: workItem.url,
+        gitlabMergeRequestIid: changeRequest.iid,
+        gitlabMergeRequestUrl: changeRequest.url,
+      }
+    : {
+        repositoryProvider: 'github' as const,
+        githubIssueIid: workItem.iid,
+        githubIssueUrl: workItem.url,
+        githubPullRequestIid: changeRequest.iid,
+        githubPullRequestUrl: changeRequest.url,
+      };
+
+  updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, fullMetadata);
 
   const noteMarker = `<!-- aifactory:requirement-link:${requirementId} -->`;
   await adapter.addWorkItemComment(
@@ -646,7 +680,7 @@ async function synchronizeRequirementPlatform(
     statusMarker,
   );
 
-  return { requirementId, provider: 'gitlab', workItem, changeRequest };
+  return { requirementId, provider: resolved.provider, workItem, changeRequest };
 }
 
 function updateAndPushLinkMetadata(
@@ -668,7 +702,7 @@ function updateAndPushLinkMetadata(
 
 function verifyWorkItem(workItem: WorkItem, requirementId: string, marker: string): void {
   if (!workItem.title.startsWith(`${requirementId} -`) || !workItem.description.includes(marker)) {
-    throw new Error(`GitLab Issue #${workItem.iid} does not belong to ${requirementId}.`);
+    throw new Error(`Repository Issue #${workItem.iid} does not belong to ${requirementId}.`);
   }
 }
 
@@ -681,7 +715,7 @@ function verifyChangeRequest(
     changeRequest.sourceBranch !== sourceBranch ||
     changeRequest.targetBranch !== targetBranch
   ) {
-    throw new Error(`GitLab Merge Request !${changeRequest.iid} has mismatched branches.`);
+    throw new Error(`Repository change request #${changeRequest.iid} has mismatched branches.`);
   }
 }
 
@@ -744,9 +778,9 @@ export async function submitRequirement(
   }
 
   if (requirement.lifecycle!.executionMode === 'handoff') {
-    if (requirement.lifecycle!.repositoryProvider === 'gitlab') {
+    if (requirement.lifecycle!.repositoryProvider) {
       await syncRequirementPlatform(id, config, {
-        platform: 'gitlab',
+        platform: requirement.lifecycle!.repositoryProvider,
         platformAdapter: dependencies.platformAdapter,
       });
     }
@@ -762,9 +796,9 @@ export async function submitRequirement(
   }
 
   const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
-  if (requirement.lifecycle!.repositoryProvider === 'gitlab') {
+  if (requirement.lifecycle!.repositoryProvider) {
     await syncRequirementPlatform(id, config, {
-      platform: 'gitlab',
+      platform: requirement.lifecycle!.repositoryProvider,
       platformAdapter: dependencies.platformAdapter,
     });
   }

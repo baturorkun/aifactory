@@ -87,6 +87,9 @@ function writeCommonFiles(projectRoot: string, projectName: string): void {
       '# GITLAB_URL=https://gitlab.example.com',
       '# GITLAB_PROJECT_ID=group/project',
       '# GITLAB_TOKEN=replace_me',
+      '# GITHUB_API_URL=https://api.github.com',
+      '# GITHUB_REPOSITORY=owner/repository',
+      '# GITHUB_TOKEN=replace_me',
       '',
     ].join('\n'),
     'utf8',
@@ -606,7 +609,7 @@ function writeFactoryConfig(
       commands,
     },
     projectGuidelines: {
-      files: ['./PROJECT_GUIDELINES.md'],
+      files: ['./AGENTS.md'],
       required: true,
       maxContextChars: 20000,
     },
@@ -623,6 +626,19 @@ function writeFactoryConfig(
         token: '${GITLAB_TOKEN:-}',
         targetBranch: 'main',
         removeSourceBranchOnMerge: true,
+        labels: {
+          draft: 'factory::draft',
+          ready: 'factory::ready',
+          running: 'factory::running',
+          needsFix: 'factory::needs-fix',
+          passed: 'factory::passed',
+        },
+      },
+      github: {
+        baseUrl: '${GITHUB_API_URL:-https://api.github.com}',
+        repository: '${GITHUB_REPOSITORY:-}',
+        token: '${GITHUB_TOKEN:-}',
+        targetBranch: 'main',
         labels: {
           draft: 'factory::draft',
           ready: 'factory::ready',
@@ -829,9 +845,21 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
 
   writeCommonFiles(projectRoot, projectName);
   writeFileSync(
-    resolve(projectRoot, 'PROJECT_GUIDELINES.md'),
+    resolve(projectRoot, 'AGENTS.md'),
     [
-      '# Project Guidelines',
+      '# Agent Guidelines',
+      '',
+      '## AI Factory Workflow',
+      '',
+      '- Use AI Factory lifecycle commands for requirement, branch, Issue, and Pull/Merge Request operations.',
+      '- Create a requirement with `factory requirement new <title>`; do not create its requirement file, branch, Issue, or Draft Pull/Merge Request manually.',
+      '- Submit a completed draft with `factory requirement submit <requirement-id>`.',
+      '- Recover or synchronize repository-platform links with `factory requirement platform-sync <requirement-id>`.',
+      '- Cancel a requirement with `factory requirement cancel <requirement-id>`; do not close its Pull/Merge Request or delete its branch manually.',
+      '- Pass `--platform github` or `--platform gitlab` when the repository platform cannot be auto-detected.',
+      '- Before running a lifecycle command, inspect `factory --help` and the relevant subcommand help for the invocation available in the current environment.',
+      '',
+      '## Project Guidelines',
       '',
       '- Preserve the existing project architecture and conventions.',
       '- Follow the active requirement and its acceptance criteria.',

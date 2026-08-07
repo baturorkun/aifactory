@@ -85,7 +85,7 @@ requirement
   .command('new <title>')
   .description('Reserve the next requirement ID on main and switch to its draft branch')
   .option('--mode <mode>', 'Execution mode: handoff or pipeline', 'handoff')
-  .option('--platform <platform>', 'Repository platform: gitlab or none')
+  .option('--platform <platform>', 'Repository platform: github, gitlab, or none')
   .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline', false)
   .action(async (title: string, opts: { mode: string; fast: boolean; platform?: string }) => {
     try {
@@ -103,9 +103,11 @@ requirement
       console.log(chalk.dim(`  Branch : ${result.branch}`));
       console.log(chalk.dim(`  Mode   : ${result.mode}`));
       console.log(chalk.dim(`  Fast   : ${result.pipelineFast ? 'enabled' : 'disabled'}`));
-      if (result.repositoryProvider === 'gitlab' && result.workItem && result.changeRequest) {
+      if (result.repositoryProvider && result.workItem && result.changeRequest) {
+        const crName = result.repositoryProvider === 'github' ? 'Draft PR' : 'Draft MR';
+        const crSymbol = result.repositoryProvider === 'github' ? '#' : '!';
         console.log(chalk.dim(`  Issue  : #${result.workItem.iid} ${result.workItem.url}`));
-        console.log(chalk.dim(`  Draft MR: !${result.changeRequest.iid} ${result.changeRequest.url}`));
+        console.log(chalk.dim(`  ${crName}: ${crSymbol}${result.changeRequest.iid} ${result.changeRequest.url}`));
       }
       console.log(chalk.dim(`\n  Submit : pnpm factory -- requirement submit ${result.requirementId}\n`));
     } catch (err) {
@@ -115,16 +117,21 @@ requirement
   });
 
 requirement
-  .command('gitlab-sync <reqId>')
-  .description('Create or recover the linked GitLab Issue and Draft Merge Request')
-  .action(async (reqId: string) => {
+  .command('platform-sync <reqId>')
+  .alias('gitlab-sync')
+  .description('Create or recover the linked Issue and Draft Pull/Merge Request on GitHub or GitLab')
+  .option('--platform <platform>', 'Repository platform: github, gitlab, or auto-detect')
+  .action(async (reqId: string, opts: { platform?: string }) => {
     try {
       const result = await syncRequirementPlatform(reqId, loadConfig(), {
-        platform: 'gitlab',
+        platform: opts.platform,
       });
-      console.log(chalk.green(`✓ ${result.requirementId} synchronized with GitLab.`));
+      const platformName = result.provider === 'github' ? 'GitHub' : 'GitLab';
+      const crName = result.provider === 'github' ? 'Draft PR' : 'Draft MR';
+      const crSymbol = result.provider === 'github' ? '#' : '!';
+      console.log(chalk.green(`✓ ${result.requirementId} synchronized with ${platformName}.`));
       console.log(chalk.dim(`  Issue   : #${result.workItem.iid} ${result.workItem.url}`));
-      console.log(chalk.dim(`  Draft MR: !${result.changeRequest.iid} ${result.changeRequest.url}`));
+      console.log(chalk.dim(`  ${crName.padEnd(8)}: ${crSymbol}${result.changeRequest.iid} ${result.changeRequest.url}`));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -135,7 +142,7 @@ requirement
   .command('cancel <reqId>')
   .description('Cancel a requirement on the base branch and remove its requirement branch')
   .option('--reason <reason>', 'Record why the requirement was cancelled')
-  .option('--platform <platform>', 'Repository platform: gitlab or none')
+  .option('--platform <platform>', 'Repository platform: github, gitlab, or none')
   .action(async (reqId: string, opts: { reason?: string; platform?: string }) => {
     try {
       const result = await cancelRequirement(reqId, loadConfig(), opts);

@@ -1,5 +1,5 @@
 import type { FactoryConfig } from '../config';
-import type { GitLabPlatformSettings, ResolvedRepositoryPlatform } from './types';
+import type { GitHubPlatformSettings, GitLabPlatformSettings, ResolvedRepositoryPlatform } from './types';
 
 type Environment = Record<string, string | undefined>;
 
@@ -19,24 +19,31 @@ export function resolveRepositoryPlatform(
   requestedPlatform?: string,
   env: Environment = process.env,
 ): ResolvedRepositoryPlatform {
-  const configured = config.repositoryPlatforms.gitlab;
+  const configuredGitLab = config.repositoryPlatforms.gitlab;
   const gitlabValues = {
-    GITLAB_URL: nonEmpty(configured?.baseUrl) ?? nonEmpty(env.GITLAB_URL),
-    GITLAB_PROJECT_ID: nonEmpty(configured?.projectId) ?? nonEmpty(env.GITLAB_PROJECT_ID),
-    GITLAB_TOKEN: nonEmpty(configured?.token) ?? nonEmpty(env.GITLAB_TOKEN),
+    GITLAB_URL: nonEmpty(configuredGitLab?.baseUrl) ?? nonEmpty(env.GITLAB_URL),
+    GITLAB_PROJECT_ID: nonEmpty(configuredGitLab?.projectId) ?? nonEmpty(env.GITLAB_PROJECT_ID),
+    GITLAB_TOKEN: nonEmpty(configuredGitLab?.token) ?? nonEmpty(env.GITLAB_TOKEN),
   };
   const gitlabAny = Object.values(gitlabValues).some(Boolean);
   const gitlabMissing = missingVariables(gitlabValues);
   const gitlabComplete = gitlabMissing.length === 0;
 
+  const configuredGitHub = config.repositoryPlatforms.github;
   const githubValues = {
-    GITHUB_TOKEN: nonEmpty(env.GITHUB_TOKEN),
-    GITHUB_REPOSITORY: nonEmpty(env.GITHUB_REPOSITORY),
+    GITHUB_TOKEN: nonEmpty(configuredGitHub?.token) ?? nonEmpty(env.GITHUB_TOKEN),
+    GITHUB_REPOSITORY: nonEmpty(configuredGitHub?.repository) ?? nonEmpty(env.GITHUB_REPOSITORY),
   };
   const githubAny = Object.values(githubValues).some(Boolean);
-  const githubComplete = missingVariables(githubValues).length === 0;
+  const githubMissing = missingVariables(githubValues);
+  const githubComplete = githubMissing.length === 0;
 
-  if (requestedPlatform && requestedPlatform !== 'gitlab' && requestedPlatform !== 'none') {
+  if (
+    requestedPlatform &&
+    requestedPlatform !== 'gitlab' &&
+    requestedPlatform !== 'github' &&
+    requestedPlatform !== 'none'
+  ) {
     throw new Error(`Repository platform adapter is not installed: ${requestedPlatform}`);
   }
   if (requestedPlatform === 'none') return { provider: 'none' };
@@ -45,24 +52,30 @@ export function resolveRepositoryPlatform(
     if (!gitlabComplete) {
       throw new Error(`GitLab configuration is incomplete. Missing: ${gitlabMissing.join(', ')}`);
     }
-    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>, env);
+    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>);
+  }
+
+  if (requestedPlatform === 'github') {
+    if (!githubComplete) {
+      throw new Error(`GitHub configuration is incomplete. Missing: ${githubMissing.join(', ')}`);
+    }
+    return githubSettings(config, githubValues as Record<keyof typeof githubValues, string>, env);
   }
 
   if (gitlabAny && !gitlabComplete) {
     throw new Error(`GitLab configuration is incomplete. Missing: ${gitlabMissing.join(', ')}`);
   }
   if (githubAny && !githubComplete) {
-    const missing = missingVariables(githubValues);
-    throw new Error(`GitHub configuration is incomplete. Missing: ${missing.join(', ')}`);
+    throw new Error(`GitHub configuration is incomplete. Missing: ${githubMissing.join(', ')}`);
   }
   if (gitlabComplete && githubComplete) {
     throw new Error('Multiple repository platforms are configured. Use --platform <name>.');
   }
   if (githubComplete) {
-    throw new Error('Repository platform adapter is not installed: github');
+    return githubSettings(config, githubValues as Record<keyof typeof githubValues, string>, env);
   }
   if (gitlabComplete) {
-    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>, env);
+    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>);
   }
   return { provider: 'none' };
 }
@@ -70,7 +83,6 @@ export function resolveRepositoryPlatform(
 function gitlabSettings(
   config: FactoryConfig,
   values: Record<'GITLAB_URL' | 'GITLAB_PROJECT_ID' | 'GITLAB_TOKEN', string>,
-  env: Environment,
 ): ResolvedRepositoryPlatform {
   const configured = config.repositoryPlatforms.gitlab;
   const labels = configured?.labels;
@@ -89,4 +101,27 @@ function gitlabSettings(
     },
   };
   return { provider: 'gitlab', settings };
+}
+
+function githubSettings(
+  config: FactoryConfig,
+  values: Record<'GITHUB_TOKEN' | 'GITHUB_REPOSITORY', string>,
+  env: Environment,
+): ResolvedRepositoryPlatform {
+  const configured = config.repositoryPlatforms.github;
+  const labels = configured?.labels;
+  const settings: GitHubPlatformSettings = {
+    baseUrl: nonEmpty(configured?.baseUrl) ?? nonEmpty(env.GITHUB_API_URL) ?? 'https://api.github.com',
+    repository: values.GITHUB_REPOSITORY,
+    token: values.GITHUB_TOKEN,
+    targetBranch: nonEmpty(configured?.targetBranch) ?? config.requirementBranches.baseBranch,
+    labels: {
+      draft: nonEmpty(labels?.draft) ?? 'factory::draft',
+      ready: nonEmpty(labels?.ready) ?? 'factory::ready',
+      running: nonEmpty(labels?.running) ?? 'factory::running',
+      needsFix: nonEmpty(labels?.needsFix) ?? 'factory::needs-fix',
+      passed: nonEmpty(labels?.passed) ?? 'factory::passed',
+    },
+  };
+  return { provider: 'github', settings };
 }
