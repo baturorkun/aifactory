@@ -35,6 +35,12 @@ test('new projects enable the draft requirement branch workflow', () => {
           token: string;
           targetBranch: string;
         };
+        github: {
+          baseUrl: string;
+          repository: string;
+          token: string;
+          targetBranch: string;
+        };
       };
       projectGuidelines: {
         files: string[];
@@ -84,15 +90,15 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /build_static:/);
     assert.match(ci, /package_offline:/);
     assert.match(ci, /docker_image:/);
-    assert.match(ci, /stages:\n  - ai_factory\n  - build\n  - package\n  - image\n  - deploy/);
-    assert.match(ci, /ai_factory_requirement_branch:\n  image: node:20-bullseye\n  tags:\n    - linux/);
-    assert.match(ci, /build_static:\n  stage: build\n  image: node:20-alpine\n  tags:\n    - linux/);
-    assert.match(ci, /docker_image:\n  stage: image\n  image: docker:27-cli\n  tags:\n    - linux/);
-    assert.match(ci, /docker_image:\n  stage: image/);
+    assert.match(ci, /stages:\n {2}- ai_factory\n {2}- build\n {2}- package\n {2}- image\n {2}- deploy/);
+    assert.match(ci, /ai_factory_requirement_branch:\n {2}image: node:20-bullseye\n {2}tags:\n {4}- linux/);
+    assert.match(ci, /build_static:\n {2}stage: build\n {2}image: node:20-alpine\n {2}tags:\n {4}- linux/);
+    assert.match(ci, /docker_image:\n {2}stage: image\n {2}image: docker:27-cli\n {2}tags:\n {4}- linux/);
+    assert.match(ci, /docker_image:\n {2}stage: image/);
     assert.match(ci, /deploy_linux:/);
-    assert.match(ci, /deploy_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH'\n      when: on_success/);
+    assert.match(ci, /deploy_linux:[\s\S]*?rules:\n {4}- if: '\$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH'\n {6}when: on_success/);
     assert.match(ci, /deploy_preview_linux:/);
-    assert.match(ci, /deploy_preview_linux:[\s\S]*?rules:\n    - if: '\$CI_COMMIT_BRANCH && \$CI_COMMIT_BRANCH != \$CI_DEFAULT_BRANCH'\n      when: on_success/);
+    assert.match(ci, /deploy_preview_linux:[\s\S]*?rules:\n {4}- if: '\$CI_COMMIT_BRANCH && \$CI_COMMIT_BRANCH != \$CI_DEFAULT_BRANCH'\n {6}when: on_success/);
     assert.match(ci, /on_stop: stop_preview_linux/);
     assert.match(ci, /stop_preview_linux:[\s\S]*?GIT_STRATEGY: none/);
     assert.match(ci, /stop_preview_linux:[\s\S]*?docker rm --force "\$PREVIEW_CONTAINER_NAME"/);
@@ -129,10 +135,26 @@ test('new projects enable the draft requirement branch workflow', () => {
         targetBranch: 'main',
       },
     );
+    assert.deepEqual(config.repositoryPlatforms.github, {
+      baseUrl: '${GITHUB_API_URL:-https://api.github.com}',
+      repository: '${GITHUB_REPOSITORY:-}',
+      token: '${GITHUB_TOKEN:-}',
+      targetBranch: 'main',
+      labels: {
+        draft: 'factory::draft',
+        ready: 'factory::ready',
+        running: 'factory::running',
+        needsFix: 'factory::needs-fix',
+        passed: 'factory::passed',
+      },
+    });
     const envExample = readFileSync(join(result.projectRoot, '.env.example'), 'utf8');
     assert.match(envExample, /GITLAB_URL=/);
     assert.match(envExample, /GITLAB_PROJECT_ID=/);
     assert.match(envExample, /GITLAB_TOKEN=/);
+    assert.match(envExample, /GITHUB_API_URL=/);
+    assert.match(envExample, /GITHUB_REPOSITORY=/);
+    assert.match(envExample, /GITHUB_TOKEN=/);
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

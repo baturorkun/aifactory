@@ -358,12 +358,16 @@ pnpm factory -- --project ../myproject requirement new "Feature title" --mode ha
 
 This reserves a metadata-rich draft on the base branch, pushes it, creates and
 pushes `factory/RQ-xxxx`, and switches the local worktree to that branch. If
-the project `.env` contains `GITLAB_URL`, `GITLAB_PROJECT_ID`, and
-`GITLAB_TOKEN`, AI Factory also creates a linked GitLab Issue and Draft Merge
-Request and stores their links in requirement metadata. Use
-`--platform gitlab` for explicit selection, `--platform none` for branch-only
-behavior, or recover an interrupted link operation with
-`pnpm factory -- --project ../myproject requirement gitlab-sync RQ-xxxx`. The
+the project `.env` contains complete GitLab credentials (`GITLAB_URL`,
+`GITLAB_PROJECT_ID`, and `GITLAB_TOKEN`) or complete GitHub credentials
+(`GITHUB_REPOSITORY` and `GITHUB_TOKEN`), AI Factory also creates a linked
+Issue and Draft Merge/Pull Request and stores their links in requirement
+metadata. Use `--platform gitlab` or `--platform github` for explicit
+selection, `--platform none` for branch-only behavior, or recover an
+interrupted link operation with
+`pnpm factory -- --project ../myproject requirement platform-sync RQ-xxxx`.
+If both providers are fully configured, explicit platform selection is
+required. The
 reservation commit uses `[skip ci]`, so the base-branch reservation and initial
 draft/linkage pushes do not create pipelines. Finish the generated description and
 acceptance criteria, optionally switch execution mode, and submit:
@@ -381,11 +385,12 @@ pnpm factory -- --project ../myproject requirement cancel RQ-0001 \
 ```
 
 Cancellation commits and pushes `status: cancelled` to the requirement record on
-the base branch, closes the matching GitLab Merge Request when GitLab is
-configured, and deletes the local and remote requirement branch when present.
+the base branch, closes the matching GitLab Merge Request or GitHub Pull Request
+when a repository platform is configured, and deletes the local and remote
+requirement branch when present.
 The requirement file remains on the base branch as an audit record, and the
 operation is safe to retry after partial cleanup. Use `--platform none` to skip
-GitLab synchronization explicitly.
+repository-platform synchronization explicitly.
 
 Handoff submit creates a local handoff package without committing or pushing.
 Pipeline submit commits only the requirement document and pushes its branch so

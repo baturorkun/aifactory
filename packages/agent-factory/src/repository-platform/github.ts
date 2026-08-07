@@ -129,7 +129,7 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
     }
     await this.request(`/issues/${workItem.iid}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body: `${body}\n\n${marker}` }),
     });
   }
 
@@ -183,27 +183,36 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
       allowNotFound?: boolean;
     } = {},
   ): Promise<T> {
-    const url = `${this.apiRoot}${path}`;
-    const response = await this.fetchFn(url, {
-      method: options.method ?? 'GET',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${this.settings.token}`,
-        'Content-Type': 'application/json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      body: options.body,
-    });
+    try {
+      const url = `${this.apiRoot}${path}`;
+      const response = await this.fetchFn(url, {
+        method: options.method ?? 'GET',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${this.settings.token}`,
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        body: options.body,
+      });
 
-    if (options.allowNotFound && response.status === 404) {
-      return undefined as T;
+      if (options.allowNotFound && response.status === 404) {
+        return undefined as T;
+      }
+
+      if (!response.ok) {
+        const responseText = (await response.text()).slice(0, 500);
+        throw new Error(`GitHub API request failed (${response.status} ${response.statusText}): ${responseText}`);
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        message
+          .replaceAll(this.settings.token, '[REDACTED]')
+          .replace(/Authorization\s*[:=]\s*Bearer\s+[^\s,;]+/gi, 'Authorization: Bearer [REDACTED]'),
+      );
     }
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      throw new Error(`GitHub API request failed (${response.status} ${response.statusText}): ${responseText}`);
-    }
-
-    return (await response.json()) as T;
   }
 }

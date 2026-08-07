@@ -1,4 +1,4 @@
-import { copyFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { copyFileSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'path';
 import {
   RunManifestSchema,

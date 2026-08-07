@@ -40,9 +40,9 @@ pnpm factory -- --project ../myproject approve <run-id>
 
 | Command | Description |
 |---|---|
-| `factory requirement new <title> --mode handoff [--platform gitlab]` | Reserve a `[skip ci]` draft, create its branch, and create linked GitLab resources when configured |
-| `factory requirement gitlab-sync <req-id>` | Create or recover the linked GitLab Issue and Draft Merge Request |
-| `factory requirement cancel <req-id> [--reason <text>]` | Mark the base-branch record cancelled, close its GitLab MR, and delete its requirement branch |
+| `factory requirement new <title> --mode handoff [--platform github\|gitlab\|none]` | Reserve a `[skip ci]` draft, create its branch, and create linked GitHub or GitLab resources when configured |
+| `factory requirement platform-sync <req-id> [--platform github\|gitlab]` | Create or recover the linked Issue and Draft Pull/Merge Request (`gitlab-sync` remains an alias) |
+| `factory requirement cancel <req-id> [--reason <text>] [--platform github\|gitlab\|none]` | Mark the base-branch record cancelled, close its Pull/Merge Request, and delete its requirement branch |
 | `factory requirement mode <req-id> <handoff\|pipeline>` | Change execution mode locally |
 | `factory requirement submit <req-id>` | Validate and submit through the configured mode |
 | `factory requirement decision <req-id>` | Print the CI execution decision |

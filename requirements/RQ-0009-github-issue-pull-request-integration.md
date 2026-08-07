@@ -87,6 +87,16 @@ Implement `GitHubRepositoryPlatform` implementing the unified `RepositoryPlatfor
 4. **`addWorkItemComment(issueNumber, comment)`**:
    - Posts status update comments on the linked GitHub Issue (`POST /repos/{owner}/{repo}/issues/{issue_number}/comments`).
 
+## Acceptance Criteria
+
+- `requirement new --platform github` creates and links one GitHub Issue and one Draft Pull Request, then records their identifiers and URLs in requirement frontmatter.
+- Complete GitHub credentials are auto-detected, incomplete credentials fail without exposing token values, and simultaneous complete GitHub and GitLab configurations require explicit platform selection.
+- GitHub lifecycle labels and status comments are synchronized idempotently during requirement creation and submission.
+- Requirement submission and cancellation synchronize the linked GitHub Pull Request lifecycle just as they do for GitLab Merge Requests.
+- New project scaffolds include GitHub repository-platform configuration and environment-variable examples alongside GitLab configuration.
+- CLI help, success output, and user documentation describe GitHub and GitLab platform workflows consistently.
+- GitHub adapter, platform resolution, lifecycle integration, and scaffold behavior are covered by automated tests and all configured quality gates pass.
+
 ## Verification Plan
 
 ### Automated Tests

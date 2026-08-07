@@ -52,7 +52,7 @@ export function resolveRepositoryPlatform(
     if (!gitlabComplete) {
       throw new Error(`GitLab configuration is incomplete. Missing: ${gitlabMissing.join(', ')}`);
     }
-    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>, env);
+    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>);
   }
 
   if (requestedPlatform === 'github') {
@@ -75,7 +75,7 @@ export function resolveRepositoryPlatform(
     return githubSettings(config, githubValues as Record<keyof typeof githubValues, string>, env);
   }
   if (gitlabComplete) {
-    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>, env);
+    return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>);
   }
   return { provider: 'none' };
 }
@@ -83,7 +83,6 @@ export function resolveRepositoryPlatform(
 function gitlabSettings(
   config: FactoryConfig,
   values: Record<'GITLAB_URL' | 'GITLAB_PROJECT_ID' | 'GITLAB_TOKEN', string>,
-  env: Environment,
 ): ResolvedRepositoryPlatform {
   const configured = config.repositoryPlatforms.gitlab;
   const labels = configured?.labels;

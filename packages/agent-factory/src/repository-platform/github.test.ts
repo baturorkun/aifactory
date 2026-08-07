@@ -117,3 +117,55 @@ test('GitHub adapter sets lifecycle labels on work item', async () => {
   const patchBody = JSON.parse(String(requests[0].init?.body)) as Record<string, unknown>;
   assert.deepEqual(patchBody.labels, ['enhancement', 'factory::running']);
 });
+
+test('GitHub adapter adds an idempotent lifecycle comment', async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  let comments: Array<{ body: string }> = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    requests.push({ url, init });
+    if (url.endsWith('/issues/42/comments') && (init?.method ?? 'GET') === 'GET') {
+      return Response.json(comments);
+    }
+    if (url.endsWith('/issues/42/comments') && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as { body: string };
+      comments = [{ body: body.body }];
+      return Response.json({ body: body.body });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const adapter = new GitHubRepositoryPlatform(settings, fetchMock);
+  const issue: Parameters<GitHubRepositoryPlatform['addWorkItemComment']>[0] = {
+    iid: 42,
+    title: 'RQ-0001 - Inventory',
+    description: '',
+    url: 'https://github.com/baturorkun/NetForgeSH/issues/42',
+    state: 'open',
+    labels: ['factory::draft'],
+  };
+  const marker = '<!-- aifactory:requirement-link:RQ-0001 -->';
+
+  await adapter.addWorkItemComment(issue, 'Linked.', marker);
+  await adapter.addWorkItemComment(issue, 'Linked.', marker);
+
+  assert.equal(requests.filter((request) => request.init?.method === 'POST').length, 1);
+  assert.match(comments[0].body, /aifactory:requirement-link:RQ-0001/);
+});
+
+test('GitHub adapter redacts tokens from API errors', async () => {
+  const fetchMock: typeof fetch = async () => new Response(
+    `Authorization: Bearer ${settings.token}`,
+    { status: 401, statusText: 'Unauthorized' },
+  );
+  const adapter = new GitHubRepositoryPlatform(settings, fetchMock);
+
+  await assert.rejects(
+    adapter.getWorkItem(42),
+    (error: Error) => {
+      assert.doesNotMatch(error.message, new RegExp(settings.token));
+      assert.match(error.message, /\[REDACTED\]/);
+      return true;
+    },
+  );
+});

@@ -27,8 +27,7 @@ import type {
   WorkItem,
 } from './repository-platform/types';
 
-class FakeGitLabPlatform implements RepositoryPlatformAdapter {
-  readonly provider = 'gitlab' as const;
+class FakeRepositoryPlatform implements RepositoryPlatformAdapter {
   readonly targetBranch = 'main';
   readonly lifecycleLabels = [
     'factory::draft',
@@ -42,6 +41,8 @@ class FakeGitLabPlatform implements RepositoryPlatformAdapter {
   comments: string[] = [];
   closedChangeRequests = 0;
 
+  constructor(readonly provider: 'gitlab' | 'github' = 'gitlab') {}
+
   async getWorkItem(iid: number): Promise<WorkItem | undefined> {
     return this.workItem?.iid === iid ? this.workItem : undefined;
   }
@@ -53,7 +54,9 @@ class FakeGitLabPlatform implements RepositoryPlatformAdapter {
       iid: 12,
       title: input.title,
       description: input.description,
-      url: 'https://gitlab.example.test/group/project/-/issues/12',
+      url: this.provider === 'github'
+        ? 'https://github.example.test/group/project/issues/12'
+        : 'https://gitlab.example.test/group/project/-/issues/12',
       state: 'opened',
       labels: input.labels,
     };
@@ -85,8 +88,10 @@ class FakeGitLabPlatform implements RepositoryPlatformAdapter {
   }): Promise<ChangeRequest> {
     this.changeRequest = {
       iid: 21,
-      title: `Draft: ${input.title}`,
-      url: 'https://gitlab.example.test/group/project/-/merge_requests/21',
+      title: this.provider === 'github' ? input.title : `Draft: ${input.title}`,
+      url: this.provider === 'github'
+        ? 'https://github.example.test/group/project/pull/21'
+        : 'https://gitlab.example.test/group/project/-/merge_requests/21',
       state: 'opened',
       sourceBranch: input.sourceBranch,
       targetBranch: input.targetBranch,
@@ -378,7 +383,7 @@ test('submit rejects changes to another requirement', async () => {
 
 test('new requirement links a GitLab Issue and Draft MR through the platform adapter', async () => {
   const repo = makeRepository();
-  const adapter = new FakeGitLabPlatform();
+  const adapter = new FakeRepositoryPlatform();
   try {
     const created = await createDraftRequirement('GitLab feature', 'handoff', repo.config, {
       environment: {
@@ -416,9 +421,56 @@ test('new requirement links a GitLab Issue and Draft MR through the platform ada
   }
 });
 
+test('new requirement and submit synchronize a GitHub Issue and Draft PR', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform('github');
+  repo.config.repositoryPlatforms.github = {
+    baseUrl: 'https://api.github.example.test',
+    repository: 'group/project',
+    token: 'secret',
+    targetBranch: 'main',
+    labels: {
+      draft: 'factory::draft',
+      ready: 'factory::ready',
+      running: 'factory::running',
+      needsFix: 'factory::needs-fix',
+      passed: 'factory::passed',
+    },
+  };
+  try {
+    const created = await createDraftRequirement('GitHub feature', 'handoff', repo.config, {
+      platform: 'github',
+      platformAdapter: adapter,
+    });
+    assert.equal(created.repositoryProvider, 'github');
+    assert.equal(created.workItem?.iid, 12);
+    assert.equal(created.changeRequest?.iid, 21);
+    const requirementPath = join(repo.root, created.requirementFile);
+    let markdown = readFileSync(requirementPath, 'utf8');
+    assert.match(markdown, /repositoryProvider: github/);
+    assert.match(markdown, /githubIssueIid: 12/);
+    assert.match(markdown, /githubPullRequestIid: 21/);
+
+    completeDraft(requirementPath);
+    const submitted = await submitRequirement(created.requirementId, repo.config, {
+      createHandoff: async () => 'github-handoff',
+      platformAdapter: adapter,
+    });
+
+    assert.equal(submitted.status, 'ready');
+    assert.equal(submitted.runId, 'github-handoff');
+    assert.deepEqual(adapter.workItem?.labels, ['factory::ready']);
+    assert.equal(adapter.comments.length, 3);
+    markdown = readFileSync(requirementPath, 'utf8');
+    assert.match(markdown, /status: ready/);
+  } finally {
+    repo.cleanup();
+  }
+});
+
 test('cancel closes an existing GitLab MR before deleting its branch', async () => {
   const repo = makeRepository();
-  const adapter = new FakeGitLabPlatform();
+  const adapter = new FakeRepositoryPlatform();
   const environment = {
     GITLAB_URL: 'https://gitlab.example.test',
     GITLAB_PROJECT_ID: 'group/project',
@@ -432,6 +484,42 @@ test('cancel closes an existing GitLab MR before deleting its branch', async () 
     const result = await cancelRequirement(created.requirementId, repo.config, {
       reason: 'Superseded',
       environment,
+      platformAdapter: adapter,
+    });
+
+    assert.equal(result.changeRequest?.iid, 21);
+    assert.equal(result.changeRequest?.state, 'closed');
+    assert.equal(adapter.closedChangeRequests, 1);
+    assert.equal(result.remoteBranchDeleted, true);
+    assert.equal(result.localBranchDeleted, true);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('cancel closes an existing GitHub PR before deleting its branch', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform('github');
+  repo.config.repositoryPlatforms.github = {
+    baseUrl: 'https://api.github.example.test',
+    repository: 'group/project',
+    token: 'secret',
+    targetBranch: 'main',
+    labels: {
+      draft: 'factory::draft',
+      ready: 'factory::ready',
+      running: 'factory::running',
+      needsFix: 'factory::needs-fix',
+      passed: 'factory::passed',
+    },
+  };
+  try {
+    const created = await createDraftRequirement('Cancelled GitHub feature', 'handoff', repo.config, {
+      platform: 'github',
+      platformAdapter: adapter,
+    });
+    const result = await cancelRequirement(created.requirementId, repo.config, {
+      platform: 'github',
       platformAdapter: adapter,
     });
 

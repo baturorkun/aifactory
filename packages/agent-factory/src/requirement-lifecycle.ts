@@ -185,7 +185,7 @@ function assertRequirementIsolation(
   requirementPath: string,
   config: FactoryConfig,
 ): void {
-  const id = assertRequirementId(requirementId);
+  assertRequirementId(requirementId);
   const requirementRelative = relative(root, requirementPath).replace(/\\/g, '/');
   const otherWorkingChanges = changedPaths(root).filter((path) => path !== requirementRelative);
   if (otherWorkingChanges.length > 0) {
@@ -702,7 +702,7 @@ function updateAndPushLinkMetadata(
 
 function verifyWorkItem(workItem: WorkItem, requirementId: string, marker: string): void {
   if (!workItem.title.startsWith(`${requirementId} -`) || !workItem.description.includes(marker)) {
-    throw new Error(`GitLab Issue #${workItem.iid} does not belong to ${requirementId}.`);
+    throw new Error(`Repository Issue #${workItem.iid} does not belong to ${requirementId}.`);
   }
 }
 
@@ -715,7 +715,7 @@ function verifyChangeRequest(
     changeRequest.sourceBranch !== sourceBranch ||
     changeRequest.targetBranch !== targetBranch
   ) {
-    throw new Error(`GitLab Merge Request !${changeRequest.iid} has mismatched branches.`);
+    throw new Error(`Repository change request #${changeRequest.iid} has mismatched branches.`);
   }
 }
 
@@ -778,9 +778,9 @@ export async function submitRequirement(
   }
 
   if (requirement.lifecycle!.executionMode === 'handoff') {
-    if (requirement.lifecycle!.repositoryProvider === 'gitlab') {
+    if (requirement.lifecycle!.repositoryProvider) {
       await syncRequirementPlatform(id, config, {
-        platform: 'gitlab',
+        platform: requirement.lifecycle!.repositoryProvider,
         platformAdapter: dependencies.platformAdapter,
       });
     }
@@ -796,9 +796,9 @@ export async function submitRequirement(
   }
 
   const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
-  if (requirement.lifecycle!.repositoryProvider === 'gitlab') {
+  if (requirement.lifecycle!.repositoryProvider) {
     await syncRequirementPlatform(id, config, {
-      platform: 'gitlab',
+      platform: requirement.lifecycle!.repositoryProvider,
       platformAdapter: dependencies.platformAdapter,
     });
   }
