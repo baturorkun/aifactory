@@ -36,6 +36,11 @@ test('new projects enable the draft requirement branch workflow', () => {
           targetBranch: string;
         };
       };
+      projectGuidelines: {
+        files: string[];
+        required: boolean;
+        maxContextChars: number;
+      };
     };
     assert.deepEqual(config.model, {
       provider: '${AI_PROVIDER}',
@@ -56,6 +61,17 @@ test('new projects enable the draft requirement branch workflow', () => {
       baseBranch: 'main',
       remote: 'origin',
     });
+    assert.deepEqual(config.projectGuidelines, {
+      files: ['./AGENTS.md'],
+      required: true,
+      maxContextChars: 20000,
+    });
+    const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
+    assert.match(agentGuidelines, /## AI Factory Workflow/);
+    assert.match(agentGuidelines, /factory requirement new <title>/);
+    assert.match(agentGuidelines, /factory requirement submit <requirement-id>/);
+    assert.match(agentGuidelines, /factory requirement platform-sync <requirement-id>/);
+    assert.match(agentGuidelines, /factory requirement cancel <requirement-id>/);
     assert.match(ci, /ai_factory_requirement_branch:/);
     assert.match(ci, /git -C \.\.\/aifactory fetch origin main/);
     assert.match(ci, /git -C \.\.\/aifactory switch --detach FETCH_HEAD/);

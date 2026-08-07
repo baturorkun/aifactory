@@ -606,7 +606,7 @@ function writeFactoryConfig(
       commands,
     },
     projectGuidelines: {
-      files: ['./PROJECT_GUIDELINES.md'],
+      files: ['./AGENTS.md'],
       required: true,
       maxContextChars: 20000,
     },
@@ -829,9 +829,21 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
 
   writeCommonFiles(projectRoot, projectName);
   writeFileSync(
-    resolve(projectRoot, 'PROJECT_GUIDELINES.md'),
+    resolve(projectRoot, 'AGENTS.md'),
     [
-      '# Project Guidelines',
+      '# Agent Guidelines',
+      '',
+      '## AI Factory Workflow',
+      '',
+      '- Use AI Factory lifecycle commands for requirement, branch, Issue, and Pull/Merge Request operations.',
+      '- Create a requirement with `factory requirement new <title>`; do not create its requirement file, branch, Issue, or Draft Pull/Merge Request manually.',
+      '- Submit a completed draft with `factory requirement submit <requirement-id>`.',
+      '- Recover or synchronize repository-platform links with `factory requirement platform-sync <requirement-id>`.',
+      '- Cancel a requirement with `factory requirement cancel <requirement-id>`; do not close its Pull/Merge Request or delete its branch manually.',
+      '- Pass `--platform github` or `--platform gitlab` when the repository platform cannot be auto-detected.',
+      '- Before running a lifecycle command, inspect `factory --help` and the relevant subcommand help for the invocation available in the current environment.',
+      '',
+      '## Project Guidelines',
       '',
       '- Preserve the existing project architecture and conventions.',
       '- Follow the active requirement and its acceptance criteria.',
