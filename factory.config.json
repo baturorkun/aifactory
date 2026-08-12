@@ -3,8 +3,10 @@
     "provider": "${AI_PROVIDER}",
     "name": "${AI_MODEL}",
     "reviewerName": "${AI_REVIEWER_MODEL}",
-    "baseUrl": "${AI_BASE_URL}",
-    "apiKey": "${AI_API_KEY}",
+    "baseUrl": "${AI_BASE_URL:-}",
+    "apiKey": "${AI_API_KEY:-}",
+    "executable": "${AI_CODEX_EXECUTABLE:-codex}",
+    "reasoningEffort": "${AI_CODEX_REASONING_EFFORT:-medium}",
     "timeoutMs": 180000,
     "maxTokens": 32768,
     "temperature": 0.2

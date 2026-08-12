@@ -4,6 +4,7 @@ import { OllamaAdapter } from './ollama';
 import { OpenAICompatAdapter } from './openai-compat';
 import { MockAdapter } from './mock';
 import { GeminiAdapter } from './gemini';
+import { CodexCliAdapter } from './codex-cli';
 
 export type { ModelAdapter } from './adapter';
 export type { ModelRequest, ModelResponse, ModelUsage } from './adapter';
@@ -11,6 +12,7 @@ export { OllamaAdapter } from './ollama';
 export { OpenAICompatAdapter } from './openai-compat';
 export { MockAdapter } from './mock';
 export { GeminiAdapter } from './gemini';
+export { CodexCliAdapter } from './codex-cli';
 
 export function createModelAdapter(config: ModelConfig): ModelAdapter {
   switch (config.provider) {
@@ -42,6 +44,13 @@ export function createModelAdapter(config: ModelConfig): ModelAdapter {
         maxTokens: config.maxTokens,
         temperature: config.temperature,
       });
+    case 'codex-cli':
+      return new CodexCliAdapter({
+        model: config.name,
+        executable: config.executable,
+        timeoutMs: config.timeoutMs,
+        reasoningEffort: config.reasoningEffort,
+      });
   }
 }
 
@@ -69,6 +78,15 @@ export function createReviewerAdapter(config: ModelConfig): ModelAdapter {
       timeoutMs: config.timeoutMs,
       maxTokens: config.maxTokens,
       temperature: config.temperature,
+    });
+  }
+
+  if (config.provider === 'codex-cli') {
+    return new CodexCliAdapter({
+      model: reviewerName,
+      executable: config.executable,
+      timeoutMs: config.timeoutMs,
+      reasoningEffort: config.reasoningEffort,
     });
   }
 

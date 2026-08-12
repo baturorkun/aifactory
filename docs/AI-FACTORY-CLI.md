@@ -54,6 +54,7 @@ pnpm factory -- --project ../myproject approve <run-id>
 | `factory run <req-id> --dry-run` | Run with mock model (no LLM) |
 | `factory run <req-id> --skip-gates` | Skip quality gates |
 | `factory run <req-id> --tasks task-1,task-2` | Run only specific tasks |
+| `factory model-provider` | Print the configured model provider (used by CI preflight) |
 | `factory status` | List recent runs |
 | `factory status <run-id>` | Show details of a run |
 | `factory artifacts <run-id>` | List generated files |
@@ -68,7 +69,7 @@ pnpm factory -- --project ../myproject approve <run-id>
 ```json
 {
   "model": {
-    "provider": "ollama",        // "ollama" | "openai-compat" | "mock"
+    "provider": "ollama",        // "ollama" | "openai-compat" | "gemini" | "codex-cli" | "mock"
     "name": "codellama",         // primary model
     "reviewerName": "llama3",    // reviewer model (optional, falls back to name)
     "baseUrl": "http://localhost:11434",
@@ -129,6 +130,28 @@ Then in `factory.config.json`:
 ```json
 { "model": { "provider": "openai-compat", "name": "your-model", "baseUrl": "http://localhost:8080" } }
 ```
+
+### Switching to Codex CLI for GitLab pipelines
+
+```json
+{
+  "model": {
+    "provider": "codex-cli",
+    "name": "gpt-5.6-sol",
+    "reviewerName": "gpt-5.6-sol",
+    "executable": "codex",
+    "reasoningEffort": "medium"
+  }
+}
+```
+
+Use a runner image containing Codex CLI (the repository provides
+`docker/codex-runner.Dockerfile`) and mount the runner host's authenticated
+directory to `/home/gitlab-runner/.codex`. Generated jobs set that location as
+`CODEX_HOME` and validate `auth.json` only for `pipeline` requirements using
+the `codex-cli` provider. Handoff mode and API providers keep their existing
+behavior. AI Factory, not Codex CLI, owns Issue, branch, Draft PR/MR, commit,
+and push operations; merge remains manual.
 
 ---
 

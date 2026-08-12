@@ -45,10 +45,20 @@ const MockModelSchema = z.object({
   reviewerName: z.string().optional(),
 });
 
+const CodexCliModelSchema = z.object({
+  provider: z.literal('codex-cli'),
+  name: z.string().min(1),
+  reviewerName: z.string().min(1).optional(),
+  executable: z.string().min(1).default('codex'),
+  timeoutMs: z.number().int().positive().default(600_000),
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
+});
+
 const ModelConfigSchema = z.discriminatedUnion('provider', [
   OllamaModelSchema,
   OpenAICompatModelSchema,
   GeminiModelSchema,
+  CodexCliModelSchema,
   MockModelSchema,
 ]);
 
