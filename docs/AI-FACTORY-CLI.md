@@ -145,13 +145,17 @@ Then in `factory.config.json`:
 }
 ```
 
-Use a runner image containing Codex CLI (the repository provides
-`docker/codex-runner.Dockerfile`) and mount the runner host's authenticated
-directory to `/home/gitlab-runner/.codex`. Generated jobs set that location as
-`CODEX_HOME` and validate `auth.json` only for `pipeline` requirements using
-the `codex-cli` provider. Handoff mode and API providers keep their existing
-behavior. AI Factory, not Codex CLI, owns Issue, branch, Draft PR/MR, commit,
-and push operations; merge remains manual.
+Use a runner image containing Codex CLI. The repository provides
+`docker/codex-runner.Dockerfile`, and its `.gitlab-ci.yml` builds and pushes
+commit and branch-tagged images on every change. Default-branch builds also
+publish `$CI_REGISTRY_IMAGE/codex-runner:latest`.
+
+Mount the runner host's authenticated directory to
+`/home/gitlab-runner/.codex`. Generated jobs set that location as `CODEX_HOME`
+and validate `auth.json` only for `pipeline` requirements using the `codex-cli`
+provider. Handoff mode and API providers keep their existing behavior. AI
+Factory, not Codex CLI, owns Issue, branch, Draft PR/MR, commit, and push
+operations; merge remains manual.
 
 ---
 

@@ -57,6 +57,9 @@ continue to run without Codex CLI or its auth mount.
 - Generated GitLab CI uses a configurable AI Factory runner image, exports
   `CODEX_HOME=/home/gitlab-runner/.codex`, and runs Codex preflight checks only
   for `pipeline` execution with `AI_PROVIDER=codex-cli`.
+- The AI Factory GitLab pipeline builds and pushes commit/branch-tagged Codex
+  runner images on every change and updates `codex-runner:latest` on the default
+  branch.
 - Handoff-mode requirements skip Codex preflight and preserve the existing
   handoff workflow even when the configured provider is `codex-cli`.
 - API-backed providers preserve their current behavior and do not require the

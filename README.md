@@ -361,7 +361,23 @@ AI_REVIEWER_MODEL=gpt-5.6-sol
 AIFACTORY_RUNNER_IMAGE=registry.example.com/ci/aifactory-codex:latest
 ```
 
-Build that image from the provided runner definition:
+The AI Factory repository's GitLab pipeline builds and publishes this image on
+every branch or tag change as:
+
+```text
+$CI_REGISTRY_IMAGE/codex-runner:$CI_COMMIT_SHA
+$CI_REGISTRY_IMAGE/codex-runner:$CI_COMMIT_REF_SLUG
+```
+
+Changes on the default branch also update
+`$CI_REGISTRY_IMAGE/codex-runner:latest`. Set the consumer project's variable
+to that registry path:
+
+```bash
+AIFACTORY_RUNNER_IMAGE=registry.example.com/group/aifactory/codex-runner:latest
+```
+
+The same image can still be built manually from the provided runner definition:
 
 ```bash
 docker build -f docker/codex-runner.Dockerfile -t registry.example.com/ci/aifactory-codex:latest .
