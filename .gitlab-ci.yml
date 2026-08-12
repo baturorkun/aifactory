@@ -1,0 +1,46 @@
+stages:
+  - runner_image
+
+variables:
+  CODEX_RUNNER_IMAGE: "$CI_REGISTRY_IMAGE/codex-runner"
+  CODEX_VERSION: "latest"
+
+codex_runner_image:
+  stage: runner_image
+  image: docker:27-cli
+  tags:
+    - linux
+  variables:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+  before_script:
+    - |
+      if [ ! -S /var/run/docker.sock ]; then
+        echo "Codex runner image build requires /var/run/docker.sock from the runner host."
+        exit 1
+      fi
+    - |
+      if [ -z "$CI_REGISTRY" ] || [ -z "$CI_REGISTRY_IMAGE" ] || [ -z "$CI_REGISTRY_USER" ] || [ -z "$CI_REGISTRY_PASSWORD" ]; then
+        echo "GitLab Container Registry variables are required to publish the Codex runner image."
+        exit 1
+      fi
+    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - |
+      docker build --pull \
+        --build-arg "CODEX_VERSION=$CODEX_VERSION" \
+        --label "org.opencontainers.image.revision=$CI_COMMIT_SHA" \
+        --tag "$CODEX_RUNNER_IMAGE:$CI_COMMIT_SHA" \
+        --file docker/codex-runner.Dockerfile \
+        .
+    - docker push "$CODEX_RUNNER_IMAGE:$CI_COMMIT_SHA"
+    - docker tag "$CODEX_RUNNER_IMAGE:$CI_COMMIT_SHA" "$CODEX_RUNNER_IMAGE:$CI_COMMIT_REF_SLUG"
+    - docker push "$CODEX_RUNNER_IMAGE:$CI_COMMIT_REF_SLUG"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$CODEX_RUNNER_IMAGE:$CI_COMMIT_SHA" "$CODEX_RUNNER_IMAGE:latest"
+        docker push "$CODEX_RUNNER_IMAGE:latest"
+      fi
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+

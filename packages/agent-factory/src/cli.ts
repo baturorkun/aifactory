@@ -242,6 +242,18 @@ requirement
 // ============================================================
 
 program
+  .command('model-provider')
+  .description('Print the resolved model provider for CI preflight checks')
+  .action(() => {
+    try {
+      console.log(loadConfig().model.provider);
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command('changed-requirements')
   .description('List requirement IDs changed between two Git refs')
   .requiredOption('--base <ref>', 'Base Git ref or commit')

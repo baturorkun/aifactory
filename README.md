@@ -242,8 +242,10 @@ the target project's `.env` file or its CI/CD environment:
     "provider": "${AI_PROVIDER}",
     "name": "${AI_MODEL}",
     "reviewerName": "${AI_REVIEWER_MODEL}",
-    "baseUrl": "${AI_BASE_URL}",
-    "apiKey": "${AI_API_KEY}"
+    "baseUrl": "${AI_BASE_URL:-}",
+    "apiKey": "${AI_API_KEY:-}",
+    "executable": "${AI_CODEX_EXECUTABLE:-codex}",
+    "reasoningEffort": "${AI_CODEX_REASONING_EFFORT:-medium}"
   }
 }
 ```
@@ -343,6 +345,53 @@ AI_API_KEY=local
 ```
 
 For native Ollama provider config, use `provider: ollama` in `factory.config.json`.
+
+### Codex CLI in GitLab pipeline mode
+
+Codex CLI is a model provider only. AI Factory still creates or links the
+GitHub/GitLab Issue, creates the requirement branch and Draft PR/MR, commits
+the result, and pushes the branch. Merge remains manual.
+
+Set these CI/CD variables for projects that use Codex CLI:
+
+```bash
+AI_PROVIDER=codex-cli
+AI_MODEL=gpt-5.6-sol
+AI_REVIEWER_MODEL=gpt-5.6-sol
+AIFACTORY_RUNNER_IMAGE=registry.example.com/ci/aifactory-codex:latest
+```
+
+The AI Factory repository's GitLab pipeline builds and publishes this image on
+every branch or tag change as:
+
+```text
+$CI_REGISTRY_IMAGE/codex-runner:$CI_COMMIT_SHA
+$CI_REGISTRY_IMAGE/codex-runner:$CI_COMMIT_REF_SLUG
+```
+
+Changes on the default branch also update
+`$CI_REGISTRY_IMAGE/codex-runner:latest`. Set the consumer project's variable
+to that registry path:
+
+```bash
+AIFACTORY_RUNNER_IMAGE=registry.example.com/group/aifactory/codex-runner:latest
+```
+
+The same image can still be built manually from the provided runner definition:
+
+```bash
+docker build -f docker/codex-runner.Dockerfile -t registry.example.com/ci/aifactory-codex:latest .
+docker push registry.example.com/ci/aifactory-codex:latest
+```
+
+The generated GitLab job sets `CODEX_HOME=/home/gitlab-runner/.codex`. Mount
+the authenticated host directory at that exact path so the job can read
+`/home/gitlab-runner/.codex/auth.json`. Treat the directory as a secret: do
+not commit it, publish it as an artifact, or print its contents.
+
+Codex executable and authentication checks run only when the requirement is
+in `pipeline` mode and `AI_PROVIDER=codex-cli`. Handoff requirements continue
+to be skipped by the pipeline, and API-backed providers do not need Codex.
 
 ## Main Commands
 

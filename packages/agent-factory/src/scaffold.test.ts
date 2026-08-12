@@ -21,6 +21,8 @@ test('new projects enable the draft requirement branch workflow', () => {
         reviewerName: string;
         baseUrl: string;
         apiKey: string;
+        executable: string;
+        reasoningEffort: string;
         maxTokens: number;
       };
       requirementBranches: {
@@ -52,8 +54,10 @@ test('new projects enable the draft requirement branch workflow', () => {
       provider: '${AI_PROVIDER}',
       name: '${AI_MODEL}',
       reviewerName: '${AI_REVIEWER_MODEL}',
-      baseUrl: '${AI_BASE_URL}',
-      apiKey: '${AI_API_KEY}',
+      baseUrl: '${AI_BASE_URL:-}',
+      apiKey: '${AI_API_KEY:-}',
+      executable: '${AI_CODEX_EXECUTABLE:-codex}',
+      reasoningEffort: '${AI_CODEX_REASONING_EFFORT:-medium}',
       maxTokens: 32768,
     });
     const ci = readFileSync(join(result.projectRoot, '.gitlab-ci.yml'), 'utf8');
@@ -91,7 +95,14 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /package_offline:/);
     assert.match(ci, /docker_image:/);
     assert.match(ci, /stages:\n {2}- ai_factory\n {2}- build\n {2}- package\n {2}- image\n {2}- deploy/);
-    assert.match(ci, /ai_factory_requirement_branch:\n {2}image: node:20-bullseye\n {2}tags:\n {4}- linux/);
+    assert.match(ci, /AIFACTORY_RUNNER_IMAGE: "node:20-bullseye"/);
+    assert.match(ci, /CODEX_HOME: "\/home\/gitlab-runner\/\.codex"/);
+    assert.match(ci, /ai_factory_requirement_branch:\n {2}image: "\$AIFACTORY_RUNNER_IMAGE"\n {2}tags:\n {4}- linux/);
+    assert.match(ci, /MODEL_PROVIDER=.*model-provider/);
+    assert.match(ci, /if \[ "\$MODEL_PROVIDER" = "codex-cli" \]/);
+    assert.match(ci, /test -r "\$CODEX_HOME\/auth\.json"/);
+    assert.match(ci, /codex login status/);
+    assert.match(ci, /handoff\)[\s\S]*GitLab AI Factory execution is skipped/);
     assert.match(ci, /build_static:\n {2}stage: build\n {2}image: node:20-alpine\n {2}tags:\n {4}- linux/);
     assert.match(ci, /docker_image:\n {2}stage: image\n {2}image: docker:27-cli\n {2}tags:\n {4}- linux/);
     assert.match(ci, /docker_image:\n {2}stage: image/);
