@@ -30,6 +30,20 @@ export type CodexProcessRunner = (input: {
 const MAX_ERROR_CHARS = 2_000;
 const MAX_STDERR_CAPTURE_CHARS = 20_000;
 
+function toStrictJsonSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toStrictJsonSchema);
+  if (!value || typeof value !== 'object') return value;
+
+  const schema = Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, toStrictJsonSchema(entry)]),
+  );
+  if (schema.type === 'object' && schema.properties && typeof schema.properties === 'object') {
+    schema.additionalProperties = false;
+    schema.required = Object.keys(schema.properties);
+  }
+  return schema;
+}
+
 function cleanError(value: string): string {
   const ansiEscape = String.fromCharCode(27);
   return value
@@ -112,7 +126,8 @@ export class CodexCliAdapter implements ModelAdapter {
         args.push('-c', `model_reasoning_effort=${JSON.stringify(this.config.reasoningEffort)}`);
       }
       if (req.responseSchema) {
-        writeFileSync(schemaPath, `${JSON.stringify(req.responseSchema, null, 2)}\n`, 'utf8');
+        const strictSchema = toStrictJsonSchema(req.responseSchema);
+        writeFileSync(schemaPath, `${JSON.stringify(strictSchema, null, 2)}\n`, 'utf8');
         args.push('--output-schema', schemaPath);
       }
       args.push('-');

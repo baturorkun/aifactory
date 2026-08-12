@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 import { CodexCliAdapter, type CodexProcessRunner } from './codex-cli';
 
 test('Codex CLI adapter maps prompts and structured output to codex exec', async () => {
   let invocation: Parameters<CodexProcessRunner>[0] | undefined;
+  let writtenSchema: unknown;
   const runner: CodexProcessRunner = async (input) => {
     invocation = input;
+    const schemaIndex = input.args.indexOf('--output-schema');
+    writtenSchema = JSON.parse(readFileSync(input.args[schemaIndex + 1], 'utf8'));
     const outputIndex = input.args.indexOf('--output-last-message');
     writeFileSync(input.args[outputIndex + 1], '{"ok":true}\n', 'utf8');
     return { exitCode: 0, signal: null, stderr: '', timedOut: false };
@@ -25,7 +28,16 @@ test('Codex CLI adapter maps prompts and structured output to codex exec', async
   const response = await adapter.call({
     systemPrompt: 'SYSTEM RULES',
     userPrompt: 'IMPLEMENT TASK',
-    responseSchema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+    responseSchema: {
+      type: 'object',
+      properties: {
+        ok: { type: 'boolean' },
+        nested: {
+          type: 'object',
+          properties: { note: { type: 'string' } },
+        },
+      },
+    },
   });
 
   assert.ok(invocation);
@@ -45,6 +57,20 @@ test('Codex CLI adapter maps prompts and structured output to codex exec', async
   assert.equal(invocation.args.at(-1), '-');
   assert.equal(response.content, '{"ok":true}');
   assert.equal(response.model, 'gpt-test-codex');
+  assert.deepEqual(writtenSchema, {
+    type: 'object',
+    properties: {
+      ok: { type: 'boolean' },
+      nested: {
+        type: 'object',
+        properties: { note: { type: 'string' } },
+        additionalProperties: false,
+        required: ['note'],
+      },
+    },
+    additionalProperties: false,
+    required: ['ok', 'nested'],
+  });
   const schemaPath = invocation.args[invocation.args.indexOf('--output-schema') + 1];
   const outputPath = invocation.args[invocation.args.indexOf('--output-last-message') + 1];
   assert.equal(existsSync(schemaPath), false);
