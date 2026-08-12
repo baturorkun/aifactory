@@ -33,10 +33,12 @@ test('Codex CLI adapter maps prompts and structured output to codex exec', async
   assert.equal(invocation.timeoutMs, 1234);
   assert.match(invocation.stdin, /## System Instructions\n\nSYSTEM RULES/);
   assert.match(invocation.stdin, /## Task\n\nIMPLEMENT TASK/);
-  assert.deepEqual(invocation.args.slice(0, 8), [
-    'exec', '--ephemeral', '--ignore-user-config', '--sandbox', 'read-only',
-    '--ask-for-approval', 'never', '--color',
+  assert.deepEqual(invocation.args.slice(0, 9), [
+    '--sandbox', 'read-only', '--ask-for-approval', 'never', '--cd',
+    process.cwd(), '--model', 'gpt-test-codex', 'exec',
   ]);
+  assert.ok(invocation.args.includes('--ephemeral'));
+  assert.ok(invocation.args.includes('--ignore-user-config'));
   assert.ok(invocation.args.includes('--output-schema'));
   assert.ok(invocation.args.includes('--output-last-message'));
   assert.ok(invocation.args.includes('model_reasoning_effort="high"'));

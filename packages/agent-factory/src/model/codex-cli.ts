@@ -90,20 +90,20 @@ export class CodexCliAdapter implements ModelAdapter {
     const schemaPath = join(callDirectory, 'response-schema.json');
     try {
       const args = [
-        'exec',
-        '--ephemeral',
-        '--ignore-user-config',
         '--sandbox',
         'read-only',
         '--ask-for-approval',
         'never',
-        '--color',
-        'never',
-        '--skip-git-repo-check',
         '--cd',
         this.workingDirectory,
         '--model',
         this.config.model,
+        'exec',
+        '--ephemeral',
+        '--ignore-user-config',
+        '--color',
+        'never',
+        '--skip-git-repo-check',
         '--output-last-message',
         outputPath,
       ];
