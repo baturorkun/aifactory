@@ -102,3 +102,22 @@ test('Codex CLI adapter redacts credentials from failures and cleans temporary f
   );
   assert.equal(existsSync(outputPath), false);
 });
+
+test('Codex CLI adapter preserves the actionable tail of long stderr output', async () => {
+  const runner: CodexProcessRunner = async () => ({
+    exitCode: 1,
+    signal: null,
+    stderr: `${'prompt context '.repeat(500)}ACTIONABLE ERROR AT END`,
+    timedOut: false,
+  });
+  const adapter = new CodexCliAdapter({ model: 'gpt-test' }, runner);
+
+  await assert.rejects(
+    adapter.call({ systemPrompt: 'system', userPrompt: 'user' }),
+    (error: Error) => {
+      assert.match(error.message, /ACTIONABLE ERROR AT END/);
+      assert.ok(error.message.length < 2_200);
+      return true;
+    },
+  );
+});

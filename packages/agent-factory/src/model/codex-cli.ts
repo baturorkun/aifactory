@@ -28,6 +28,7 @@ export type CodexProcessRunner = (input: {
 }) => Promise<CodexProcessResult>;
 
 const MAX_ERROR_CHARS = 2_000;
+const MAX_STDERR_CAPTURE_CHARS = 20_000;
 
 function cleanError(value: string): string {
   const ansiEscape = String.fromCharCode(27);
@@ -36,7 +37,7 @@ function cleanError(value: string): string {
     .replace(/(Bearer\s+)[^\s]+/gi, '$1[REDACTED]')
     .replace(/("(?:access_token|refresh_token|id_token)"\s*:\s*")[^"]+/gi, '$1[REDACTED]')
     .trim()
-    .slice(0, MAX_ERROR_CHARS);
+    .slice(-MAX_ERROR_CHARS);
 }
 
 const runCodexProcess: CodexProcessRunner = ({ executable, args, stdin, cwd, timeoutMs }) =>
@@ -55,7 +56,7 @@ const runCodexProcess: CodexProcessRunner = ({ executable, args, stdin, cwd, tim
 
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {
-      if (stderr.length < MAX_ERROR_CHARS) stderr += chunk;
+      stderr = `${stderr}${chunk}`.slice(-MAX_STDERR_CAPTURE_CHARS);
     });
     child.once('error', (error) => {
       clearTimeout(timeout);
