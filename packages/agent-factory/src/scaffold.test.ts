@@ -100,6 +100,9 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /ai_factory_requirement_branch:\n {2}image: "\$AIFACTORY_RUNNER_IMAGE"\n {2}tags:\n {4}- linux/);
     assert.match(ci, /MODEL_PROVIDER=.*model-provider/);
     assert.match(ci, /if \[ "\$MODEL_PROVIDER" = "codex-cli" \]/);
+    assert.match(ci, /if \[ -n "\$\{CODEX_AUTH_JSON_FILE:-\}" \]/);
+    assert.match(ci, /install -m 600 "\$CODEX_AUTH_JSON_FILE" "\$CODEX_HOME\/auth\.json"/);
+    assert.match(ci, /export CODEX_HOME="\$MOUNTED_CODEX_HOME"/);
     assert.match(ci, /test -r "\$CODEX_HOME\/auth\.json"/);
     assert.match(ci, /codex login status/);
     assert.match(ci, /handoff\)[\s\S]*GitLab AI Factory execution is skipped/);

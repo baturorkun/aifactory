@@ -384,10 +384,19 @@ docker build -f docker/codex-runner.Dockerfile -t registry.example.com/ci/aifact
 docker push registry.example.com/ci/aifactory-codex:latest
 ```
 
-The generated GitLab job sets `CODEX_HOME=/home/gitlab-runner/.codex`. Mount
-the authenticated host directory at that exact path so the job can read
-`/home/gitlab-runner/.codex/auth.json`. Treat the directory as a secret: do
-not commit it, publish it as an artifact, or print its contents.
+Generated GitLab jobs accept Codex authentication from either of these sources,
+in priority order:
+
+1. `CODEX_AUTH_JSON_FILE`: a GitLab CI/CD variable with type **File** whose
+   value is the complete `auth.json` content. The job copies it with mode 600
+   into a job-local `CODEX_HOME`.
+2. A runner mount at `CODEX_HOME` (default
+   `/home/gitlab-runner/.codex`) containing a readable `auth.json`.
+
+The mounted form persists token refreshes between jobs. A GitLab File variable
+does not; refresh its stored value when the cached login becomes invalid. Treat
+both sources as passwords: do not commit them, publish them as artifacts, or
+print their contents.
 
 Codex executable and authentication checks run only when the requirement is
 in `pipeline` mode and `AI_PROVIDER=codex-cli`. Handoff requirements continue

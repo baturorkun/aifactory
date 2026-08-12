@@ -150,12 +150,15 @@ Use a runner image containing Codex CLI. The repository provides
 commit and branch-tagged images on every change. Default-branch builds also
 publish `$CI_REGISTRY_IMAGE/codex-runner:latest`.
 
-Mount the runner host's authenticated directory to
-`/home/gitlab-runner/.codex`. Generated jobs set that location as `CODEX_HOME`
-and validate `auth.json` only for `pipeline` requirements using the `codex-cli`
-provider. Handoff mode and API providers keep their existing behavior. AI
-Factory, not Codex CLI, owns Issue, branch, Draft PR/MR, commit, and push
-operations; merge remains manual.
+Generated jobs first look for `CODEX_AUTH_JSON_FILE`, a GitLab CI/CD **File**
+variable containing the complete `auth.json`. When present, it is copied with
+mode 600 into a job-local `CODEX_HOME`. Otherwise the job uses the runner host
+mount at `CODEX_HOME` (default `/home/gitlab-runner/.codex`). The mount can
+persist token refreshes; the File variable must be updated when its cached login
+becomes invalid. Authentication is validated only for `pipeline` requirements
+using the `codex-cli` provider. Handoff mode and API providers keep their
+existing behavior. AI Factory, not Codex CLI, owns Issue, branch, Draft PR/MR,
+commit, and push operations; merge remains manual.
 
 ---
 
