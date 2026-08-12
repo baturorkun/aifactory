@@ -1,6 +1,6 @@
 ---
 id: RQ-0010
-status: draft
+status: ready
 executionMode: pipeline
 pipelineFast: false
 createdByName: "Batur Orkun"
