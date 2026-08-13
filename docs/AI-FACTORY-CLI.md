@@ -54,6 +54,7 @@ pnpm factory -- --project ../myproject approve <run-id>
 | `factory run <req-id> --dry-run` | Run with mock model (no LLM) |
 | `factory run <req-id> --skip-gates` | Skip quality gates |
 | `factory run <req-id> --tasks task-1,task-2` | Run only specific tasks |
+| `factory resume-requirement <req-id> --push` | Resume a needs-fix requirement from its automatic checkpoint branch |
 | `factory model-provider` | Print the configured model provider (used by CI preflight) |
 | `factory status` | List recent runs |
 | `factory status <run-id>` | Show details of a run |
@@ -249,6 +250,19 @@ requirement.md
                       │
                    passed ──▶ pnpm factory -- approve <run-id>
 ```
+
+Requirement-branch synchronization checkpoints every reviewed task iteration and
+failed quality-gate repair state to
+`factory-checkpoint/<RQ-ID>`. A retry of `sync-requirement` automatically restores
+that checkpoint, reuses the saved plan and architecture, skips passed tasks, and
+continues with the last reviewer/domain-guard findings. Use
+`resume-requirement <RQ-ID> --push` to require a checkpoint explicitly. A changed
+requirement hash, source commit, or fast/full mode invalidates the checkpoint.
+
+When a run ends in `needs-fix`, the CLI prints the structured findings in the job
+log and writes `failure-summary.json` under the run directory. The requirement MR
+branch remains clean until all tasks and quality gates pass; the checkpoint branch
+is deleted after the successful synchronized commit.
 
 ---
 

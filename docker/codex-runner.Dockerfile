@@ -3,7 +3,7 @@ FROM node:20-bullseye
 ARG CODEX_VERSION=latest
 
 RUN apt-get update \
- && apt-get install --yes --no-install-recommends ca-certificates curl git \
+ && apt-get install --yes --no-install-recommends ca-certificates chromium curl git \
  && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable \

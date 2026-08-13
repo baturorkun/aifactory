@@ -10,7 +10,8 @@
     "cli": "tsx src/cli.ts",
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "test": "node --import tsx --test src/*.test.ts src/*/*.test.ts"
   },
   "dependencies": {
     "@aifactory/contracts": "workspace:*",

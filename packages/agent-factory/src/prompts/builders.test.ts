@@ -4,8 +4,10 @@ import type { ArchitectureOutput, Requirement, Task } from '@aifactory/contracts
 import { FilePatchSchema } from '@aifactory/contracts';
 import {
   buildCoderPrompt,
+  buildDomainGuardPrompt,
   buildPlannerPrompt,
   buildQualityGateRepairPrompt,
+  buildReviewerPrompt,
 } from './builders';
 import { buildTesterPrompt } from './builders';
 
@@ -125,4 +127,28 @@ test('tester receives project constraints and existing browser harness conventio
   assert.match(prompt, /allowedImplementationPaths/);
   assert.match(prompt, /tests\/zorder-browser-harness\.html/);
   assert.match(prompt, /Use Jest only when the project already uses Jest/);
+  assert.match(prompt, /Every returned test path must be one of the files above/);
+  assert.match(prompt, /do not create a parallel test file/);
+});
+
+test('review agents receive unchanged supporting integration context', () => {
+  const code = {
+    taskId: 'task-1',
+    patches: [{ path: 'src/main.ts', language: 'typescript', mode: 'full' as const, content: 'render();' }],
+    notes: [],
+    dependencies: [],
+  };
+  const tests = {
+    taskId: 'task-1',
+    tests: [{ name: 'browser', path: 'tests/existing.html', content: '<html></html>', covers: ['keyboard'], framework: 'browser' }],
+    coverage: [],
+    setupNotes: [],
+  };
+  const supporting = [{ path: 'src/interaction.ts', content: 'handleKeyboardActivation();' }];
+  const reviewer = buildReviewerPrompt(task, code, tests, requirement, supporting);
+  const guard = buildDomainGuardPrompt(task, code, requirement, [], supporting);
+  assert.match(reviewer, /handleKeyboardActivation/);
+  assert.match(reviewer, /context, not submitted changes/);
+  assert.match(guard, /handleKeyboardActivation/);
+  assert.match(guard, /Do not treat these files as submitted changes/);
 });

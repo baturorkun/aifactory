@@ -305,6 +305,30 @@ program
     }
   });
 
+program
+  .command('resume-requirement <reqId>')
+  .description('Resume a needs-fix requirement from its automatic checkpoint branch')
+  .option('--source-ref <ref>', 'Commit containing the requirement; defaults to the remote requirement branch')
+  .option('--push', 'Push the completed requirement branch to the configured remote', false)
+  .option('--fast', 'Override the requirement and use the fast AI pipeline')
+  .action(async (reqId: string, opts: { sourceRef?: string; push: boolean; fast?: boolean }) => {
+    try {
+      const config = loadConfig();
+      const result = await syncRequirementBranch(reqId, config, {
+        sourceRef: opts.sourceRef,
+        push: opts.push,
+        fast: opts.fast,
+        resume: true,
+      });
+      console.log(chalk.green(`✓ ${result.requirementId} resumed on ${result.branch}`));
+      if (result.runId) console.log(chalk.dim(`  Run: ${result.runId}`));
+      console.log(chalk.dim(`  Push: ${result.pushed ? 'completed' : 'not requested'}`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
 // ============================================================
 // factory run <req-id>
 // ============================================================

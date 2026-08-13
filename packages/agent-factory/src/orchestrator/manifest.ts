@@ -108,18 +108,27 @@ export function updateStep(
     updates.status === 'needs-fix' ||
     updates.status === 'failed' ||
     updates.status === 'skipped';
-  updateManifest(runDir, (m) => ({
-    ...m,
-    steps: m.steps.map((s) =>
-      s.agent === agent && s.taskId === taskId
-        ? {
-            ...s,
-            ...updates,
-            finishedAt: updates.finishedAt ?? (terminalStatus ? new Date().toISOString() : s.finishedAt),
-          }
-        : s,
-    ),
-  }));
+  updateManifest(runDir, (m) => {
+    let index = -1;
+    for (let candidate = m.steps.length - 1; candidate >= 0; candidate -= 1) {
+      const step = m.steps[candidate]!;
+      if (step.agent === agent && step.taskId === taskId) {
+        index = candidate;
+        break;
+      }
+    }
+    if (index < 0) return m;
+    const steps = [...m.steps];
+    const current = steps[index]!;
+    steps[index] = {
+      ...current,
+      ...updates,
+      finishedAt:
+        updates.finishedAt ??
+        (terminalStatus ? new Date().toISOString() : current.finishedAt),
+    };
+    return { ...m, steps };
+  });
 }
 
 // ============================================================

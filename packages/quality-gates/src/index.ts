@@ -54,6 +54,7 @@ function findFiles(dir: string, suffix: string): string[] {
 function exec(
   cmd: string,
   cwd?: string,
+  env?: NodeJS.ProcessEnv,
 ): { output: string; success: boolean } {
   try {
     const out = execSync(cmd, {
@@ -61,6 +62,7 @@ function exec(
       timeout: 120_000,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: env ? { ...process.env, ...env } : process.env,
     });
     return { output: (out ?? '').trim(), success: true };
   } catch (err) {
@@ -74,6 +76,7 @@ function commandGate(
   gate: keyof GateResults,
   command: string | undefined,
   cwd: string,
+  env?: NodeJS.ProcessEnv,
 ): GateReport {
   const start = Date.now();
   const configKey = gate === 'tests' ? 'test' : gate;
@@ -86,7 +89,7 @@ function commandGate(
     };
   }
 
-  const { output, success } = exec(command, cwd);
+  const { output, success } = exec(command, cwd, env);
   return {
     gate,
     status: success ? 'passed' : 'failed',
@@ -226,8 +229,14 @@ function testCheck(runDir: string, projectRoot: string): GateReport {
   };
 }
 
-function targetTestCheck(targetRoot: string, command?: string): GateReport {
-  return commandGate('tests', command, targetRoot);
+function targetTestCheck(
+  targetRoot: string,
+  command?: string,
+  artifactPaths: string[] = [],
+): GateReport {
+  return commandGate('tests', command, targetRoot, {
+    AI_FACTORY_ARTIFACT_PATHS: JSON.stringify(artifactPaths),
+  });
 }
 
 // ============================================================
@@ -364,7 +373,7 @@ export async function runAllGates(
       ? targetLintCheck(targetRoot, target?.commands?.lint)
       : lintCheck(runDir, projectRoot),
     targetRoot
-      ? targetTestCheck(targetRoot, target?.commands?.test)
+      ? targetTestCheck(targetRoot, target?.commands?.test, target?.artifactPaths)
       : testCheck(runDir, projectRoot),
     targetRoot
       ? targetSecurityCheck(targetRoot, target?.artifactPaths)

@@ -34,7 +34,10 @@ import {
 } from '../prompts/builders';
 import { parseRequirement } from '../requirements/parser';
 import { extractJSON } from '../utils/json';
-import { buildCodePatchResponseSchema } from '../model/response-schemas';
+import {
+  buildCodePatchResponseSchema,
+  buildTestOutputResponseSchema,
+} from '../model/response-schemas';
 import {
   applyArtifactToTarget,
   resolveTargetRoot,
@@ -48,6 +51,7 @@ import {
   writeArtifact,
   addArtifact,
   updateGateResults,
+  updateStep,
 } from './manifest';
 import { runAgent } from './runner';
 import { runAllGates, type GateReport } from '@aifactory/quality-gates';
@@ -65,6 +69,16 @@ import {
   type ProjectGuidelinesContext,
 } from '../project-guidelines';
 import { assertRequirementExecution } from '../requirement-lifecycle';
+import type {
+  CheckpointTaskUpdate,
+  PipelineCheckpoint,
+} from './checkpoint';
+import {
+  failedGateNames,
+  formatFailureSummary,
+  writeFailureSummary,
+  type TaskFailureSummary,
+} from './failure-summary';
 
 // ============================================================
 // HELPERS
@@ -103,6 +117,27 @@ function taskAllowsPath(task: Task, artifactPath: string): boolean {
   if (!task.targetFiles?.length) return true;
   return task.targetFiles.some((targetPath) =>
     extname(targetPath) ? artifactPath === targetPath : artifactPath === targetPath || artifactPath.startsWith(`${targetPath}/`),
+  );
+}
+
+function taskTestPaths(task: Task): string[] {
+  const targetFiles = task.targetFiles ?? [];
+  const explicitTestPaths = targetFiles.filter((path) =>
+    path === 'tests' ||
+    path.startsWith('tests/') ||
+    /(?:^|\/)(?:test|tests|spec)(?:\/|\.|$)/i.test(path) ||
+    /\.(?:test|spec)\.[^.]+$/i.test(path),
+  );
+  return explicitTestPaths.length ? explicitTestPaths : targetFiles;
+}
+
+function taskAllowsTestPath(task: Task, artifactPath: string): boolean {
+  const targetPaths = taskTestPaths(task);
+  if (!targetPaths.length) return true;
+  return targetPaths.some((targetPath) =>
+    extname(targetPath)
+      ? artifactPath === targetPath
+      : artifactPath === targetPath || artifactPath.startsWith(`${targetPath}/`),
   );
 }
 
@@ -155,6 +190,94 @@ function existingArtifactFiles(
   });
 }
 
+const REVIEW_CONTEXT_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.mjs', '.cjs', '.html', '.css', '.json',
+]);
+const REVIEW_CONTEXT_MAX_FILES = 8;
+const REVIEW_CONTEXT_MAX_CHARS = 40_000;
+
+function referencedFileHints(requirement: Requirement, architecture: ArchitectureOutput): string[] {
+  const hints = new Set<string>();
+  for (const component of architecture.components) {
+    hints.add(component.path);
+    for (const dependency of component.dependencies) hints.add(dependency);
+  }
+  const filePattern = /(?:^|[`\s(])([A-Za-z0-9_.\/-]+\.(?:ts|tsx|js|mjs|cjs|html|css|json))(?=$|[`\s),:])/g;
+  for (const match of requirement.rawMarkdown.matchAll(filePattern)) {
+    if (match[1]) hints.add(match[1]);
+  }
+  return [...hints];
+}
+
+function walkContextFiles(root: string, relativePath: string, result: string[]): void {
+  const absolutePath = join(root, relativePath);
+  if (!existsSync(absolutePath)) return;
+  const entries = readdirSync(absolutePath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist') continue;
+    const child = join(relativePath, entry.name);
+    if (entry.isDirectory()) walkContextFiles(root, child, result);
+    else if (entry.isFile() && REVIEW_CONTEXT_EXTENSIONS.has(extname(entry.name))) result.push(child);
+  }
+}
+
+export function collectReviewSupportingFiles(
+  requirement: Requirement,
+  architecture: ArchitectureOutput,
+  task: Task,
+  target: TargetProjectConfig,
+): Array<{ path: string; content: string }> {
+  const targetRoot = resolveTargetRoot(target);
+  if (!targetRoot) return [];
+  const taskPaths = new Set(task.targetFiles ?? []);
+  const candidates: string[] = [];
+  for (const allowedPath of target.allowedPaths) {
+    const absolutePath = resolve(targetRoot, allowedPath);
+    if (!existsSync(absolutePath)) continue;
+    if (extname(allowedPath)) candidates.push(allowedPath);
+    else walkContextFiles(targetRoot, allowedPath, candidates);
+  }
+
+  const selected = new Set<string>();
+  for (const hint of referencedFileHints(requirement, architecture)) {
+    const normalizedHint = hint.replace(/^\.\//, '');
+    const basename = normalizedHint.split('/').at(-1);
+    for (const candidate of candidates) {
+      if (candidate === normalizedHint || (basename && candidate.endsWith(`/${basename}`))) {
+        if (!taskPaths.has(candidate)) selected.add(candidate);
+      }
+    }
+  }
+
+  let remainingChars = REVIEW_CONTEXT_MAX_CHARS;
+  return [...selected].sort().slice(0, REVIEW_CONTEXT_MAX_FILES).flatMap((path) => {
+    if (remainingChars <= 0) return [];
+    const absolutePath = validateConfiguredPath(target, path);
+    if (!absolutePath || !existsSync(absolutePath)) return [];
+    const content = readFileSync(absolutePath, 'utf8').slice(0, remainingChars);
+    remainingChars -= content.length;
+    return [{ path, content }];
+  });
+}
+
+function cumulativeCodeForTask(
+  task: Task,
+  runDir: string,
+  target: TargetProjectConfig,
+  latest: CodePatchOutput,
+): CodePatchOutput {
+  const patches = existingArtifactFiles(runDir, target)
+    .filter((file) => taskAllowsPath(task, file.path))
+    .map((file) => ({
+      path: file.path,
+      content: file.content,
+      language: extname(file.path).slice(1) || 'text',
+      description: 'Cumulative task artifact after all applied repair iterations.',
+      mode: 'full' as const,
+    }));
+  return patches.length ? { ...latest, patches } : latest;
+}
+
 function makeCodeValidator(task: Task, target: TargetProjectConfig) {
   return (raw: unknown): CodePatchOutput => {
     const parsed = CodePatchOutputSchema.parse(raw);
@@ -188,6 +311,35 @@ function coderResponseSchema(task: Task): Record<string, unknown> {
   return buildCodePatchResponseSchema(exactTargetFiles);
 }
 
+function testerResponseSchema(task: Task): Record<string, unknown> {
+  const targetFiles = taskTestPaths(task);
+  const exactTargetFiles =
+    targetFiles.length && targetFiles.every((targetPath) => extname(targetPath))
+      ? targetFiles
+      : undefined;
+  return buildTestOutputResponseSchema(exactTargetFiles);
+}
+
+export function validateTestOutputForTask(
+  raw: unknown,
+  task: Task,
+  constraints: Record<string, unknown>,
+  target: TargetProjectConfig,
+): TestOutput {
+  const parsed = TestOutputSchema.parse(raw);
+  const constraintPaths = constraintAllowedPaths(constraints);
+  for (const test of parsed.tests) {
+    if (!taskAllowsTestPath(task, test.path)) {
+      throw new Error(`Tester artifact path is outside task test targets: ${test.path}`);
+    }
+    if (!pathAllowedByHints(test.path, constraintPaths)) {
+      throw new Error(`Tester artifact path is outside requirement constraints: ${test.path}`);
+    }
+    validateConfiguredPath(target, test.path);
+  }
+  return parsed;
+}
+
 function hasRepairableGateFailure(results: GateResults): boolean {
   return results.typeCheck === 'failed' || results.lint === 'failed' || results.tests === 'failed';
 }
@@ -215,6 +367,21 @@ export interface PipelineOptions {
   taskIds?: string[];
   /** Cost-controlled mode: planner + architect + coder + gates only */
   fast?: boolean;
+  /** Resume planner/task state restored from a validated checkpoint branch. */
+  resumeCheckpoint?: PipelineCheckpoint;
+  /** Persist progress after every reviewed task iteration. */
+  onCheckpoint?: (progress: {
+    runId: string;
+    plan: PlanOutput;
+    task: CheckpointTaskUpdate;
+    artifactPaths: string[];
+  }) => void;
+  /** Persist updated artifacts after quality-gate repair. */
+  onArtifactsCheckpoint?: (progress: {
+    runId: string;
+    plan: PlanOutput;
+    artifactPaths: string[];
+  }) => void;
 }
 
 // ============================================================
@@ -278,6 +445,7 @@ export async function runPipeline(
 
   try {
     let hasFailedTasks = false;
+    const taskFailures: TaskFailureSummary[] = [];
     let ragGrounding: RagGroundingResponse | undefined;
 
     if (!opts.dryRun && shouldQueryGrounding(config, requirement.rawMarkdown)) {
@@ -298,18 +466,25 @@ export async function runPipeline(
     }
 
     // ---- 1. Planning
-    console.log('  ▸ Planner...');
-    const plan = await runPlannerAgent(
-      requirement,
-      constraints,
-      runDir,
-      primaryModel,
-      promptRegistry,
-      config,
-      ragGrounding,
-      projectGuidelines,
-    );
-    console.log(`    └ ${plan.tasks.length} task(s)`);
+    let plan: PlanOutput;
+    if (opts.resumeCheckpoint) {
+      plan = opts.resumeCheckpoint.plan;
+      writeFileSync(join(runDir, 'steps', 'planner-output.json'), `${JSON.stringify(plan, null, 2)}\n`, 'utf8');
+      console.log(`  ▸ Planner: restored from checkpoint (${plan.tasks.length} task(s))`);
+    } else {
+      console.log('  ▸ Planner...');
+      plan = await runPlannerAgent(
+        requirement,
+        constraints,
+        runDir,
+        primaryModel,
+        promptRegistry,
+        config,
+        ragGrounding,
+        projectGuidelines,
+      );
+      console.log(`    └ ${plan.tasks.length} task(s)`);
+    }
 
     // ---- 2. Per-task pipeline
     const tasks = opts.taskIds
@@ -318,8 +493,14 @@ export async function runPipeline(
 
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i]!;
+      const restoredTask = opts.resumeCheckpoint?.tasks[task.id];
+      if (restoredTask?.status === 'passed') {
+        console.log(`\n  ▸ Task ${i + 1}/${tasks.length}: ${task.title}`);
+        console.log(`    ✓ Restored passed task "${task.id}" from checkpoint`);
+        continue;
+      }
       console.log(`\n  ▸ Task ${i + 1}/${tasks.length}: ${task.title}`);
-      const passed = await runTaskPipeline(
+      const result = await runTaskPipeline(
         task,
         plan,
         requirement,
@@ -333,8 +514,18 @@ export async function runPipeline(
         Boolean(opts.fast),
         ragGrounding,
         projectGuidelines,
+        restoredTask,
+        (update) => opts.onCheckpoint?.({
+          runId,
+          plan,
+          task: update,
+          artifactPaths: readManifest(runDir).artifacts,
+        }),
       );
-      if (!passed) hasFailedTasks = true;
+      if (!result.passed) {
+        hasFailedTasks = true;
+        taskFailures.push({ taskId: task.id, review: result.review, guard: result.guard });
+      }
     }
 
     // ---- 3. Quality gates
@@ -352,12 +543,11 @@ export async function runPipeline(
       updateGateResults(runDir, gateResults);
 
       if (
-        opts.fast &&
         targetRoot &&
         hasRepairableGateFailure(gateResults) &&
         !hasUnsafeGateFailure(gateResults)
       ) {
-        gateResults = await runFastQualityRepair({
+        gateResults = await runQualityGateRepair({
           requirement,
           runDir,
           config: effectiveConfig,
@@ -368,6 +558,13 @@ export async function runPipeline(
           initialResults: gateResults,
         });
         updateGateResults(runDir, gateResults);
+      }
+      if (Object.values(gateResults).some((status) => status === 'failed')) {
+        opts.onArtifactsCheckpoint?.({
+          runId,
+          plan,
+          artifactPaths: readManifest(runDir).artifacts,
+        });
       }
     } else {
       console.log('\n  ▸ Gates: skipped');
@@ -383,13 +580,20 @@ export async function runPipeline(
     // ---- 4. Final status
     const manifest = readManifest(runDir);
     const hasFailedGates = Object.values(manifest.gateResults).some((r) => r === 'failed');
-    const hasFailedSteps = manifest.steps.some(
-      (s) => s.status === 'failed' || s.status === 'needs-fix',
-    );
-    setRunStatus(
-      runDir,
-      hasFailedGates || hasFailedSteps || hasFailedTasks ? 'needs-fix' : 'passed',
-    );
+    const needsFix = hasFailedGates || hasFailedTasks;
+    setRunStatus(runDir, needsFix ? 'needs-fix' : 'passed');
+    if (needsFix) {
+      const summary = {
+        runId,
+        requirementId: requirement.id,
+        status: 'needs-fix' as const,
+        tasks: taskFailures,
+        failedGates: failedGateNames(manifest.gateResults),
+        resumeCommand: `pnpm factory -- resume-requirement ${requirement.id} --push`,
+      };
+      writeFailureSummary(runDir, summary);
+      console.log(formatFailureSummary(summary));
+    }
   } catch (err) {
     setRunStatus(runDir, 'failed');
     throw err;
@@ -398,7 +602,7 @@ export async function runPipeline(
   return runId;
 }
 
-interface FastQualityRepairOptions {
+interface QualityRepairOptions {
   requirement: Requirement;
   runDir: string;
   config: FactoryConfig;
@@ -409,7 +613,7 @@ interface FastQualityRepairOptions {
   initialResults: GateResults;
 }
 
-async function runFastQualityRepair(options: FastQualityRepairOptions): Promise<GateResults> {
+async function runQualityGateRepair(options: QualityRepairOptions): Promise<GateResults> {
   const {
     requirement,
     runDir,
@@ -430,7 +634,7 @@ async function runFastQualityRepair(options: FastQualityRepairOptions): Promise<
   const repairRounds = config.pipeline.maxFixIterations;
 
   for (let round = 1; round <= repairRounds; round++) {
-    console.log(`\n  ▸ Fast quality repair ${round}/${repairRounds}...`);
+    console.log(`\n  ▸ Quality gate repair ${round}/${repairRounds}...`);
     const reports = readGateReports(runDir);
     const codeResult = await runAgent({
       agent: 'coder',
@@ -525,32 +729,53 @@ async function runTaskPipeline(
   fast: boolean,
   ragGrounding?: RagGroundingResponse,
   projectGuidelines?: ProjectGuidelinesContext,
-): Promise<boolean> {
+  restoredTask?: PipelineCheckpoint['tasks'][string],
+  onCheckpoint?: (update: CheckpointTaskUpdate) => void,
+): Promise<{ passed: boolean; review?: ReviewOutput; guard?: DomainGuardOutput }> {
   // ---- Architect
-  console.log('    ▸ Architect...');
-  const archResult = await runAgent({
-    agent: 'architect',
-    taskId: task.id,
-    runDir,
-    systemPrompt: withProjectGuidelines(promptRegistry.get('architect'), projectGuidelines),
-    userPrompt: buildArchitectPrompt(
-      task,
-      plan,
-      requirement,
-      constraints,
-      formatGroundingContext(config, ragGrounding, 'architect'),
-    ),
-    model: primaryModel,
-    maxRetries: config.pipeline.maxRetries,
-    validate: makeValidator(ArchitectureOutputSchema, 'Architect'),
-    extractJSON,
-    outputFileName: `architect-${task.id}.json`,
-  });
-  const architecture = archResult.output as ArchitectureOutput;
+  let architecture: ArchitectureOutput;
+  if (restoredTask?.architecture) {
+    architecture = restoredTask.architecture;
+    writeFileSync(
+      join(runDir, 'steps', `architect-${task.id}.json`),
+      `${JSON.stringify(architecture, null, 2)}\n`,
+      'utf8',
+    );
+    console.log('    ▸ Architect: restored from checkpoint');
+  } else {
+    console.log('    ▸ Architect...');
+    const archResult = await runAgent({
+      agent: 'architect',
+      taskId: task.id,
+      runDir,
+      systemPrompt: withProjectGuidelines(promptRegistry.get('architect'), projectGuidelines),
+      userPrompt: buildArchitectPrompt(
+        task,
+        plan,
+        requirement,
+        constraints,
+        formatGroundingContext(config, ragGrounding, 'architect'),
+      ),
+      model: primaryModel,
+      maxRetries: config.pipeline.maxRetries,
+      validate: makeValidator(ArchitectureOutputSchema, 'Architect'),
+      extractJSON,
+      outputFileName: `architect-${task.id}.json`,
+    });
+    architecture = archResult.output as ArchitectureOutput;
+  }
 
   // ---- Code + fix loop
-  let fixContext: FixContext | undefined;
+  let fixContext: FixContext | undefined = restoredTask?.status === 'needs-fix'
+    ? {
+        reviewFindings: restoredTask.reviewFindings,
+        domainViolations: restoredTask.domainViolations,
+      }
+    : undefined;
   let taskPassed = false;
+  let lastReview: ReviewOutput | undefined;
+  let lastGuard: DomainGuardOutput | undefined;
+  const supportingFiles = collectReviewSupportingFiles(requirement, architecture, task, config.targetProject);
 
   for (let iter = 0; iter < config.pipeline.maxFixIterations; iter++) {
     const iterSuffix = iter > 0 ? ` (fix #${iter})` : '';
@@ -593,6 +818,12 @@ async function runTaskPipeline(
     if (fast) {
       taskPassed = true;
       console.log(`    ✓ Task "${task.id}" coded (fast mode)`);
+      onCheckpoint?.({
+        taskId: task.id,
+        status: 'passed',
+        architecture,
+        iterations: iter + 1,
+      });
       break;
     }
 
@@ -614,17 +845,9 @@ async function runTaskPipeline(
       ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
-      validate: (raw: unknown): TestOutput => {
-        const parsed = TestOutputSchema.parse(raw);
-        const constraintPaths = constraintAllowedPaths(constraints);
-        for (const test of parsed.tests) {
-          if (!pathAllowedByHints(test.path, constraintPaths)) {
-            throw new Error(`Tester artifact path is outside requirement constraints: ${test.path}`);
-          }
-          validateConfiguredPath(config.targetProject, test.path);
-        }
-        return parsed;
-      },
+      responseSchema: testerResponseSchema(task),
+      validate: (raw: unknown): TestOutput =>
+        validateTestOutputForTask(raw, task, constraints, config.targetProject),
       extractJSON,
       outputFileName: `tester-${task.id}-iter${iter}.json`,
     });
@@ -640,6 +863,7 @@ async function runTaskPipeline(
 
     // Reviewer
     console.log('    ▸ Reviewer...');
+    const cumulativeCode = cumulativeCodeForTask(task, runDir, config.targetProject, code);
     const reviewResult = await runAgent({
       agent: 'reviewer',
       taskId: task.id,
@@ -647,9 +871,10 @@ async function runTaskPipeline(
       systemPrompt: withProjectGuidelines(promptRegistry.get('reviewer'), projectGuidelines),
       userPrompt: buildReviewerPrompt(
         task,
-        code,
+        cumulativeCode,
         tests,
         requirement,
+        supportingFiles,
         formatGroundingContext(config, ragGrounding, 'reviewer'),
       ),
       model: reviewerModel,
@@ -659,8 +884,17 @@ async function runTaskPipeline(
       outputFileName: `reviewer-${task.id}-iter${iter}.json`,
     });
     const review = reviewResult.output as ReviewOutput;
+    lastReview = review;
 
     if (review.verdict === 'rejected') {
+      updateStep(runDir, 'reviewer', task.id, { status: 'needs-fix' });
+      onCheckpoint?.({
+        taskId: task.id,
+        status: 'needs-fix',
+        architecture,
+        review,
+        iterations: iter + 1,
+      });
       console.log(`    ✗ Reviewer rejected — stopping task`);
       break;
     }
@@ -674,9 +908,10 @@ async function runTaskPipeline(
       systemPrompt: withProjectGuidelines(promptRegistry.get('domain-guard'), projectGuidelines),
       userPrompt: buildDomainGuardPrompt(
         task,
-        code,
+        cumulativeCode,
         requirement,
         config.domain.rules,
+        supportingFiles,
         formatGroundingContext(config, ragGrounding, 'domain-guard'),
       ),
       model: reviewerModel,
@@ -686,12 +921,38 @@ async function runTaskPipeline(
       outputFileName: `domain-guard-${task.id}-iter${iter}.json`,
     });
     const guard = guardResult.output as DomainGuardOutput;
+    lastGuard = guard;
 
     if (review.verdict === 'approved' && guard.verdict === 'passed') {
       taskPassed = true;
+      updateStep(runDir, 'reviewer', task.id, { status: 'passed' });
+      updateStep(runDir, 'domain-guard', task.id, { status: 'passed' });
+      onCheckpoint?.({
+        taskId: task.id,
+        status: 'passed',
+        architecture,
+        review,
+        guard,
+        iterations: iter + 1,
+      });
       console.log(`    ✓ Task "${task.id}" passed`);
       break;
     }
+
+    updateStep(runDir, 'reviewer', task.id, {
+      status: review.verdict === 'approved' ? 'passed' : 'needs-fix',
+    });
+    updateStep(runDir, 'domain-guard', task.id, {
+      status: guard.verdict === 'passed' ? 'passed' : 'needs-fix',
+    });
+    onCheckpoint?.({
+      taskId: task.id,
+      status: 'needs-fix',
+      architecture,
+      review,
+      guard,
+      iterations: iter + 1,
+    });
 
     // Prepare fix context for next iteration
     fixContext = {
@@ -710,5 +971,5 @@ async function runTaskPipeline(
     );
   }
 
-  return taskPassed;
+  return { passed: taskPassed, review: lastReview, guard: lastGuard };
 }

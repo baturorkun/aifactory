@@ -250,6 +250,15 @@ export function buildTesterPrompt(
     '',
     '### Code Under Test',
     ...fileBlocks,
+    ...(task.targetFiles?.length
+      ? [
+          '### Task Artifact Paths',
+          ...task.targetFiles.map((path) => `- ${path}`),
+          '',
+          'Every returned test path must be one of the files above, or be inside a directory above. Extend an existing harness when it is listed; do not create a parallel test file.',
+          '',
+        ]
+      : []),
     ...(Object.keys(constraints).length
       ? ['### Project Constraints', '```json', JSON.stringify(constraints, null, 2), '```', '']
       : []),
@@ -274,6 +283,7 @@ export function buildReviewerPrompt(
   code: CodePatchOutput,
   tests: TestOutput,
   requirement: Requirement,
+  supportingFiles: ReadonlyArray<{ path: string; content: string }> = [],
   ragContext?: string,
 ): string {
   const codeBlocks = code.patches.flatMap((p) => [
@@ -292,6 +302,14 @@ export function buildReviewerPrompt(
     '',
   ]);
 
+  const supportingBlocks = supportingFiles.flatMap((file) => [
+    `#### ${file.path} (unchanged supporting context)`,
+    '```',
+    file.content,
+    '```',
+    '',
+  ]);
+
   return [
     `## Task: ${task.id} — ${task.title}`,
     '',
@@ -302,6 +320,13 @@ export function buildReviewerPrompt(
     ...codeBlocks,
     '### Tests',
     ...testBlocks,
+    ...(supportingBlocks.length
+      ? [
+          '### Unchanged Supporting Context',
+          'Use these files to verify existing delegated handlers and integration paths. They are context, not submitted changes. Do not report an existing behavior as missing merely because it is implemented here instead of in the patch.',
+          ...supportingBlocks,
+        ]
+      : []),
     ...(ragContext ? [ragContext, ''] : []),
     'Review code and tests. Return a **ReviewOutput** JSON.',
     'Set verdict to: "approved" | "needs-fix" | "rejected".',
@@ -318,6 +343,7 @@ export function buildDomainGuardPrompt(
   code: CodePatchOutput,
   requirement: Requirement,
   domainRules: DomainRule[],
+  supportingFiles: ReadonlyArray<{ path: string; content: string }> = [],
   ragContext?: string,
 ): string {
   const rulesSection =
@@ -333,6 +359,14 @@ export function buildDomainGuardPrompt(
     '',
   ]);
 
+  const supportingBlocks = supportingFiles.flatMap((file) => [
+    `#### ${file.path} (unchanged supporting context)`,
+    '```',
+    file.content,
+    '```',
+    '',
+  ]);
+
   return [
     `## Task: ${task.id} — ${task.title}`,
     '',
@@ -341,6 +375,13 @@ export function buildDomainGuardPrompt(
     '',
     '### Code to Validate',
     ...codeBlocks,
+    ...(supportingBlocks.length
+      ? [
+          '### Unchanged Supporting Context',
+          'Use this context to verify delegated handlers and existing domain behavior. Do not treat these files as submitted changes.',
+          ...supportingBlocks,
+        ]
+      : []),
     ...(ragContext ? [ragContext, ''] : []),
     'Return a **DomainGuardOutput** JSON.',
     'Set verdict to: "passed" | "needs-fix" | "rejected".',

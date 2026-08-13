@@ -52,3 +52,37 @@ export function buildCodePatchResponseSchema(
     required: ['taskId', 'patches', 'notes', 'dependencies'],
   };
 }
+
+/** Provider-neutral JSON Schema for tester output. */
+export function buildTestOutputResponseSchema(
+  exactTargetFiles?: readonly string[],
+): Record<string, unknown> {
+  const pathSchema = exactTargetFiles?.length
+    ? { type: 'string', enum: [...exactTargetFiles] }
+    : { type: 'string' };
+
+  return {
+    type: 'object',
+    properties: {
+      taskId: { type: 'string' },
+      tests: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            path: pathSchema,
+            content: { type: 'string' },
+            covers: { type: 'array', minItems: 1, items: { type: 'string' } },
+            framework: { type: 'string' },
+          },
+          required: ['name', 'path', 'content', 'covers', 'framework'],
+        },
+      },
+      coverage: { type: 'array', items: { type: 'string' } },
+      setupNotes: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['taskId', 'tests', 'coverage', 'setupNotes'],
+  };
+}

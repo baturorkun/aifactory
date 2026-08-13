@@ -1,11 +1,19 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { FactoryConfig } from './config';
 import { findRequirementFile, parseRequirement } from './requirements/parser';
 import { runPipeline, type PipelineOptions } from './orchestrator/pipeline';
 import { readManifest, updateManifest } from './orchestrator/manifest';
+import {
+  checkpointBranchName,
+  checkpointStatePath,
+  readPipelineCheckpoint,
+  validatePipelineCheckpoint,
+  writePipelineCheckpoint,
+  type PipelineCheckpoint,
+} from './orchestrator/checkpoint';
 
 export interface RequirementBranchMetadata {
   requirementId: string;
@@ -22,6 +30,7 @@ export interface RequirementBranchMetadata {
 export interface SyncRequirementOptions extends PipelineOptions {
   sourceRef?: string;
   push?: boolean;
+  resume?: boolean;
 }
 
 export interface SyncRequirementResult {
@@ -43,6 +52,19 @@ function git(
     throw new Error(`git ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`);
   }
   return result.status === 0 ? result.stdout.trim() : '';
+}
+
+function gitWithIndex(cwd: string, indexPath: string, args: string[]): string {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_INDEX_FILE: indexPath },
+  });
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || '').trim();
+    throw new Error(`git ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`);
+  }
+  return result.stdout.trim();
 }
 
 function sha256(value: string): string {
@@ -97,6 +119,15 @@ function metadataPath(projectRoot: string, requirementId: string): string {
 function readMetadata(path: string): RequirementBranchMetadata | undefined {
   if (!existsSync(path)) return undefined;
   return JSON.parse(readFileSync(path, 'utf8')) as RequirementBranchMetadata;
+}
+
+function remoteCheckpointCommit(
+  root: string,
+  remote: string,
+  branch: string,
+): string | undefined {
+  const output = git(root, ['ls-remote', '--heads', remote, branch], { allowFailure: true });
+  return output.split(/\s+/)[0] || undefined;
 }
 
 function prepareBranch(
@@ -159,6 +190,95 @@ function prepareBranch(
   };
 }
 
+export function pushCheckpoint(
+  prepared: ReturnType<typeof prepareBranch>,
+  config: FactoryConfig,
+  checkpoint: PipelineCheckpoint,
+): void {
+  const branch = checkpointBranchName(checkpoint.requirementId);
+  const remote = config.requirementBranches.remote;
+  const previousCommit = remoteCheckpointCommit(prepared.root, remote, branch);
+  const parent = previousCommit ?? prepared.sourceCommit;
+  const statePath = checkpointStatePath(prepared.root, checkpoint.requirementId);
+  writePipelineCheckpoint(statePath, checkpoint);
+  const stateRelative = relative(prepared.root, statePath).split('\\').join('/');
+  const indexPath = resolve(
+    prepared.root,
+    '.git',
+    `aifactory-checkpoint-${checkpoint.requirementId.toLowerCase()}.index`,
+  );
+  rmSync(indexPath, { force: true });
+  try {
+    gitWithIndex(prepared.root, indexPath, ['read-tree', parent]);
+    gitWithIndex(prepared.root, indexPath, [
+      'add',
+      '--',
+      ...checkpoint.artifactPaths,
+      stateRelative,
+    ]);
+    const tree = gitWithIndex(prepared.root, indexPath, ['write-tree']);
+    const commit = gitWithIndex(prepared.root, indexPath, [
+      'commit-tree',
+      tree,
+      '-p',
+      parent,
+      '-m',
+      `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId}`,
+    ]);
+    git(prepared.root, [
+      'push',
+      remote,
+      `${commit}:refs/heads/${branch}`,
+      '-o',
+      'ci.skip',
+    ]);
+  } finally {
+    rmSync(indexPath, { force: true });
+  }
+}
+
+export function restoreCheckpoint(
+  prepared: ReturnType<typeof prepareBranch>,
+  config: FactoryConfig,
+  requirementId: string,
+  fast: boolean,
+): PipelineCheckpoint | undefined {
+  const branch = checkpointBranchName(requirementId);
+  const remote = config.requirementBranches.remote;
+  if (!remoteCheckpointCommit(prepared.root, remote, branch)) return undefined;
+  git(prepared.root, ['fetch', remote, branch]);
+  const statePath = checkpointStatePath(prepared.root, requirementId);
+  const stateRelative = relative(prepared.root, statePath).split('\\').join('/');
+  const raw = git(prepared.root, ['show', `FETCH_HEAD:${stateRelative}`]);
+  mkdirSync(dirname(statePath), { recursive: true });
+  writeFileSync(statePath, raw, 'utf8');
+  const checkpoint = readPipelineCheckpoint(statePath)!;
+  validatePipelineCheckpoint(checkpoint, {
+    requirementId,
+    requirementSha256: prepared.requirementSha256,
+    sourceCommit: prepared.sourceCommit,
+    fast,
+  });
+  if (checkpoint.artifactPaths.length) {
+    git(prepared.root, ['checkout', 'FETCH_HEAD', '--', ...checkpoint.artifactPaths]);
+  }
+  return checkpoint;
+}
+
+function deleteCheckpoint(
+  root: string,
+  config: FactoryConfig,
+  requirementId: string,
+): void {
+  rmSync(checkpointStatePath(root, requirementId), { force: true });
+  git(root, [
+    'push',
+    config.requirementBranches.remote,
+    '--delete',
+    checkpointBranchName(requirementId),
+  ], { allowFailure: true });
+}
+
 export async function syncRequirementBranch(
   requirementId: string,
   config: FactoryConfig,
@@ -176,7 +296,49 @@ export async function syncRequirementBranch(
   }
 
   const fast = resolveRequirementFast(requirementId, config, options.fast);
-  const runId = await runPipeline(requirementId, config, { ...options, fast });
+  const resumeCheckpoint = options.resume === false
+    ? undefined
+    : restoreCheckpoint(prepared, config, requirementId, fast);
+  if (options.resume && !resumeCheckpoint) {
+    throw new Error(`No checkpoint branch exists for ${requirementId.toUpperCase()}.`);
+  }
+  const taskStates: PipelineCheckpoint['tasks'] = { ...(resumeCheckpoint?.tasks ?? {}) };
+  const saveCheckpoint = (
+    checkpointRunId: string,
+    plan: PipelineCheckpoint['plan'],
+    artifactPaths: string[],
+  ): void => {
+    pushCheckpoint(prepared, config, {
+      version: 1,
+      requirementId: requirementId.toUpperCase(),
+      requirementSha256: prepared.requirementSha256,
+      sourceCommit: prepared.sourceCommit,
+      fast,
+      plan,
+      tasks: taskStates,
+      artifactPaths,
+      previousRunId: checkpointRunId,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+  const runId = await runPipeline(requirementId, config, {
+    ...options,
+    fast,
+    resumeCheckpoint,
+    onCheckpoint: ({ runId: checkpointRunId, plan, task, artifactPaths }) => {
+      taskStates[task.taskId] = {
+        status: task.status,
+        architecture: task.architecture,
+        reviewFindings: task.review?.findings ?? [],
+        domainViolations: task.guard?.violations ?? [],
+        iterations: task.iterations,
+      };
+      saveCheckpoint(checkpointRunId, plan, artifactPaths);
+    },
+    onArtifactsCheckpoint: ({ runId: checkpointRunId, plan, artifactPaths }) => {
+      saveCheckpoint(checkpointRunId, plan, artifactPaths);
+    },
+  });
   const runDir = resolve(config.paths.runs, runId);
   const manifest = readManifest(runDir);
   updateManifest(runDir, (current) => ({
@@ -189,7 +351,10 @@ export async function syncRequirementBranch(
     },
   }));
   if (manifest.status !== 'passed') {
-    throw new Error(`Run ${runId} finished with status ${manifest.status}; branch was not committed or pushed.`);
+    throw new Error(
+      `Run ${runId} finished with status ${manifest.status}; branch was not committed or pushed. ` +
+      `Resume with: pnpm factory -- resume-requirement ${requirementId.toUpperCase()} --push`,
+    );
   }
 
   const metadata: RequirementBranchMetadata = {
@@ -220,6 +385,7 @@ export async function syncRequirementBranch(
   if (options.push) {
     git(prepared.root, ['push', '--set-upstream', config.requirementBranches.remote, prepared.branch]);
   }
+  deleteCheckpoint(prepared.root, config, requirementId);
   return {
     requirementId,
     branch: prepared.branch,
