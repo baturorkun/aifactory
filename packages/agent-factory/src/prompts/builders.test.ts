@@ -122,13 +122,21 @@ test('tester receives project constraints and existing browser harness conventio
     requirement,
     { allowedImplementationPaths: ['src/main.ts', 'tests'] },
     ['src', 'tests'],
-    ['tests/zorder-browser-harness.html'],
+    [{
+      path: 'tests/zorder-browser-harness.html',
+      content: '<pre id="result">waiting</pre>',
+    }],
   );
   assert.match(prompt, /allowedImplementationPaths/);
   assert.match(prompt, /tests\/zorder-browser-harness\.html/);
+  assert.match(prompt, /<pre id="result">waiting<\/pre>/);
+  assert.match(prompt, /do not introduce unrelated behavioral requirements/);
   assert.match(prompt, /Use Jest only when the project already uses Jest/);
   assert.match(prompt, /Every returned test path must be one of the files above/);
   assert.match(prompt, /do not create a parallel test file/);
+  assert.match(prompt, /data-pass="true"/);
+  assert.match(prompt, /Do not replace this contract/);
+  assert.match(prompt, /do not await `requestAnimationFrame`/);
 });
 
 test('review agents receive unchanged supporting integration context', () => {

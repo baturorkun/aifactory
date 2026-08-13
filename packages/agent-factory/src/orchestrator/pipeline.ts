@@ -179,6 +179,23 @@ function existingTestPaths(target: TargetProjectConfig): string[] {
     .sort();
 }
 
+function existingTaskTestFiles(
+  task: Task,
+  target: TargetProjectConfig,
+): Array<{ path: string; content: string }> {
+  let remainingChars = 60_000;
+  return existingTestPaths(target)
+    .filter((path) => taskAllowsTestPath(task, path))
+    .flatMap((path) => {
+      if (remainingChars <= 0) return [];
+      const absolutePath = validateConfiguredPath(target, path);
+      if (!absolutePath || !existsSync(absolutePath)) return [];
+      const content = readFileSync(absolutePath, 'utf8').slice(0, remainingChars);
+      remainingChars -= content.length;
+      return [{ path, content }];
+    });
+}
+
 function existingArtifactFiles(
   runDir: string,
   target: TargetProjectConfig,
@@ -281,6 +298,10 @@ function cumulativeCodeForTask(
 function makeCodeValidator(task: Task, target: TargetProjectConfig) {
   return (raw: unknown): CodePatchOutput => {
     const parsed = CodePatchOutputSchema.parse(raw);
+    const paths = parsed.patches.map((patch) => patch.path);
+    if (new Set(paths).size !== paths.length) {
+      throw new Error('Coder output contains duplicate patch paths. Return one cumulative patch per file.');
+    }
     const patches = parsed.patches.map((patch) => {
       if (!taskAllowsPath(task, patch.path)) {
         throw new Error(`Coder artifact path is outside task.targetFiles: ${patch.path}`);
@@ -327,6 +348,10 @@ export function validateTestOutputForTask(
   target: TargetProjectConfig,
 ): TestOutput {
   const parsed = TestOutputSchema.parse(raw);
+  const paths = parsed.tests.map((test) => test.path);
+  if (new Set(paths).size !== paths.length) {
+    throw new Error('Tester output contains duplicate test paths. Return one complete test artifact per file.');
+  }
   const constraintPaths = constraintAllowedPaths(constraints);
   for (const test of parsed.tests) {
     if (!taskAllowsTestPath(task, test.path)) {
@@ -623,12 +648,16 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
     projectGuidelines,
     dryRun,
   } = options;
+  const repairPaths = readManifest(runDir).artifacts;
+  const originalFiles = existingArtifactFiles(runDir, config.targetProject)
+    .filter((file) => repairPaths.includes(file.path));
   const repairTask: Task = {
     id: 'quality-gates',
     title: 'Repair final quality-gate failures',
     description: 'Fix errors reported by the final project quality gates.',
     dependsOn: [],
     acceptanceCriteria: ['All configured quality gates pass.'],
+    targetFiles: repairPaths,
   };
   let gateResults = options.initialResults;
   const repairRounds = config.pipeline.maxFixIterations;
@@ -649,7 +678,7 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
       ),
       model,
       maxRetries: config.pipeline.maxRetries,
-      responseSchema: buildCodePatchResponseSchema(),
+      responseSchema: buildCodePatchResponseSchema(repairPaths),
       validate: makeCodeValidator(repairTask, config.targetProject),
       extractJSON,
       outputFileName: `coder-quality-gates-iter${round}.json`,
@@ -673,6 +702,22 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
     updateGateResults(runDir, gateResults);
 
     if (!hasRepairableGateFailure(gateResults) || hasUnsafeGateFailure(gateResults)) break;
+  }
+
+  if (hasRepairableGateFailure(gateResults) || hasUnsafeGateFailure(gateResults)) {
+    console.log('  ↺ Quality-gate repairs did not pass; restoring the last reviewed task artifacts.');
+    for (const file of originalFiles) {
+      writeArtifact(runDir, file.path, file.content);
+      if (shouldApplyArtifacts(config.targetProject, dryRun)) {
+        applyArtifactToTarget(config.targetProject, file.path, file.content);
+      }
+    }
+    gateResults = await runAllGates(runDir, process.cwd(), {
+      targetRoot: resolveTargetRoot(config.targetProject),
+      artifactPaths: readManifest(runDir).artifacts,
+      commands: config.targetProject.commands,
+    });
+    updateGateResults(runDir, gateResults);
   }
 
   return gateResults;
@@ -840,7 +885,7 @@ async function runTaskPipeline(
         requirement,
         constraints,
         config.targetProject.allowedPaths,
-        existingTestPaths(config.targetProject),
+        existingTaskTestFiles(task, config.targetProject),
         formatGroundingContext(config, ragGrounding, 'tester'),
       ),
       model: primaryModel,

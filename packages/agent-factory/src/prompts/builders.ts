@@ -231,7 +231,7 @@ export function buildTesterPrompt(
   requirement: Requirement,
   constraints: Record<string, unknown>,
   allowedPaths: readonly string[],
-  existingTestPaths: readonly string[],
+  existingTests: ReadonlyArray<{ path: string; content: string }>,
   ragContext?: string,
 ): string {
   const fileBlocks = code.patches.flatMap((p) => [
@@ -265,12 +265,25 @@ export function buildTesterPrompt(
     ...(allowedPaths.length
       ? ['### Allowed Artifact Paths', ...allowedPaths.map((path) => `- ${path}`), '']
       : []),
-    ...(existingTestPaths.length
-      ? ['### Existing Test Conventions', ...existingTestPaths.map((path) => `- ${path}`), '']
+    ...(existingTests.length
+      ? [
+          '### Existing Test Files',
+          ...existingTests.flatMap((file) => [
+            `#### ${file.path}`,
+            '```html',
+            file.content,
+            '```',
+            '',
+          ]),
+          'Preserve all existing regression coverage and the existing runner result contract. Add or adjust only assertions required by this task; do not introduce unrelated behavioral requirements.',
+          '',
+        ]
       : []),
     ...(ragContext ? [ragContext, ''] : []),
     'Return a **TestOutput** JSON with complete test file contents.',
     'Follow the requirement and existing project test conventions. Use Jest only when the project already uses Jest.',
+    'For every `*-browser-harness.html`, preserve the runner result contract: finish by setting `<pre id="result">` with `data-pass="true"` or `data-pass="false"` and put the diagnostic report in its text content. Do not replace this contract with a document title, summary element, or a custom global.',
+    'Browser harnesses run in headless Chromium with `--dump-dom`; do not await `requestAnimationFrame`, which may be throttled indefinitely. Use bounded `setTimeout` polling for asynchronous DOM state.',
   ].join('\n');
 }
 

@@ -58,6 +58,12 @@ test('tester output is restricted to explicit task test targets', () => {
     () => validateTestOutputForTask(output('src/editor/core/render.ts'), task, {}, target),
     /outside task test targets/,
   );
+  const duplicate = output('tests/vertex-array-widgets-browser-harness.html');
+  duplicate.tests.push({ ...duplicate.tests[0]! });
+  assert.throws(
+    () => validateTestOutputForTask(duplicate, task, {}, target),
+    /duplicate test paths/,
+  );
 });
 
 test('review context resolves referenced unchanged files by basename', () => {
