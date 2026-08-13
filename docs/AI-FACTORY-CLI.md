@@ -132,7 +132,7 @@ Then in `factory.config.json`:
 { "model": { "provider": "openai-compat", "name": "your-model", "baseUrl": "http://localhost:8080" } }
 ```
 
-### Switching to Codex CLI for GitLab pipelines
+### Switching to Codex CLI in CI pipelines
 
 ```json
 {
@@ -160,6 +160,16 @@ becomes invalid. Authentication is validated only for `pipeline` requirements
 using the `codex-cli` provider. Handoff mode and API providers keep their
 existing behavior. AI Factory, not Codex CLI, owns Issue, branch, Draft PR/MR,
 commit, and push operations; merge remains manual.
+
+Generated target projects also include `.github/workflows/ai-factory.yml`.
+It runs on `factory/RQ-*` requirement pushes and supports both API-backed model
+providers and `codex-cli`. Configure model selection as GitHub Actions repository
+variables (`AI_PROVIDER`, `AI_MODEL`, `AI_REVIEWER_MODEL`, and optionally
+`AI_BASE_URL`). Store `AI_API_KEY` as a repository secret for API-backed
+providers. For `codex-cli`, store either `CODEX_AUTH_JSON` (the complete Codex
+`auth.json`) or `OPENAI_API_KEY` as a repository secret. The workflow uses the
+job-scoped `GITHUB_TOKEN` for Issue, Draft Pull Request, checkpoint, commit, and
+push operations, and uploads only run diagnostics plus the active requirement.
 
 ---
 

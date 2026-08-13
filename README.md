@@ -452,8 +452,8 @@ repository-platform synchronization explicitly.
 
 Handoff submit creates a local handoff package without committing or pushing.
 Pipeline submit commits only the requirement document and pushes its branch so
-GitLab CI can run the existing agent pipeline. Draft pushes never start code
-generation, and Merge Requests remain manual.
+GitLab CI or GitHub Actions can run the existing agent pipeline. Draft pushes
+never start code generation, and Pull/Merge Requests remain manual.
 
 ### Create a handoff package
 

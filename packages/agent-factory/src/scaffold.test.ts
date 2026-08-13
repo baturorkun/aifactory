@@ -61,6 +61,10 @@ test('new projects enable the draft requirement branch workflow', () => {
       maxTokens: 32768,
     });
     const ci = readFileSync(join(result.projectRoot, '.gitlab-ci.yml'), 'utf8');
+    const githubActions = readFileSync(
+      join(result.projectRoot, '.github/workflows/ai-factory.yml'),
+      'utf8',
+    );
     const packageJson = JSON.parse(
       readFileSync(join(result.projectRoot, 'package.json'), 'utf8'),
     ) as { scripts?: Record<string, string> };
@@ -106,6 +110,20 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /test -r "\$CODEX_HOME\/auth\.json"/);
     assert.match(ci, /codex login status/);
     assert.match(ci, /handoff\)[\s\S]*GitLab AI Factory execution is skipped/);
+    assert.match(githubActions, /name: AI Factory/);
+    assert.match(githubActions, /factory\/RQ-\*/);
+    assert.match(githubActions, /contents: write/);
+    assert.match(githubActions, /issues: write/);
+    assert.match(githubActions, /pull-requests: write/);
+    assert.match(githubActions, /AI_PROVIDER:.*codex-cli/);
+    assert.match(githubActions, /AI_API_KEY:.*secrets\.AI_API_KEY/);
+    assert.match(githubActions, /CODEX_AUTH_JSON:.*secrets\.CODEX_AUTH_JSON/);
+    assert.match(githubActions, /OPENAI_API_KEY:.*secrets\.OPENAI_API_KEY/);
+    assert.match(githubActions, /codex login --with-api-key/);
+    assert.match(githubActions, /sync-requirement.*--push/);
+    assert.match(githubActions, /requirement decision/);
+    assert.match(githubActions, /upload-artifact@v4/);
+    assert.match(githubActions, /requirements\/\$\{\{ steps\.requirement\.outputs\.id \}\}-\*\.md/);
     assert.match(ci, /build_static:\n {2}stage: build\n {2}image: node:20-alpine\n {2}tags:\n {4}- linux/);
     assert.match(ci, /docker_image:\n {2}stage: image\n {2}image: docker:27-cli\n {2}tags:\n {4}- linux/);
     assert.match(ci, /docker_image:\n {2}stage: image/);
