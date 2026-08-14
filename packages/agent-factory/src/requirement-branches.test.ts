@@ -26,13 +26,9 @@ test('requirement branch names are stable and reject unsafe IDs', () => {
   assert.throws(() => requirementBranchName('../main'), /Invalid requirement ID/);
 });
 
-test('checkpoint pushes use ci.skip only for GitLab-compatible remotes', () => {
+test('checkpoint pushes use platform-neutral git arguments', () => {
   assert.deepEqual(
-    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1', true),
-    ['push', 'origin', 'abc123:refs/heads/factory-checkpoint/RQ-1', '-o', 'ci.skip'],
-  );
-  assert.deepEqual(
-    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1', false),
+    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1'),
     ['push', 'origin', 'abc123:refs/heads/factory-checkpoint/RQ-1'],
   );
 });
@@ -122,6 +118,10 @@ test('checkpoint branch preserves artifacts and restores validated task state', 
     assert.equal(restored?.previousRunId, 'run-1');
     assert.equal(readFileSync(join(project, 'src', 'main.ts'), 'utf8'), 'export const value = 2;\n');
     assert.match(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
+    assert.match(
+      git(remote, 'log', '-1', '--format=%s', 'refs/heads/factory-checkpoint/RQ-0037'),
+      /\[skip ci\]$/,
+    );
     discardCheckpoint(project, config, 'RQ-0037');
     assert.doesNotMatch(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
   } finally {

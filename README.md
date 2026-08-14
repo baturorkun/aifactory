@@ -543,6 +543,8 @@ pnpm factory sync-requirement RQ-0001 --fresh --push
 ```
 
 Generated CI jobs also honor `AIFACTORY_FRESH=true` for a one-time clean retry.
+Checkpoint commits use the platform-neutral `[skip ci]` marker, so checkpoint
+storage pushes do not start GitHub or GitLab pipelines.
 
 ### Force mock mode
 

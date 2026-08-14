@@ -72,11 +72,8 @@ export function checkpointPushArgs(
   remote: string,
   commit: string,
   branch: string,
-  useCiSkipPushOption: boolean,
 ): string[] {
-  const args = ['push', remote, `${commit}:refs/heads/${branch}`];
-  if (useCiSkipPushOption) args.push('-o', 'ci.skip');
-  return args;
+  return ['push', remote, `${commit}:refs/heads/${branch}`];
 }
 
 function sha256(value: string): string {
@@ -235,11 +232,9 @@ export function pushCheckpoint(
       '-p',
       parent,
       '-m',
-      `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId}`,
+      `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId} [skip ci]`,
     ]);
-    const remoteUrl = git(prepared.root, ['remote', 'get-url', remote], { allowFailure: true });
-    const isGitHub = Boolean(config.repositoryPlatforms.github) || /github\.com[:/]/i.test(remoteUrl);
-    git(prepared.root, checkpointPushArgs(remote, commit, branch, !isGitHub));
+    git(prepared.root, checkpointPushArgs(remote, commit, branch));
   } finally {
     rmSync(indexPath, { force: true });
   }

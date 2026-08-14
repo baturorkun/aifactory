@@ -277,6 +277,10 @@ Use `sync-requirement <RQ-ID> --fresh --push` when an invalidated checkpoint mus
 be discarded intentionally. Generated CI jobs accept `AIFACTORY_FRESH=true` and
 forward the same option for a one-time clean retry.
 
+Checkpoint commits always include `[skip ci]`, which suppresses push pipelines
+on both GitHub and GitLab without platform detection. Generated GitLab pipelines
+also reject `factory-checkpoint/*` at the workflow level as defense in depth.
+
 Planner task target files are advisory scope hints. Coder and Tester may use a
 different path when the real project structure requires it, but every artifact
 must still pass the hard `targetProject.allowedPaths` boundary. Planner and

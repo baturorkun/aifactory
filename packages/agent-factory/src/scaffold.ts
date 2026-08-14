@@ -154,6 +154,12 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
   writeFileSync(
     resolve(projectRoot, '.gitlab-ci.yml'),
     [
+      'workflow:',
+      '  rules:',
+      "    - if: '$CI_COMMIT_BRANCH =~ /^factory-checkpoint\\//'",
+      '      when: never',
+      '    - when: always',
+      '',
       'stages:',
       '  - ai_factory',
       ...(deployable ? ['  - build', '  - package', '  - image', '  - deploy'] : []),
