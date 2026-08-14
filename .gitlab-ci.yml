@@ -3,7 +3,7 @@ stages:
 
 variables:
   CODEX_RUNNER_IMAGE: "$CI_REGISTRY_IMAGE/codex-runner"
-  CODEX_VERSION: "latest"
+  CODEX_VERSION: "0.147.0"
 
 codex_runner_image:
   stage: runner_image
@@ -43,4 +43,3 @@ codex_runner_image:
   rules:
     - if: '$CI_COMMIT_BRANCH'
     - if: '$CI_COMMIT_TAG'
-

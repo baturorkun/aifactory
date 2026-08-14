@@ -165,7 +165,11 @@ Generated target projects also include `.github/workflows/ai-factory.yml`.
 It runs on `factory/RQ-*` requirement pushes and supports both API-backed model
 providers and `codex-cli`. Configure model selection as GitHub Actions repository
 variables (`AI_PROVIDER`, `AI_MODEL`, `AI_REVIEWER_MODEL`, and optionally
-`AI_BASE_URL`). Store `AI_API_KEY` as a repository secret for API-backed
+`AI_BASE_URL`). The job runs in the versioned Codex runner image published to
+GHCR by `.github/workflows/codex-runner-image.yml`; override it with the
+`AIFACTORY_RUNNER_IMAGE` repository variable when using another registry. The
+default GHCR package must be public so GitHub can pull it before starting the
+job. Store `AI_API_KEY` as a repository secret for API-backed
 providers. For `codex-cli`, store either `CODEX_AUTH_JSON` (the complete Codex
 `auth.json`) or `OPENAI_API_KEY` as a repository secret. The workflow uses the
 job-scoped `GITHUB_TOKEN` for Issue, Draft Pull Request, checkpoint, commit, and

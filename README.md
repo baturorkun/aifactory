@@ -384,6 +384,15 @@ docker build -f docker/codex-runner.Dockerfile -t registry.example.com/ci/aifact
 docker push registry.example.com/ci/aifactory-codex:latest
 ```
 
+For GitHub Actions, `.github/workflows/codex-runner-image.yml` publishes the
+same runner to
+`ghcr.io/<repository-owner>/aifactory-codex-runner:codex-0.147.0`.
+Make the package public so target repositories can pull it before a job starts.
+Generated GitHub workflows use the public AI Factory image by default and allow
+an override through the `AIFACTORY_RUNNER_IMAGE` repository variable. The image
+tag pins the Codex CLI version; update the Dockerfile, publisher workflow, and
+generated workflow default together when upgrading Codex.
+
 Generated GitLab jobs accept Codex authentication from either of these sources,
 in priority order:
 

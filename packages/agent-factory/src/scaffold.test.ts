@@ -115,10 +115,14 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(githubActions, /contents: write/);
     assert.match(githubActions, /issues: write/);
     assert.match(githubActions, /pull-requests: write/);
+    assert.match(githubActions, /container:\n {6}image:.*aifactory-codex-runner:codex-0\.147\.0/);
+    assert.match(githubActions, /defaults:\n {6}run:\n {8}shell: bash/);
     assert.match(githubActions, /AI_PROVIDER:.*codex-cli/);
     assert.match(githubActions, /AI_API_KEY:.*secrets\.AI_API_KEY/);
     assert.match(githubActions, /CODEX_AUTH_JSON:.*secrets\.CODEX_AUTH_JSON/);
     assert.match(githubActions, /OPENAI_API_KEY:.*secrets\.OPENAI_API_KEY/);
+    assert.match(githubActions, /codex-cli provider requires Codex CLI in AIFACTORY_RUNNER_IMAGE/);
+    assert.doesNotMatch(githubActions, /npm install --global @openai\/codex@latest/);
     assert.match(githubActions, /codex login --with-api-key/);
     assert.match(githubActions, /sync-requirement.*--push/);
     assert.match(githubActions, /requirement decision/);
