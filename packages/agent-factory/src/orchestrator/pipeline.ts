@@ -69,9 +69,12 @@ import {
   type ProjectGuidelinesContext,
 } from '../project-guidelines';
 import { assertRequirementExecution } from '../requirement-lifecycle';
-import type {
-  CheckpointTaskUpdate,
-  PipelineCheckpoint,
+import {
+  describeCheckpointResume,
+  type CheckpointTaskUpdate,
+  type PipelineCheckpointProgress,
+  type PipelineCheckpoint,
+  type PipelineStage,
 } from './checkpoint';
 import {
   failedGateNames,
@@ -219,7 +222,7 @@ function referencedFileHints(requirement: Requirement, architecture: Architectur
     hints.add(component.path);
     for (const dependency of component.dependencies) hints.add(dependency);
   }
-  const filePattern = /(?:^|[`\s(])([A-Za-z0-9_.\/-]+\.(?:ts|tsx|js|mjs|cjs|html|css|json))(?=$|[`\s),:])/g;
+  const filePattern = /(?:^|[`\s(])([A-Za-z0-9_./-]+\.(?:ts|tsx|js|mjs|cjs|html|css|json))(?=$|[`\s),:])/g;
   for (const match of requirement.rawMarkdown.matchAll(filePattern)) {
     if (match[1]) hints.add(match[1]);
   }
@@ -394,19 +397,8 @@ export interface PipelineOptions {
   fast?: boolean;
   /** Resume planner/task state restored from a validated checkpoint branch. */
   resumeCheckpoint?: PipelineCheckpoint;
-  /** Persist progress after every reviewed task iteration. */
-  onCheckpoint?: (progress: {
-    runId: string;
-    plan: PlanOutput;
-    task: CheckpointTaskUpdate;
-    artifactPaths: string[];
-  }) => void;
-  /** Persist updated artifacts after quality-gate repair. */
-  onArtifactsCheckpoint?: (progress: {
-    runId: string;
-    plan: PlanOutput;
-    artifactPaths: string[];
-  }) => void;
+  /** Persist resumable state after every completed pipeline stage. */
+  onCheckpoint?: (progress: PipelineCheckpointProgress) => void;
 }
 
 // ============================================================
@@ -429,6 +421,9 @@ export async function runPipeline(
   const runDir = createRunDir(resolve(config.paths.runs), runId, requirementId, {
     fast: Boolean(opts.fast),
   });
+  for (const artifactPath of opts.resumeCheckpoint?.artifactPaths ?? []) {
+    addArtifact(runDir, artifactPath);
+  }
   recordProjectGuidelines(runDir, projectGuidelines);
 
   // Save input copies for reproducibility
@@ -454,6 +449,14 @@ export async function runPipeline(
   console.log(`  Model    : ${primaryModel.name}`);
   console.log(`  Reviewer : ${reviewerModel.name}`);
   console.log(`  Pipeline : ${opts.fast ? 'fast' : 'full'}`);
+  if (opts.resumeCheckpoint) {
+    console.log(
+      `  Resume   : ${describeCheckpointResume(opts.resumeCheckpoint, {
+        provider: effectiveConfig.model.provider,
+        model: effectiveConfig.model.name,
+      })}`,
+    );
+  }
   if (effectiveConfig.targetProject.root) {
     console.log(`  Target   : ${resolveTargetRoot(effectiveConfig.targetProject)}`);
     console.log(
@@ -498,7 +501,7 @@ export async function runPipeline(
       console.log(`  ▸ Planner: restored from checkpoint (${plan.tasks.length} task(s))`);
     } else {
       console.log('  ▸ Planner...');
-      plan = await runPlannerAgent(
+      const planner = await runPlannerAgent(
         requirement,
         constraints,
         runDir,
@@ -508,13 +511,33 @@ export async function runPipeline(
         ragGrounding,
         projectGuidelines,
       );
+      plan = planner.plan;
       console.log(`    └ ${plan.tasks.length} task(s)`);
+      opts.onCheckpoint?.({
+        runId,
+        plan,
+        stage: 'planner',
+        nextStage: plan.tasks.length > 0 ? 'architect' : 'quality-gates',
+        currentTaskId: plan.tasks[0]?.id,
+        execution: planner.execution,
+        artifactPaths: readManifest(runDir).artifacts,
+      });
     }
 
     // ---- 2. Per-task pipeline
     const tasks = opts.taskIds
       ? plan.tasks.filter((t) => opts.taskIds!.includes(t.id))
       : plan.tasks;
+    const restoredGateResults = opts.resumeCheckpoint?.qualityGateResults;
+    const allTasksRestoredPassed = tasks.every(
+      (task) => opts.resumeCheckpoint?.tasks[task.id]?.status === 'passed',
+    );
+    const canRestoreQualityGates = Boolean(
+      allTasksRestoredPassed &&
+      opts.resumeCheckpoint?.nextStage === 'complete' &&
+      restoredGateResults &&
+      !Object.values(restoredGateResults).some((status) => status === 'failed' || status === 'pending'),
+    );
 
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i]!;
@@ -543,7 +566,7 @@ export async function runPipeline(
         (update) => opts.onCheckpoint?.({
           runId,
           plan,
-          task: update,
+          ...update,
           artifactPaths: readManifest(runDir).artifacts,
         }),
       );
@@ -553,8 +576,19 @@ export async function runPipeline(
       }
     }
 
+    opts.onCheckpoint?.({
+      runId,
+      plan,
+      stage: 'complete',
+      nextStage: opts.skipGates || canRestoreQualityGates ? 'complete' : 'quality-gates',
+      artifactPaths: readManifest(runDir).artifacts,
+    });
+
     // ---- 3. Quality gates
-    if (!opts.skipGates) {
+    if (canRestoreQualityGates && restoredGateResults) {
+      console.log('\n  ▸ Quality gates: restored from checkpoint');
+      updateGateResults(runDir, restoredGateResults);
+    } else if (!opts.skipGates) {
       console.log('\n  ▸ Quality gates...');
       const targetRoot =
         shouldApplyArtifacts(effectiveConfig.targetProject, Boolean(opts.dryRun))
@@ -581,16 +615,39 @@ export async function runPipeline(
           projectGuidelines,
           dryRun: Boolean(opts.dryRun),
           initialResults: gateResults,
+          onCoderCheckpoint: ({ round, code, model, promptHash }) => opts.onCheckpoint?.({
+            runId,
+            plan,
+            stage: 'coder',
+            nextStage: 'quality-gates',
+            currentTaskId: 'quality-gates',
+            execution: {
+              key: `quality-gates:coder:round${round}`,
+              model,
+              promptHash,
+            },
+            artifactPaths: readManifest(runDir).artifacts,
+            qualityGateCoderOutput: code,
+          }),
         });
         updateGateResults(runDir, gateResults);
       }
-      if (Object.values(gateResults).some((status) => status === 'failed')) {
-        opts.onArtifactsCheckpoint?.({
-          runId,
-          plan,
-          artifactPaths: readManifest(runDir).artifacts,
-        });
-      }
+      const failedReports = readGateReports(runDir)
+        .filter((report) => report.status === 'failed')
+        .map((report) => `[${report.gate}]\n${report.output}`)
+        .join('\n\n')
+        .slice(-40_000);
+      opts.onCheckpoint?.({
+        runId,
+        plan,
+        stage: 'quality-gates',
+        nextStage: Object.values(gateResults).some((status) => status === 'failed')
+          ? 'quality-gates'
+          : 'complete',
+        artifactPaths: readManifest(runDir).artifacts,
+        qualityGateResults: gateResults,
+        testFailureOutput: failedReports || undefined,
+      });
     } else {
       console.log('\n  ▸ Gates: skipped');
       updateGateResults(runDir, {
@@ -636,6 +693,12 @@ interface QualityRepairOptions {
   projectGuidelines?: ProjectGuidelinesContext;
   dryRun: boolean;
   initialResults: GateResults;
+  onCoderCheckpoint?: (progress: {
+    round: number;
+    code: CodePatchOutput;
+    model: string;
+    promptHash: string;
+  }) => void;
 }
 
 async function runQualityGateRepair(options: QualityRepairOptions): Promise<GateResults> {
@@ -692,6 +755,12 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
         applyArtifactToTarget(config.targetProject, patch.path, patch.content);
       }
     }
+    options.onCoderCheckpoint?.({
+      round,
+      code,
+      model: codeResult.model,
+      promptHash: codeResult.promptHash,
+    });
 
     console.log('  ▸ Quality gates (after repair)...');
     gateResults = await runAllGates(runDir, process.cwd(), {
@@ -736,7 +805,10 @@ async function runPlannerAgent(
   config: FactoryConfig,
   ragGrounding?: RagGroundingResponse,
   projectGuidelines?: ProjectGuidelinesContext,
-): Promise<PlanOutput> {
+): Promise<{
+  plan: PlanOutput;
+  execution: { key: string; model: string; promptHash: string };
+}> {
   const result = await runAgent({
     agent: 'planner',
     runDir,
@@ -753,7 +825,10 @@ async function runPlannerAgent(
     outputFileName: 'planner-output.json',
   });
   const plan = result.output as PlanOutput;
-  return { ...plan, requirementId: requirement.id };
+  return {
+    plan: { ...plan, requirementId: requirement.id },
+    execution: { key: 'planner', model: result.model, promptHash: result.promptHash },
+  };
 }
 
 // ============================================================
@@ -775,7 +850,13 @@ async function runTaskPipeline(
   ragGrounding?: RagGroundingResponse,
   projectGuidelines?: ProjectGuidelinesContext,
   restoredTask?: PipelineCheckpoint['tasks'][string],
-  onCheckpoint?: (update: CheckpointTaskUpdate) => void,
+  onCheckpoint?: (update: {
+    stage: PipelineStage;
+    nextStage: PipelineStage;
+    currentTaskId: string;
+    task: CheckpointTaskUpdate;
+    execution?: { key: string; model: string; promptHash: string };
+  }) => void,
 ): Promise<{ passed: boolean; review?: ReviewOutput; guard?: DomainGuardOutput }> {
   // ---- Architect
   let architecture: ArchitectureOutput;
@@ -808,6 +889,23 @@ async function runTaskPipeline(
       outputFileName: `architect-${task.id}.json`,
     });
     architecture = archResult.output as ArchitectureOutput;
+    onCheckpoint?.({
+      stage: 'architect',
+      nextStage: 'coder',
+      currentTaskId: task.id,
+      execution: {
+        key: `${task.id}:architect`,
+        model: archResult.model,
+        promptHash: archResult.promptHash,
+      },
+      task: {
+        taskId: task.id,
+        status: 'pending',
+        architecture,
+        nextStage: 'coder',
+        iterations: restoredTask?.iterations ?? 0,
+      },
+    });
   }
 
   // ---- Code + fix loop
@@ -817,131 +915,219 @@ async function runTaskPipeline(
         domainViolations: restoredTask.domainViolations,
       }
     : undefined;
-  let taskPassed = false;
-  let lastReview: ReviewOutput | undefined;
-  let lastGuard: DomainGuardOutput | undefined;
+  let lastCode = restoredTask?.lastCoderOutput;
+  let lastTests = restoredTask?.lastTesterOutput;
+  let lastReview = restoredTask?.lastReview;
+  let lastGuard = restoredTask?.lastGuard;
+  let appliedDiff = restoredTask?.appliedDiff ?? [];
+  let completedIterations = restoredTask?.nextStage ? restoredTask.iterations : 0;
+  let nextStage: PipelineStage = restoredTask?.nextStage ?? 'coder';
+  if (nextStage === 'coder' && completedIterations >= config.pipeline.maxFixIterations) {
+    completedIterations = 0;
+  }
+  if (restoredTask?.nextStage && restoredTask.nextStage !== 'coder') {
+    console.log(`    ↳ Resuming at ${restoredTask.nextStage}; earlier task stages restored`);
+  }
   const supportingFiles = collectReviewSupportingFiles(requirement, architecture, task, config.targetProject);
 
-  for (let iter = 0; iter < config.pipeline.maxFixIterations; iter++) {
+  while (completedIterations < config.pipeline.maxFixIterations) {
+    const iter = nextStage === 'coder'
+      ? completedIterations
+      : Math.max(0, completedIterations - 1);
     const iterSuffix = iter > 0 ? ` (fix #${iter})` : '';
 
     // Coder
-    console.log(`    ▸ Coder${iterSuffix}...`);
-    const codeResult = await runAgent({
-      agent: 'coder',
-      taskId: task.id,
-      runDir,
-      systemPrompt: withProjectGuidelines(promptRegistry.get('coder'), projectGuidelines),
-      userPrompt: buildCoderPrompt(
-        task,
-        architecture,
-        requirement,
-        constraints,
-        existingTaskFiles(task, config.targetProject),
-        config.targetProject.allowedPaths,
-        fixContext,
-        formatGroundingContext(config, ragGrounding, 'coder'),
-      ),
-      model: primaryModel,
-      maxRetries: config.pipeline.maxRetries,
-      responseSchema: coderResponseSchema(task),
-      validate: makeCodeValidator(task, config.targetProject),
-      extractJSON,
-      outputFileName: `coder-${task.id}-iter${iter}.json`,
-    });
-    const code = codeResult.output as CodePatchOutput;
+    if (nextStage === 'coder') {
+      console.log(`    ▸ Coder${iterSuffix}...`);
+      const codeResult = await runAgent({
+        agent: 'coder',
+        taskId: task.id,
+        runDir,
+        systemPrompt: withProjectGuidelines(promptRegistry.get('coder'), projectGuidelines),
+        userPrompt: buildCoderPrompt(
+          task,
+          architecture,
+          requirement,
+          constraints,
+          existingTaskFiles(task, config.targetProject),
+          config.targetProject.allowedPaths,
+          fixContext,
+          formatGroundingContext(config, ragGrounding, 'coder'),
+        ),
+        model: primaryModel,
+        maxRetries: config.pipeline.maxRetries,
+        responseSchema: coderResponseSchema(task),
+        validate: makeCodeValidator(task, config.targetProject),
+        extractJSON,
+        outputFileName: `coder-${task.id}-iter${iter}.json`,
+      });
+      lastCode = codeResult.output as CodePatchOutput;
 
-    // Write code artifacts
-    for (const patch of code.patches) {
-      writeArtifact(runDir, patch.path, patch.content);
-      addArtifact(runDir, patch.path);
-      if (shouldApplyArtifacts(config.targetProject, dryRun)) {
-        applyArtifactToTarget(config.targetProject, patch.path, patch.content);
+      for (const patch of lastCode.patches) {
+        writeArtifact(runDir, patch.path, patch.content);
+        addArtifact(runDir, patch.path);
+        if (shouldApplyArtifacts(config.targetProject, dryRun)) {
+          applyArtifactToTarget(config.targetProject, patch.path, patch.content);
+        }
       }
+      appliedDiff = lastCode.patches;
+      completedIterations += 1;
+      nextStage = fast ? 'complete' : 'tester';
+      onCheckpoint?.({
+        stage: 'coder',
+        nextStage,
+        currentTaskId: task.id,
+        execution: {
+          key: `${task.id}:coder:iter${iter}`,
+          model: codeResult.model,
+          promptHash: codeResult.promptHash,
+        },
+        task: {
+          taskId: task.id,
+          status: fast ? 'passed' : 'pending',
+          architecture,
+          nextStage,
+          lastCoderOutput: lastCode,
+          lastTesterOutput: lastTests,
+          review: lastReview,
+          guard: lastGuard,
+          appliedDiff,
+          iterations: completedIterations,
+        },
+      });
     }
 
     if (fast) {
-      taskPassed = true;
       console.log(`    ✓ Task "${task.id}" coded (fast mode)`);
-      onCheckpoint?.({
-        taskId: task.id,
-        status: 'passed',
-        architecture,
-        iterations: iter + 1,
-      });
-      break;
+      return { passed: true, review: lastReview, guard: lastGuard };
+    }
+
+    if (!lastCode) {
+      throw new Error(`Checkpoint for task "${task.id}" cannot resume ${nextStage} without coder output.`);
     }
 
     // Tester
-    console.log('    ▸ Tester...');
-    const testResult = await runAgent({
-      agent: 'tester',
-      taskId: task.id,
-      runDir,
-      systemPrompt: withProjectGuidelines(promptRegistry.get('tester'), projectGuidelines),
-      userPrompt: buildTesterPrompt(
-        task,
-        code,
-        requirement,
-        constraints,
-        config.targetProject.allowedPaths,
-        existingTaskTestFiles(task, config.targetProject),
-        formatGroundingContext(config, ragGrounding, 'tester'),
-      ),
-      model: primaryModel,
-      maxRetries: config.pipeline.maxRetries,
-      responseSchema: testerResponseSchema(task),
-      validate: (raw: unknown): TestOutput =>
-        validateTestOutputForTask(raw, task, constraints, config.targetProject),
-      extractJSON,
-      outputFileName: `tester-${task.id}-iter${iter}.json`,
-    });
-    const tests = testResult.output as TestOutput;
+    if (nextStage === 'tester') {
+      console.log('    ▸ Tester...');
+      const testResult = await runAgent({
+        agent: 'tester',
+        taskId: task.id,
+        runDir,
+        systemPrompt: withProjectGuidelines(promptRegistry.get('tester'), projectGuidelines),
+        userPrompt: buildTesterPrompt(
+          task,
+          lastCode,
+          requirement,
+          constraints,
+          config.targetProject.allowedPaths,
+          existingTaskTestFiles(task, config.targetProject),
+          formatGroundingContext(config, ragGrounding, 'tester'),
+        ),
+        model: primaryModel,
+        maxRetries: config.pipeline.maxRetries,
+        responseSchema: testerResponseSchema(task),
+        validate: (raw: unknown): TestOutput =>
+          validateTestOutputForTask(raw, task, constraints, config.targetProject),
+        extractJSON,
+        outputFileName: `tester-${task.id}-iter${iter}.json`,
+      });
+      lastTests = testResult.output as TestOutput;
 
-    for (const test of tests.tests) {
-      writeArtifact(runDir, test.path, test.content);
-      addArtifact(runDir, test.path);
-      if (shouldApplyArtifacts(config.targetProject, dryRun)) {
-        applyArtifactToTarget(config.targetProject, test.path, test.content);
+      for (const test of lastTests.tests) {
+        writeArtifact(runDir, test.path, test.content);
+        addArtifact(runDir, test.path);
+        if (shouldApplyArtifacts(config.targetProject, dryRun)) {
+          applyArtifactToTarget(config.targetProject, test.path, test.content);
+        }
       }
+      nextStage = 'reviewer';
+      onCheckpoint?.({
+        stage: 'tester',
+        nextStage,
+        currentTaskId: task.id,
+        execution: {
+          key: `${task.id}:tester:iter${iter}`,
+          model: testResult.model,
+          promptHash: testResult.promptHash,
+        },
+        task: {
+          taskId: task.id,
+          status: 'pending',
+          architecture,
+          nextStage,
+          lastCoderOutput: lastCode,
+          lastTesterOutput: lastTests,
+          review: lastReview,
+          guard: lastGuard,
+          appliedDiff,
+          iterations: completedIterations,
+        },
+      });
+    }
+
+    if (!lastTests) {
+      throw new Error(`Checkpoint for task "${task.id}" cannot resume ${nextStage} without tester output.`);
     }
 
     // Reviewer
-    console.log('    ▸ Reviewer...');
-    const cumulativeCode = cumulativeCodeForTask(task, runDir, config.targetProject, code);
-    const reviewResult = await runAgent({
-      agent: 'reviewer',
-      taskId: task.id,
-      runDir,
-      systemPrompt: withProjectGuidelines(promptRegistry.get('reviewer'), projectGuidelines),
-      userPrompt: buildReviewerPrompt(
-        task,
-        cumulativeCode,
-        tests,
-        requirement,
-        supportingFiles,
-        formatGroundingContext(config, ragGrounding, 'reviewer'),
-      ),
-      model: reviewerModel,
-      maxRetries: config.pipeline.maxRetries,
-      validate: makeValidator(ReviewOutputSchema, 'Reviewer'),
-      extractJSON,
-      outputFileName: `reviewer-${task.id}-iter${iter}.json`,
-    });
-    const review = reviewResult.output as ReviewOutput;
-    lastReview = review;
-
-    if (review.verdict === 'rejected') {
-      updateStep(runDir, 'reviewer', task.id, { status: 'needs-fix' });
-      onCheckpoint?.({
+    const cumulativeCode = cumulativeCodeForTask(task, runDir, config.targetProject, lastCode);
+    if (nextStage === 'reviewer') {
+      console.log('    ▸ Reviewer...');
+      const reviewResult = await runAgent({
+        agent: 'reviewer',
         taskId: task.id,
-        status: 'needs-fix',
-        architecture,
-        review,
-        iterations: iter + 1,
+        runDir,
+        systemPrompt: withProjectGuidelines(promptRegistry.get('reviewer'), projectGuidelines),
+        userPrompt: buildReviewerPrompt(
+          task,
+          cumulativeCode,
+          lastTests,
+          requirement,
+          supportingFiles,
+          formatGroundingContext(config, ragGrounding, 'reviewer'),
+        ),
+        model: reviewerModel,
+        maxRetries: config.pipeline.maxRetries,
+        validate: makeValidator(ReviewOutputSchema, 'Reviewer'),
+        extractJSON,
+        outputFileName: `reviewer-${task.id}-iter${iter}.json`,
       });
+      lastReview = reviewResult.output as ReviewOutput;
+      nextStage = lastReview.verdict === 'rejected' ? 'coder' : 'domain-guard';
+      if (lastReview.verdict === 'rejected') {
+        updateStep(runDir, 'reviewer', task.id, { status: 'needs-fix' });
+      }
+      onCheckpoint?.({
+        stage: 'reviewer',
+        nextStage,
+        currentTaskId: task.id,
+        execution: {
+          key: `${task.id}:reviewer:iter${iter}`,
+          model: reviewResult.model,
+          promptHash: reviewResult.promptHash,
+        },
+        task: {
+          taskId: task.id,
+          status: lastReview.verdict === 'rejected' ? 'needs-fix' : 'pending',
+          architecture,
+          nextStage,
+          lastCoderOutput: lastCode,
+          lastTesterOutput: lastTests,
+          review: lastReview,
+          guard: lastGuard,
+          appliedDiff,
+          iterations: completedIterations,
+        },
+      });
+    }
+
+    if (!lastReview) {
+      throw new Error(`Checkpoint for task "${task.id}" cannot resume ${nextStage} without reviewer output.`);
+    }
+
+    if (lastReview.verdict === 'rejected') {
       console.log(`    ✗ Reviewer rejected — stopping task`);
-      break;
+      return { passed: false, review: lastReview, guard: lastGuard };
     }
 
     // Domain Guard
@@ -965,56 +1151,81 @@ async function runTaskPipeline(
       extractJSON,
       outputFileName: `domain-guard-${task.id}-iter${iter}.json`,
     });
-    const guard = guardResult.output as DomainGuardOutput;
-    lastGuard = guard;
+    lastGuard = guardResult.output as DomainGuardOutput;
 
-    if (review.verdict === 'approved' && guard.verdict === 'passed') {
-      taskPassed = true;
+    if (lastReview.verdict === 'approved' && lastGuard.verdict === 'passed') {
       updateStep(runDir, 'reviewer', task.id, { status: 'passed' });
       updateStep(runDir, 'domain-guard', task.id, { status: 'passed' });
       onCheckpoint?.({
-        taskId: task.id,
-        status: 'passed',
-        architecture,
-        review,
-        guard,
-        iterations: iter + 1,
+        stage: 'domain-guard',
+        nextStage: 'complete',
+        currentTaskId: task.id,
+        execution: {
+          key: `${task.id}:domain-guard:iter${iter}`,
+          model: guardResult.model,
+          promptHash: guardResult.promptHash,
+        },
+        task: {
+          taskId: task.id,
+          status: 'passed',
+          architecture,
+          nextStage: 'complete',
+          lastCoderOutput: lastCode,
+          lastTesterOutput: lastTests,
+          review: lastReview,
+          guard: lastGuard,
+          appliedDiff,
+          iterations: completedIterations,
+        },
       });
       console.log(`    ✓ Task "${task.id}" passed`);
-      break;
+      return { passed: true, review: lastReview, guard: lastGuard };
     }
 
     updateStep(runDir, 'reviewer', task.id, {
-      status: review.verdict === 'approved' ? 'passed' : 'needs-fix',
+      status: lastReview.verdict === 'approved' ? 'passed' : 'needs-fix',
     });
     updateStep(runDir, 'domain-guard', task.id, {
-      status: guard.verdict === 'passed' ? 'passed' : 'needs-fix',
+      status: lastGuard.verdict === 'passed' ? 'passed' : 'needs-fix',
     });
     onCheckpoint?.({
-      taskId: task.id,
-      status: 'needs-fix',
-      architecture,
-      review,
-      guard,
-      iterations: iter + 1,
+      stage: 'domain-guard',
+      nextStage: 'coder',
+      currentTaskId: task.id,
+      execution: {
+        key: `${task.id}:domain-guard:iter${iter}`,
+        model: guardResult.model,
+        promptHash: guardResult.promptHash,
+      },
+      task: {
+        taskId: task.id,
+        status: 'needs-fix',
+        architecture,
+        nextStage: 'coder',
+        lastCoderOutput: lastCode,
+        lastTesterOutput: lastTests,
+        review: lastReview,
+        guard: lastGuard,
+        appliedDiff,
+        iterations: completedIterations,
+      },
     });
 
     // Prepare fix context for next iteration
     fixContext = {
-      reviewFindings: review.findings,
-      domainViolations: guard.violations,
+      reviewFindings: lastReview.findings,
+      domainViolations: lastGuard.violations,
     };
+    nextStage = 'coder';
 
-    if (iter < config.pipeline.maxFixIterations - 1) {
-      console.log(`    ⚠ Needs fix — iteration ${iter + 2}/${config.pipeline.maxFixIterations}...`);
+    if (completedIterations < config.pipeline.maxFixIterations) {
+      console.log(`    ⚠ Needs fix — iteration ${completedIterations + 1}/${config.pipeline.maxFixIterations}...`);
     }
   }
 
-  if (!taskPassed) {
-    console.log(
-      `    ✗ Task "${task.id}" did not pass after ${config.pipeline.maxFixIterations} iteration(s)`,
-    );
-  }
+  console.log(
+    `    ✗ Task "${task.id}" did not pass after ${config.pipeline.maxFixIterations} iteration(s)`,
+  );
 
-  return { passed: taskPassed, review: lastReview, guard: lastGuard };
+  return { passed: false, review: lastReview, guard: lastGuard };
 }

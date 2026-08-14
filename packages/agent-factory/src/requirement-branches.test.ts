@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import {
   changedRequirementIds,
+  checkpointPushArgs,
   pushCheckpoint,
   requirementBranchName,
   restoreCheckpoint,
@@ -22,6 +23,17 @@ test('requirement branch names are stable and reject unsafe IDs', () => {
   assert.equal(requirementBranchName('RQ-0016'), 'factory/RQ-0016');
   assert.equal(requirementBranchName('rq-42', 'requirements/'), 'requirements/RQ-42');
   assert.throws(() => requirementBranchName('../main'), /Invalid requirement ID/);
+});
+
+test('checkpoint pushes use ci.skip only for GitLab-compatible remotes', () => {
+  assert.deepEqual(
+    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1', true),
+    ['push', 'origin', 'abc123:refs/heads/factory-checkpoint/RQ-1', '-o', 'ci.skip'],
+  );
+  assert.deepEqual(
+    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1', false),
+    ['push', 'origin', 'abc123:refs/heads/factory-checkpoint/RQ-1'],
+  );
 });
 
 test('changed requirements are detected from added and updated Markdown files', () => {
@@ -95,6 +107,7 @@ test('checkpoint branch preserves artifacts and restores validated task state', 
       sourceCommit,
       fast: false,
       previousRunId: 'run-1',
+      stageExecutions: {},
       updatedAt: new Date().toISOString(),
       artifactPaths: ['src/main.ts'],
       tasks: {},

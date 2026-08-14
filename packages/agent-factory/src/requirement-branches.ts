@@ -67,6 +67,17 @@ function gitWithIndex(cwd: string, indexPath: string, args: string[]): string {
   return result.stdout.trim();
 }
 
+export function checkpointPushArgs(
+  remote: string,
+  commit: string,
+  branch: string,
+  useCiSkipPushOption: boolean,
+): string[] {
+  const args = ['push', remote, `${commit}:refs/heads/${branch}`];
+  if (useCiSkipPushOption) args.push('-o', 'ci.skip');
+  return args;
+}
+
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -225,13 +236,9 @@ export function pushCheckpoint(
       '-m',
       `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId}`,
     ]);
-    git(prepared.root, [
-      'push',
-      remote,
-      `${commit}:refs/heads/${branch}`,
-      '-o',
-      'ci.skip',
-    ]);
+    const remoteUrl = git(prepared.root, ['remote', 'get-url', remote], { allowFailure: true });
+    const isGitHub = Boolean(config.repositoryPlatforms.github) || /github\.com[:/]/i.test(remoteUrl);
+    git(prepared.root, checkpointPushArgs(remote, commit, branch, !isGitHub));
   } finally {
     rmSync(indexPath, { force: true });
   }
@@ -303,21 +310,65 @@ export async function syncRequirementBranch(
     throw new Error(`No checkpoint branch exists for ${requirementId.toUpperCase()}.`);
   }
   const taskStates: PipelineCheckpoint['tasks'] = { ...(resumeCheckpoint?.tasks ?? {}) };
-  const saveCheckpoint = (
-    checkpointRunId: string,
-    plan: PipelineCheckpoint['plan'],
-    artifactPaths: string[],
-  ): void => {
+  const stageExecutions: PipelineCheckpoint['stageExecutions'] = {
+    ...(resumeCheckpoint?.stageExecutions ?? {}),
+  };
+  let currentTaskId = resumeCheckpoint?.currentTaskId;
+  let lastCompletedStage = resumeCheckpoint?.lastCompletedStage;
+  let nextStage = resumeCheckpoint?.nextStage;
+  let qualityGateResults = resumeCheckpoint?.qualityGateResults;
+  let qualityGateCoderOutput = resumeCheckpoint?.qualityGateCoderOutput;
+  let testFailureOutput = resumeCheckpoint?.testFailureOutput;
+  const saveCheckpoint = (progress: Parameters<NonNullable<PipelineOptions['onCheckpoint']>>[0]): void => {
+    if (progress.task) {
+      taskStates[progress.task.taskId] = {
+        status: progress.task.status,
+        architecture: progress.task.architecture,
+        reviewFindings: progress.task.review?.findings ?? [],
+        domainViolations: progress.task.guard?.violations ?? [],
+        iterations: progress.task.iterations,
+        nextStage: progress.task.nextStage,
+        lastCoderOutput: progress.task.lastCoderOutput,
+        lastTesterOutput: progress.task.lastTesterOutput,
+        lastReview: progress.task.review,
+        lastGuard: progress.task.guard,
+        appliedDiff: progress.task.appliedDiff ?? [],
+      };
+    }
+    if (progress.execution) {
+      stageExecutions[progress.execution.key] = {
+        model: progress.execution.model,
+        promptHash: progress.execution.promptHash,
+        completedAt: new Date().toISOString(),
+      };
+    }
+    currentTaskId = progress.currentTaskId;
+    lastCompletedStage = progress.stage;
+    nextStage = progress.nextStage;
+    qualityGateResults = progress.qualityGateResults ?? qualityGateResults;
+    qualityGateCoderOutput = progress.qualityGateCoderOutput ?? qualityGateCoderOutput;
+    if (progress.stage === 'quality-gates') {
+      testFailureOutput = progress.testFailureOutput;
+    }
     pushCheckpoint(prepared, config, {
       version: 1,
       requirementId: requirementId.toUpperCase(),
       requirementSha256: prepared.requirementSha256,
       sourceCommit: prepared.sourceCommit,
       fast,
-      plan,
+      plan: progress.plan,
       tasks: taskStates,
-      artifactPaths,
-      previousRunId: checkpointRunId,
+      artifactPaths: progress.artifactPaths,
+      previousRunId: progress.runId,
+      previousProvider: options.dryRun ? 'mock' : config.model.provider,
+      previousModel: options.dryRun ? 'mock' : config.model.name,
+      currentTaskId,
+      lastCompletedStage,
+      nextStage,
+      stageExecutions,
+      qualityGateResults,
+      qualityGateCoderOutput,
+      testFailureOutput,
       updatedAt: new Date().toISOString(),
     });
   };
@@ -325,19 +376,7 @@ export async function syncRequirementBranch(
     ...options,
     fast,
     resumeCheckpoint,
-    onCheckpoint: ({ runId: checkpointRunId, plan, task, artifactPaths }) => {
-      taskStates[task.taskId] = {
-        status: task.status,
-        architecture: task.architecture,
-        reviewFindings: task.review?.findings ?? [],
-        domainViolations: task.guard?.violations ?? [],
-        iterations: task.iterations,
-      };
-      saveCheckpoint(checkpointRunId, plan, artifactPaths);
-    },
-    onArtifactsCheckpoint: ({ runId: checkpointRunId, plan, artifactPaths }) => {
-      saveCheckpoint(checkpointRunId, plan, artifactPaths);
-    },
+    onCheckpoint: saveCheckpoint,
   });
   const runDir = resolve(config.paths.runs, runId);
   const manifest = readManifest(runDir);

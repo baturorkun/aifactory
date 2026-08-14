@@ -3,14 +3,39 @@ import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   ArchitectureOutputSchema,
+  CodePatchOutputSchema,
+  DomainGuardOutputSchema,
+  GateResultsSchema,
   PlanOutputSchema,
   ReviewFindingSchema,
+  ReviewOutputSchema,
   DomainViolationSchema,
+  TestOutputSchema,
   type ArchitectureOutput,
+  type CodePatchOutput,
   type DomainGuardOutput,
-  type PlanOutput,
+  type GateResults,
   type ReviewOutput,
+  type TestOutput,
 } from '@aifactory/contracts';
+
+export const PipelineStageSchema = z.enum([
+  'planner',
+  'architect',
+  'coder',
+  'tester',
+  'reviewer',
+  'domain-guard',
+  'quality-gates',
+  'complete',
+]);
+export type PipelineStage = z.infer<typeof PipelineStageSchema>;
+
+const StageExecutionSchema = z.object({
+  model: z.string(),
+  promptHash: z.string(),
+  completedAt: z.string(),
+});
 
 const CheckpointTaskSchema = z.object({
   status: z.enum(['pending', 'passed', 'needs-fix']),
@@ -18,6 +43,12 @@ const CheckpointTaskSchema = z.object({
   reviewFindings: z.array(ReviewFindingSchema).default([]),
   domainViolations: z.array(DomainViolationSchema).default([]),
   iterations: z.number().int().nonnegative().default(0),
+  nextStage: PipelineStageSchema.optional(),
+  lastCoderOutput: CodePatchOutputSchema.optional(),
+  lastTesterOutput: TestOutputSchema.optional(),
+  lastReview: ReviewOutputSchema.optional(),
+  lastGuard: DomainGuardOutputSchema.optional(),
+  appliedDiff: z.array(CodePatchOutputSchema.shape.patches.element).default([]),
 });
 
 export const PipelineCheckpointSchema = z.object({
@@ -30,6 +61,15 @@ export const PipelineCheckpointSchema = z.object({
   tasks: z.record(CheckpointTaskSchema),
   artifactPaths: z.array(z.string()).default([]),
   previousRunId: z.string(),
+  previousProvider: z.string().optional(),
+  previousModel: z.string().optional(),
+  currentTaskId: z.string().optional(),
+  lastCompletedStage: PipelineStageSchema.optional(),
+  nextStage: PipelineStageSchema.optional(),
+  stageExecutions: z.record(StageExecutionSchema).default({}),
+  qualityGateResults: GateResultsSchema.optional(),
+  qualityGateCoderOutput: CodePatchOutputSchema.optional(),
+  testFailureOutput: z.string().optional(),
   updatedAt: z.string(),
 });
 
@@ -37,11 +77,49 @@ export type PipelineCheckpoint = z.infer<typeof PipelineCheckpointSchema>;
 
 export interface CheckpointTaskUpdate {
   taskId: string;
-  status: 'passed' | 'needs-fix';
+  status: 'pending' | 'passed' | 'needs-fix';
   architecture: ArchitectureOutput;
+  nextStage: PipelineStage;
+  lastCoderOutput?: CodePatchOutput;
+  lastTesterOutput?: TestOutput;
   review?: ReviewOutput;
   guard?: DomainGuardOutput;
+  appliedDiff?: CodePatchOutput['patches'];
   iterations: number;
+}
+
+export interface StageExecutionUpdate {
+  key: string;
+  model: string;
+  promptHash: string;
+}
+
+export interface PipelineCheckpointProgress {
+  runId: string;
+  plan: PipelineCheckpoint['plan'];
+  stage: PipelineStage;
+  nextStage: PipelineStage;
+  currentTaskId?: string;
+  task?: CheckpointTaskUpdate;
+  execution?: StageExecutionUpdate;
+  artifactPaths: string[];
+  qualityGateResults?: GateResults;
+  qualityGateCoderOutput?: CodePatchOutput;
+  testFailureOutput?: string;
+}
+
+export function describeCheckpointResume(
+  checkpoint: PipelineCheckpoint,
+  current: { provider: string; model: string },
+): string {
+  const currentLabel = `${current.provider}:${current.model}`;
+  if (!checkpoint.previousProvider || !checkpoint.previousModel) {
+    return `legacy checkpoint -> ${currentLabel}`;
+  }
+
+  const previousLabel = `${checkpoint.previousProvider}:${checkpoint.previousModel}`;
+  const providerChanged = checkpoint.previousProvider !== current.provider;
+  return `${previousLabel} -> ${currentLabel}${providerChanged ? ' (provider switch)' : ''}`;
 }
 
 export function checkpointBranchName(requirementId: string): string {
@@ -92,4 +170,3 @@ export function validatePipelineCheckpoint(
     throw new Error('Checkpoint pipeline mode does not match the requested run mode.');
   }
 }
-

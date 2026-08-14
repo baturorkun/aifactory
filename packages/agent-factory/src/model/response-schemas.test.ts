@@ -27,8 +27,11 @@ test('coder schema leaves paths open when a task has no exact file list', () => 
 
 test('tester schema limits test paths to exact task target files', () => {
   const schema = buildTestOutputResponseSchema(['tests/existing-browser-harness.html']);
-  const tests = (schema.properties as Record<string, any>).tests;
-  assert.deepEqual(tests.items.properties.path, {
+  const properties = schema.properties as Record<string, unknown>;
+  const tests = properties.tests as Record<string, unknown>;
+  const items = tests.items as Record<string, unknown>;
+  const testProperties = items.properties as Record<string, unknown>;
+  assert.deepEqual(testProperties.path, {
     type: 'string',
     enum: ['tests/existing-browser-harness.html'],
   });
