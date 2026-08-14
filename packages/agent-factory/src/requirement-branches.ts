@@ -31,6 +31,7 @@ export interface SyncRequirementOptions extends PipelineOptions {
   sourceRef?: string;
   push?: boolean;
   resume?: boolean;
+  fresh?: boolean;
 }
 
 export interface SyncRequirementResult {
@@ -272,7 +273,7 @@ export function restoreCheckpoint(
   return checkpoint;
 }
 
-function deleteCheckpoint(
+export function discardCheckpoint(
   root: string,
   config: FactoryConfig,
   requirementId: string,
@@ -293,7 +294,7 @@ export async function syncRequirementBranch(
 ): Promise<SyncRequirementResult> {
   assertRequirementId(requirementId);
   const prepared = prepareBranch(requirementId, config, options.sourceRef);
-  if (prepared.previous?.requirementSha256 === prepared.requirementSha256) {
+  if (!options.fresh && prepared.previous?.requirementSha256 === prepared.requirementSha256) {
     return {
       requirementId,
       branch: prepared.branch,
@@ -303,7 +304,13 @@ export async function syncRequirementBranch(
   }
 
   const fast = resolveRequirementFast(requirementId, config, options.fast);
-  const resumeCheckpoint = options.resume === false
+  if (options.fresh && options.resume) {
+    throw new Error('Choose either fresh execution or checkpoint resume, not both.');
+  }
+  if (options.fresh) {
+    discardCheckpoint(prepared.root, config, requirementId);
+  }
+  const resumeCheckpoint = options.fresh || options.resume === false
     ? undefined
     : restoreCheckpoint(prepared, config, requirementId, fast);
   if (options.resume && !resumeCheckpoint) {
@@ -424,7 +431,7 @@ export async function syncRequirementBranch(
   if (options.push) {
     git(prepared.root, ['push', '--set-upstream', config.requirementBranches.remote, prepared.branch]);
   }
-  deleteCheckpoint(prepared.root, config, requirementId);
+  discardCheckpoint(prepared.root, config, requirementId);
   return {
     requirementId,
     branch: prepared.branch,

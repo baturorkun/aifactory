@@ -534,6 +534,16 @@ requirement file; it does not commit or push the change.
 
 Fast mode skips some review agents and uses fewer LLM calls.
 
+Task-level `targetFiles` are planning hints; the configured
+`targetProject.allowedPaths` remain the hard artifact security boundary. To
+discard an incompatible automatic checkpoint and restart cleanly, run:
+
+```bash
+pnpm factory sync-requirement RQ-0001 --fresh --push
+```
+
+Generated CI jobs also honor `AIFACTORY_FRESH=true` for a one-time clean retry.
+
 ### Force mock mode
 
 ```bash

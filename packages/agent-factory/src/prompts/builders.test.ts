@@ -43,9 +43,14 @@ const architecture: ArchitectureOutput = {
 };
 
 test('planner receives the complete requirement and constraints', () => {
-  const prompt = buildPlannerPrompt(requirement, { exactTaskCount: 1 });
+  const prompt = buildPlannerPrompt(
+    requirement,
+    { exactTaskCount: 1 },
+    ['src/editor/widgets/graphical/gp-line.ts'],
+  );
   assert.match(prompt, /Full requirement with `src\/main\.ts` constraints/);
   assert.match(prompt, /"exactTaskCount": 1/);
+  assert.match(prompt, /src\/editor\/widgets\/graphical\/gp-line\.ts/);
 });
 
 test('coder receives existing target content and allowed paths', () => {
@@ -61,7 +66,7 @@ test('coder receives existing target content and allowed paths', () => {
   assert.match(prompt, /package\.json/);
   assert.match(prompt, /mode "replace"/);
   assert.match(prompt, /### Task Artifact Paths/);
-  assert.match(prompt, /Do not create tests or any other file outside this task scope/);
+  assert.match(prompt, /These are planning hints/);
 });
 
 test('replace-mode file patches require exact find text', () => {
@@ -132,8 +137,8 @@ test('tester receives project constraints and existing browser harness conventio
   assert.match(prompt, /<pre id="result">waiting<\/pre>/);
   assert.match(prompt, /do not introduce unrelated behavioral requirements/);
   assert.match(prompt, /Use Jest only when the project already uses Jest/);
-  assert.match(prompt, /Every returned test path must be one of the files above/);
-  assert.match(prompt, /do not create a parallel test file/);
+  assert.match(prompt, /These are planning hints/);
+  assert.match(prompt, /Prefer an existing listed harness/);
   assert.match(prompt, /data-pass="true"/);
   assert.match(prompt, /Do not replace this contract/);
   assert.match(prompt, /do not await `requestAnimationFrame`/);

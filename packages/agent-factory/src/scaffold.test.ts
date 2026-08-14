@@ -92,6 +92,8 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /- factory\.config\.json/);
     assert.match(ci, /requirement decision/);
     assert.match(ci, /sync-requirement/);
+    assert.match(ci, /AIFACTORY_FRESH/);
+    assert.match(ci, /fresh_args\+=\(--fresh\)/);
     assert.match(ci, /--project "\$CI_PROJECT_DIR"/);
     assert.match(ci, /cd \.\.\/aifactory/);
     assert.match(ci, /RQ-\[0-9\]\+/);
@@ -125,6 +127,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.doesNotMatch(githubActions, /npm install --global @openai\/codex@latest/);
     assert.match(githubActions, /codex login --with-api-key/);
     assert.match(githubActions, /sync-requirement.*--push/);
+    assert.match(githubActions, /AIFACTORY_FRESH/);
     assert.match(githubActions, /requirement decision/);
     assert.match(githubActions, /upload-artifact@v4/);
     assert.match(githubActions, /requirements\/\$\{\{ steps\.requirement\.outputs\.id \}\}-\*\.md/);

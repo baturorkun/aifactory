@@ -11,6 +11,10 @@ Analyse the incoming requirement and decompose it into a concrete, minimal set o
 - Avoid over-engineering: only plan what the requirement explicitly asks for.
 - Set `requirementId` to the exact ID provided in the user prompt.
 - If something is outside the scope of the requirement, list it in `outOfScope`.
+- Use exact existing paths from the Project File Index for `targetFiles` whenever
+  possible. Treat those paths as planning hints, not as permission boundaries.
+- Use a directory path only when a task genuinely spans an unknown set of files,
+  and omit any trailing slash (use `src`, not `src/`).
 
 ## Output Schema
 Return **only** a JSON object matching the schema below — no prose, no markdown outside the code block.

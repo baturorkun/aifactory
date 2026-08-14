@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   changedRequirementIds,
   checkpointPushArgs,
+  discardCheckpoint,
   pushCheckpoint,
   requirementBranchName,
   restoreCheckpoint,
@@ -121,6 +122,8 @@ test('checkpoint branch preserves artifacts and restores validated task state', 
     assert.equal(restored?.previousRunId, 'run-1');
     assert.equal(readFileSync(join(project, 'src', 'main.ts'), 'utf8'), 'export const value = 2;\n');
     assert.match(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
+    discardCheckpoint(project, config, 'RQ-0037');
+    assert.doesNotMatch(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

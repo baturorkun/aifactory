@@ -278,7 +278,8 @@ program
   .option('--source-ref <ref>', 'Commit containing the requirement update; defaults to configured remote/base branch')
   .option('--push', 'Push the synchronized branch to the configured remote', false)
   .option('--fast', 'Override the requirement and use the fast AI pipeline')
-  .action(async (reqId: string, opts: { sourceRef?: string; push: boolean; fast?: boolean }) => {
+  .option('--fresh', 'Discard any automatic checkpoint and start from the planner')
+  .action(async (reqId: string, opts: { sourceRef?: string; push: boolean; fast?: boolean; fresh?: boolean }) => {
     try {
       const config = loadConfig();
       const decision = requirementExecutionDecision(reqId, config);
@@ -290,6 +291,7 @@ program
         sourceRef: opts.sourceRef,
         push: opts.push,
         fast: opts.fast,
+        fresh: opts.fresh,
       });
       if (!result.changed) {
         console.log(chalk.dim(`${result.requirementId} is unchanged on ${result.branch}.`));

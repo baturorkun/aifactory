@@ -18,6 +18,7 @@ import type { GateReport } from '@aifactory/quality-gates';
 export function buildPlannerPrompt(
   requirement: Requirement,
   constraints: Record<string, unknown>,
+  projectFiles: readonly string[] = [],
   ragContext?: string,
 ): string {
   const parts: string[] = [
@@ -42,6 +43,18 @@ export function buildPlannerPrompt(
     parts.push('', '### Constraints', '```json', JSON.stringify(constraints, null, 2), '```');
   }
 
+  if (projectFiles.length > 0) {
+    parts.push(
+      '',
+      '### Project File Index',
+      'Use exact paths from this list for task `targetFiles` whenever possible.',
+      'Task target files are planning hints; the project-level allowed paths remain the security boundary.',
+      '```text',
+      ...projectFiles,
+      '```',
+    );
+  }
+
   if (ragContext) parts.push('', ragContext);
 
   parts.push(
@@ -62,6 +75,7 @@ export function buildArchitectPrompt(
   plan: PlanOutput,
   requirement: Requirement,
   constraints: Record<string, unknown>,
+  projectFiles: readonly string[] = [],
   ragContext?: string,
 ): string {
   return [
@@ -81,6 +95,16 @@ export function buildArchitectPrompt(
     `Total tasks in plan: ${plan.tasks.length}`,
     ...(Object.keys(constraints).length
       ? ['', '### Project Constraints', '```json', JSON.stringify(constraints, null, 2), '```']
+      : []),
+    ...(projectFiles.length
+      ? [
+          '',
+          '### Project File Index',
+          'Use these real paths; do not invent replacement modules for existing responsibilities.',
+          '```text',
+          ...projectFiles,
+          '```',
+        ]
       : []),
     ...(ragContext ? ['', ragContext] : []),
     '',
@@ -128,7 +152,7 @@ export function buildCoderPrompt(
       '### Task Artifact Paths',
       ...task.targetFiles.map((path) => `- ${path}`),
       '',
-      'Every patch path must be one of the files above, or be inside a directory above. Do not create tests or any other file outside this task scope.',
+      'These are planning hints. Prefer them, but use another path when the existing architecture requires it and the path is inside the project-level allowed paths.',
     );
   }
 
@@ -255,7 +279,7 @@ export function buildTesterPrompt(
           '### Task Artifact Paths',
           ...task.targetFiles.map((path) => `- ${path}`),
           '',
-          'Every returned test path must be one of the files above, or be inside a directory above. Extend an existing harness when it is listed; do not create a parallel test file.',
+          'These are planning hints. Prefer an existing listed harness, but use another test path when required by the existing project conventions and global allowed paths.',
           '',
         ]
       : []),

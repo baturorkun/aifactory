@@ -55,6 +55,7 @@ pnpm factory -- --project ../myproject approve <run-id>
 | `factory run <req-id> --skip-gates` | Skip quality gates |
 | `factory run <req-id> --tasks task-1,task-2` | Run only specific tasks |
 | `factory resume-requirement <req-id> --push` | Resume a needs-fix requirement from its automatic checkpoint branch |
+| `factory sync-requirement <req-id> --fresh --push` | Discard a stale checkpoint and restart from Planner while preserving project-level path security |
 | `factory model-provider` | Print the configured model provider (used by CI preflight) |
 | `factory status` | List recent runs |
 | `factory status <run-id>` | Show details of a run |
@@ -272,6 +273,15 @@ that checkpoint, reuses the saved plan and architecture, skips passed tasks, and
 continues with the last reviewer/domain-guard findings. Use
 `resume-requirement <RQ-ID> --push` to require a checkpoint explicitly. A changed
 requirement hash, source commit, or fast/full mode invalidates the checkpoint.
+Use `sync-requirement <RQ-ID> --fresh --push` when an invalidated checkpoint must
+be discarded intentionally. Generated CI jobs accept `AIFACTORY_FRESH=true` and
+forward the same option for a one-time clean retry.
+
+Planner task target files are advisory scope hints. Coder and Tester may use a
+different path when the real project structure requires it, but every artifact
+must still pass the hard `targetProject.allowedPaths` boundary. Planner and
+Architect prompts include a bounded index of real files under that boundary so
+they can prefer existing modules instead of inventing paths.
 
 When a run ends in `needs-fix`, the CLI prints the structured findings in the job
 log and writes `failure-summary.json` under the run directory. The requirement MR

@@ -40,7 +40,7 @@ const architecture: ArchitectureOutput = {
   patterns: [], risks: [],
 };
 
-test('tester output is restricted to explicit task test targets', () => {
+test('task test targets are hints while project allowed paths remain enforced', () => {
   const target = { root: process.cwd(), applyArtifacts: false, allowedPaths: ['src', 'tests'], commands: {} };
   const output = (path: string) => ({
     taskId: 'task-1',
@@ -53,13 +53,13 @@ test('tester output is restricted to explicit task test targets', () => {
     ).tests.length,
     1,
   );
-  assert.throws(
-    () => validateTestOutputForTask(output('tests/parallel-harness.html'), task, {}, target),
-    /outside task test targets/,
+  assert.equal(
+    validateTestOutputForTask(output('tests/parallel-harness.html'), task, {}, target).tests.length,
+    1,
   );
   assert.throws(
-    () => validateTestOutputForTask(output('src/editor/core/render.ts'), task, {}, target),
-    /outside task test targets/,
+    () => validateTestOutputForTask(output('package.json'), task, {}, target),
+    /outside targetProject\.allowedPaths/,
   );
   const duplicate = output('tests/vertex-array-widgets-browser-harness.html');
   duplicate.tests.push({ ...duplicate.tests[0]! });

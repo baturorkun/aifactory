@@ -1,5 +1,5 @@
-import { writeFileSync, existsSync, readFileSync, readdirSync } from 'fs';
-import { extname, resolve, join } from 'path';
+import { writeFileSync, existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { basename, extname, resolve, join, relative } from 'path';
 import { z } from 'zod';
 import {
   PlanOutputSchema,
@@ -119,8 +119,21 @@ function makeValidator<T>(schema: z.ZodType<T>, label: string) {
 function taskAllowsPath(task: Task, artifactPath: string): boolean {
   if (!task.targetFiles?.length) return true;
   return task.targetFiles.some((targetPath) =>
-    extname(targetPath) ? artifactPath === targetPath : artifactPath === targetPath || artifactPath.startsWith(`${targetPath}/`),
+    pathMatchesHint(artifactPath, targetPath),
   );
+}
+
+function normalizeHintPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+function pathMatchesHint(artifactPath: string, hint: string): boolean {
+  const normalizedArtifact = normalizeHintPath(artifactPath);
+  const normalizedHint = normalizeHintPath(hint);
+  if (!normalizedHint) return false;
+  return extname(normalizedHint)
+    ? normalizedArtifact === normalizedHint
+    : normalizedArtifact === normalizedHint || normalizedArtifact.startsWith(`${normalizedHint}/`);
 }
 
 function taskTestPaths(task: Task): string[] {
@@ -138,9 +151,7 @@ function taskAllowsTestPath(task: Task, artifactPath: string): boolean {
   const targetPaths = taskTestPaths(task);
   if (!targetPaths.length) return true;
   return targetPaths.some((targetPath) =>
-    extname(targetPath)
-      ? artifactPath === targetPath
-      : artifactPath === targetPath || artifactPath.startsWith(`${targetPath}/`),
+    pathMatchesHint(artifactPath, targetPath),
   );
 }
 
@@ -152,8 +163,49 @@ function constraintAllowedPaths(constraints: Record<string, unknown>): string[] 
 function pathAllowedByHints(artifactPath: string, hints: readonly string[]): boolean {
   if (!hints.length) return true;
   return hints.some((hint) =>
-    extname(hint) ? artifactPath === hint : artifactPath === hint || artifactPath.startsWith(`${hint}/`),
+    pathMatchesHint(artifactPath, hint),
   );
+}
+
+const PROJECT_INDEX_EXTENSIONS = new Set([
+  '.c', '.cc', '.cpp', '.css', '.go', '.h', '.hpp', '.html', '.java', '.js',
+  '.json', '.jsx', '.md', '.mjs', '.py', '.rs', '.sh', '.ts', '.tsx', '.yaml', '.yml',
+]);
+const PROJECT_INDEX_MAX_FILES = 500;
+
+function projectFileIndex(target: TargetProjectConfig): string[] {
+  const targetRoot = resolveTargetRoot(target);
+  if (!targetRoot) return [];
+  const files = new Set<string>();
+  const visit = (absolutePath: string): void => {
+    if (files.size >= PROJECT_INDEX_MAX_FILES || !existsSync(absolutePath)) return;
+    const stats = statSync(absolutePath);
+    if (stats.isFile()) {
+      const projectPath = relative(targetRoot, absolutePath).replace(/\\/g, '/');
+      const extension = extname(projectPath).toLowerCase();
+      const explicitlyAllowedFile = target.allowedPaths.some(
+        (allowedPath) => normalizeHintPath(allowedPath) === projectPath,
+      );
+      if (
+        !basename(projectPath).startsWith('.') &&
+        (PROJECT_INDEX_EXTENSIONS.has(extension) || (!extension && explicitlyAllowedFile))
+      ) {
+        files.add(projectPath);
+      }
+      return;
+    }
+    if (!stats.isDirectory()) return;
+    for (const entry of readdirSync(absolutePath, { withFileTypes: true })) {
+      if (files.size >= PROJECT_INDEX_MAX_FILES) break;
+      if (entry.isSymbolicLink() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      visit(join(absolutePath, entry.name));
+    }
+  };
+  for (const allowedPath of target.allowedPaths) {
+    const absolutePath = validateConfiguredPath(target, allowedPath);
+    if (absolutePath) visit(absolutePath);
+  }
+  return [...files].sort();
 }
 
 function validateConfiguredPath(target: TargetProjectConfig, artifactPath: string): string | undefined {
@@ -306,9 +358,6 @@ function makeCodeValidator(task: Task, target: TargetProjectConfig) {
       throw new Error('Coder output contains duplicate patch paths. Return one cumulative patch per file.');
     }
     const patches = parsed.patches.map((patch) => {
-      if (!taskAllowsPath(task, patch.path)) {
-        throw new Error(`Coder artifact path is outside task.targetFiles: ${patch.path}`);
-      }
       const absolutePath = validateConfiguredPath(target, patch.path);
       if (patch.mode !== 'replace') return patch;
       if (!absolutePath || !existsSync(absolutePath)) {
@@ -327,21 +376,11 @@ function makeCodeValidator(task: Task, target: TargetProjectConfig) {
 }
 
 function coderResponseSchema(task: Task): Record<string, unknown> {
-  const targetFiles = task.targetFiles;
-  const exactTargetFiles =
-    targetFiles?.length && targetFiles.every((targetPath) => extname(targetPath))
-      ? targetFiles
-      : undefined;
-  return buildCodePatchResponseSchema(exactTargetFiles);
+  return buildCodePatchResponseSchema();
 }
 
 function testerResponseSchema(task: Task): Record<string, unknown> {
-  const targetFiles = taskTestPaths(task);
-  const exactTargetFiles =
-    targetFiles.length && targetFiles.every((targetPath) => extname(targetPath))
-      ? targetFiles
-      : undefined;
-  return buildTestOutputResponseSchema(exactTargetFiles);
+  return buildTestOutputResponseSchema();
 }
 
 export function validateTestOutputForTask(
@@ -357,9 +396,6 @@ export function validateTestOutputForTask(
   }
   const constraintPaths = constraintAllowedPaths(constraints);
   for (const test of parsed.tests) {
-    if (!taskAllowsTestPath(task, test.path)) {
-      throw new Error(`Tester artifact path is outside task test targets: ${test.path}`);
-    }
     if (!pathAllowedByHints(test.path, constraintPaths)) {
       throw new Error(`Tester artifact path is outside requirement constraints: ${test.path}`);
     }
@@ -816,6 +852,7 @@ async function runPlannerAgent(
     userPrompt: buildPlannerPrompt(
       requirement,
       constraints,
+      projectFileIndex(config.targetProject),
       formatGroundingContext(config, ragGrounding, 'planner'),
     ),
     model,
@@ -880,6 +917,7 @@ async function runTaskPipeline(
         plan,
         requirement,
         constraints,
+        projectFileIndex(config.targetProject),
         formatGroundingContext(config, ragGrounding, 'architect'),
       ),
       model: primaryModel,
