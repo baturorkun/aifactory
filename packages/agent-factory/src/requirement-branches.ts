@@ -72,8 +72,14 @@ export function checkpointPushArgs(
   remote: string,
   commit: string,
   branch: string,
+  options: { noPipeline?: boolean } = {},
 ): string[] {
-  return ['push', remote, `${commit}:refs/heads/${branch}`];
+  return [
+    'push',
+    ...(options.noPipeline ? ['-o', 'ci.no_pipeline'] : []),
+    remote,
+    `${commit}:refs/heads/${branch}`,
+  ];
 }
 
 function sha256(value: string): string {
@@ -232,9 +238,11 @@ export function pushCheckpoint(
       '-p',
       parent,
       '-m',
-      `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId} [skip ci]`,
+      `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId}`,
     ]);
-    git(prepared.root, checkpointPushArgs(remote, commit, branch));
+    git(prepared.root, checkpointPushArgs(remote, commit, branch, {
+      noPipeline: Boolean(config.repositoryPlatforms.gitlab),
+    }));
   } finally {
     rmSync(indexPath, { force: true });
   }
