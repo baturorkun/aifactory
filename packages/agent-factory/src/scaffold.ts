@@ -1037,6 +1037,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       '- Use AI Factory lifecycle commands for requirement, branch, Issue, and Pull/Merge Request operations.',
       '- Create a requirement with `factory requirement new <title>`; do not create its requirement file, branch, Issue, or Draft Pull/Merge Request manually.',
       '- Submit a completed draft with `factory requirement submit <requirement-id>`.',
+      '- Change a requirement execution mode with `factory requirement mode <requirement-id> <pipeline|handoff>`; the CLI command is `mode`, not `set-mode`.',
       '- Recover or synchronize repository-platform links with `factory requirement platform-sync <requirement-id>`.',
       '- Cancel a requirement with `factory requirement cancel <requirement-id>`; do not close its Pull/Merge Request or delete its branch manually.',
       '- Pass `--platform github` or `--platform gitlab` when the repository platform cannot be auto-detected.',

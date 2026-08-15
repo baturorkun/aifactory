@@ -84,6 +84,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(agentGuidelines, /## AI Factory Workflow/);
     assert.match(agentGuidelines, /factory requirement new <title>/);
     assert.match(agentGuidelines, /factory requirement submit <requirement-id>/);
+    assert.match(agentGuidelines, /factory requirement mode <requirement-id> <pipeline\|handoff>/);
     assert.match(agentGuidelines, /factory requirement platform-sync <requirement-id>/);
     assert.match(agentGuidelines, /factory requirement cancel <requirement-id>/);
     assert.match(ci, /ai_factory_requirement_branch:/);
