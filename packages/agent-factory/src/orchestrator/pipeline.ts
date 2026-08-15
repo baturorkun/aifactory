@@ -366,28 +366,45 @@ function cumulativeCodeForTask(
 }
 
 function makeCodeValidator(task: Task, target: TargetProjectConfig) {
-  return (raw: unknown): CodePatchOutput => {
-    const parsed = CodePatchOutputSchema.parse(raw);
-    const paths = parsed.patches.map((patch) => patch.path);
-    if (new Set(paths).size !== paths.length) {
-      throw new Error('Coder output contains duplicate patch paths. Return one cumulative patch per file.');
+  return (raw: unknown): CodePatchOutput => validateCodeOutputForTask(raw, task, target);
+}
+
+export function validateCodeOutputForTask(
+  raw: unknown,
+  _task: Task,
+  target: TargetProjectConfig,
+): CodePatchOutput {
+  const parsed = CodePatchOutputSchema.parse(raw);
+  const patchesByPath = new Map<string, typeof parsed.patches>();
+  for (const patch of parsed.patches) {
+    const patches = patchesByPath.get(patch.path) ?? [];
+    patches.push(patch);
+    patchesByPath.set(patch.path, patches);
+  }
+  const patches = [...patchesByPath.values()].map((pathPatches) => {
+    const [first] = pathPatches;
+    if (!first) throw new Error('Coder output contains an empty patch group.');
+    if (pathPatches.length > 1 && pathPatches.some((patch) => patch.mode === 'full')) {
+      throw new Error('Coder output contains duplicate patch paths with a full patch. Return one cumulative patch per file.');
     }
-    const patches = parsed.patches.map((patch) => {
-      const absolutePath = validateConfiguredPath(target, patch.path);
+    const absolutePath = validateConfiguredPath(target, first.path);
+    if (pathPatches.some((patch) => patch.mode === 'replace') && (!absolutePath || !existsSync(absolutePath))) {
+      throw new Error(`Cannot apply exact-text replacement to missing file: ${first.path}`);
+    }
+    let current = absolutePath && existsSync(absolutePath) ? readFileSync(absolutePath, 'utf8') : undefined;
+    for (const patch of pathPatches) {
       if (patch.mode !== 'replace') return patch;
-      if (!absolutePath || !existsSync(absolutePath)) {
-        throw new Error(`Cannot apply exact-text replacement to missing file: ${patch.path}`);
-      }
-      const current = readFileSync(absolutePath, 'utf8');
       const find = patch.find!;
-      const occurrences = current.split(find).length - 1;
+      const occurrences = current!.split(find).length - 1;
       if (occurrences !== 1) {
         throw new Error(`Replacement find text must occur exactly once in ${patch.path}; found ${occurrences}`);
       }
-      return { ...patch, mode: 'full' as const, find: undefined, content: current.replace(find, patch.content) };
-    });
-    return { ...parsed, patches };
-  };
+      current = current!.replace(find, patch.content);
+    }
+    const last = pathPatches.at(-1)!;
+    return { ...last, mode: 'full' as const, find: undefined, content: current! };
+  });
+  return { ...parsed, patches };
 }
 
 function coderResponseSchema(task: Task): Record<string, unknown> {

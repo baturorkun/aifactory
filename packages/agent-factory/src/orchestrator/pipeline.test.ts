@@ -7,7 +7,13 @@ import type { ArchitectureOutput, Requirement, Task } from '@aifactory/contracts
 import { FactoryConfigSchema } from '../config';
 import { PipelineCheckpointSchema, type PipelineCheckpointProgress } from './checkpoint';
 import { readManifest } from './manifest';
-import { collectCoderExistingFiles, collectReviewSupportingFiles, runPipeline, validateTestOutputForTask } from './pipeline';
+import {
+  collectCoderExistingFiles,
+  collectReviewSupportingFiles,
+  runPipeline,
+  validateCodeOutputForTask,
+  validateTestOutputForTask,
+} from './pipeline';
 
 const task: Task = {
   id: 'task-1',
@@ -123,6 +129,29 @@ test('coder context includes architecture dependencies and blocker files outside
       'src/editor/geometry/affine.ts',
       'src/editor/widgets/definitions.ts',
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('coder validator combines sequential replace patches for one file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-coder-patches-'));
+  try {
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src/feature.ts'), 'const first = 1;\nconst second = 2;\n');
+    const output = validateCodeOutputForTask({
+      taskId: task.id,
+      patches: [
+        { path: 'src/feature.ts', language: 'typescript', mode: 'replace', find: 'first = 1', content: 'first = 3' },
+        { path: 'src/feature.ts', language: 'typescript', mode: 'replace', find: 'second = 2', content: 'second = 4' },
+      ],
+      notes: [], dependencies: [],
+    }, task, { root, applyArtifacts: true, allowedPaths: ['src'], commands: {} });
+    assert.deepEqual(output.patches, [{
+      path: 'src/feature.ts', language: 'typescript', mode: 'full',
+      find: undefined,
+      content: 'const first = 3;\nconst second = 4;\n',
+    }]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
