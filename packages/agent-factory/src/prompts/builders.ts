@@ -169,7 +169,7 @@ export function buildCoderPrompt(
     }
     parts.push(
       '',
-      'Preserve all unrelated existing code. Prefer mode "replace" with a small, non-empty, uniquely matching exact `find` block for existing files. Never return an empty `find`. If a safe exact replacement is impossible, use mode "full" and return the complete file content.',
+      'Preserve all unrelated existing code. Prefer mode "replace" with a small, non-empty, uniquely matching exact `find` block for existing files. Before returning a replace patch, verify that its `find` text appears exactly once in the supplied file. If the target code is repeated or you cannot make the match unique with surrounding context, use mode "full" and return the complete file content. Never return an empty `find` or a replace patch that could match multiple locations.',
     );
   }
 

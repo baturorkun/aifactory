@@ -65,6 +65,8 @@ test('coder receives existing target content and allowed paths', () => {
   assert.match(prompt, /function formatBuildDate\(\) \{\}/);
   assert.match(prompt, /package\.json/);
   assert.match(prompt, /mode "replace"/);
+  assert.match(prompt, /appears exactly once/);
+  assert.match(prompt, /target code is repeated/);
   assert.match(prompt, /### Task Artifact Paths/);
   assert.match(prompt, /These are planning hints/);
 });
