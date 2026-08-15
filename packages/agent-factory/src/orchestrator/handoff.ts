@@ -125,25 +125,25 @@ function readBaseline(runDir: string): HandoffBaseline {
   return JSON.parse(readFileSync(baselinePath(runDir), 'utf8')) as HandoffBaseline;
 }
 
-function requireHandoffRun(runDir: string): RunManifest {
+function requireImplementationRun(runDir: string, expectedMode: 'handoff' | 'direct'): RunManifest {
   if (!existsSync(join(runDir, 'manifest.json'))) {
     throw new Error(`Run not found: ${runDir}`);
   }
   const manifest = readManifest(runDir);
-  if (manifest.executionMode !== 'handoff') {
-    throw new Error(`Run ${manifest.runId} is not a handoff run.`);
+  if (manifest.executionMode !== expectedMode) {
+    throw new Error(`Run ${manifest.runId} is not a ${expectedMode} run.`);
   }
   return manifest;
 }
 
-export function beginHandoffRun(runId: string, config: FactoryConfig): RunManifest {
+export function beginImplementationRun(runId: string, config: FactoryConfig, mode: 'handoff' | 'direct'): RunManifest {
   const runDir = resolve(config.paths.runs, runId);
-  const manifest = requireHandoffRun(runDir);
+  const manifest = requireImplementationRun(runDir, mode);
   if (manifest.status === 'passed' || manifest.status === 'approved') {
     throw new Error(`Handoff run ${runId} is already ${manifest.status}.`);
   }
   setRunStatus(runDir, 'running');
-  updateStep(runDir, 'handoff', undefined, {
+  updateStep(runDir, mode, undefined, {
     status: 'running',
     startedAt: new Date().toISOString(),
     error: undefined,
@@ -151,21 +151,26 @@ export function beginHandoffRun(runId: string, config: FactoryConfig): RunManife
   return readManifest(runDir);
 }
 
+export function beginHandoffRun(runId: string, config: FactoryConfig): RunManifest {
+  return beginImplementationRun(runId, config, 'handoff');
+}
+
 export interface FinishHandoffOptions {
   skipGates?: boolean;
 }
 
-export async function finishHandoffRun(
+export async function finishImplementationRun(
   runId: string,
   config: FactoryConfig,
+  mode: 'handoff' | 'direct',
   options: FinishHandoffOptions = {},
 ): Promise<RunManifest> {
   const runDir = resolve(config.paths.runs, runId);
-  let manifest = requireHandoffRun(runDir);
+  let manifest = requireImplementationRun(runDir, mode);
   if (manifest.status === 'approved') {
     throw new Error(`Handoff run ${runId} is already approved.`);
   }
-  if (manifest.status !== 'running') beginHandoffRun(runId, config);
+  if (manifest.status !== 'running') beginImplementationRun(runId, config, mode);
 
   try {
     const baseline = readBaseline(runDir);
@@ -211,14 +216,14 @@ export async function finishHandoffRun(
     updateGateResults(runDir, gateResults);
 
     const hasFailedGates = Object.values(gateResults).some((result) => result === 'failed');
-    updateStep(runDir, 'handoff', undefined, {
+    updateStep(runDir, mode, undefined, {
       status: hasFailedGates ? 'needs-fix' : 'passed',
       finishedAt: new Date().toISOString(),
     });
     setRunStatus(runDir, hasFailedGates ? 'needs-fix' : 'passed');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    updateStep(runDir, 'handoff', undefined, {
+    updateStep(runDir, mode, undefined, {
       status: 'failed',
       finishedAt: new Date().toISOString(),
       error: message,
@@ -231,13 +236,22 @@ export async function finishHandoffRun(
   return manifest;
 }
 
-export async function createHandoffPackage(
+export async function finishHandoffRun(
+  runId: string,
+  config: FactoryConfig,
+  options: FinishHandoffOptions = {},
+): Promise<RunManifest> {
+  return finishImplementationRun(runId, config, 'handoff', options);
+}
+
+async function createImplementationPackage(
   requirementId: string,
   config: FactoryConfig,
+  executionMode: 'handoff' | 'direct',
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const requirement = parseRequirement(requirementId, config.paths.requirements);
-  assertRequirementExecution(requirement, 'handoff');
+  assertRequirementExecution(requirement, executionMode);
   const constraints = loadConstraints(requirementId, config.paths.constraints);
   const projectGuidelines = loadProjectGuidelines(config);
   const handoffsDir = resolve(config.paths.handoffs);
@@ -248,7 +262,7 @@ export async function createHandoffPackage(
   const targetRoot = resolve(config.targetProject.root ?? '.');
   const handoffPath = normalizeRelativePath(join(config.paths.handoffs, runId, 'handoff.md'));
   const runDir = createRunDir(runsDir, runId, requirementId, {
-    executionMode: 'handoff',
+    executionMode,
     handoffPath,
   });
   recordProjectGuidelines(runDir, projectGuidelines);
@@ -269,7 +283,7 @@ export async function createHandoffPackage(
   }
   writeBaseline(runDir, targetRoot, config.targetProject.allowedPaths);
   addStep(runDir, {
-    agent: 'handoff',
+    agent: executionMode,
     status: 'pending',
     retries: 0,
   });
@@ -325,15 +339,19 @@ export async function createHandoffPackage(
     ? ['## Project Guidelines', '', projectGuidelines.prompt, '']
     : [];
   const content = [
-    '# Manual Handoff',
+    executionMode === 'direct' ? '# Codex Direct Run' : '# Manual Handoff',
     '',
     `Run ID: \`${runId}\``,
     '',
-    'Use this handoff in the manual implementation flow when you want an external implementer to complete the requirement without running the AI Factory agent pipeline.',
+    executionMode === 'direct'
+      ? 'This package is the grounded context for one direct, workspace-writing Codex CLI implementation run.'
+      : 'Use this handoff in the manual implementation flow when you want an external implementer to complete the requirement without running the AI Factory agent pipeline.',
     '',
     '## Instruction for Implementer',
     '',
-    'Read the requirement and constraints below, inspect the target project, implement the change directly in the workspace, and run the configured local checks. Do not call the AI Factory LLM pipeline for this task.',
+    executionMode === 'direct'
+      ? 'Implement the requirement directly in the workspace. Respect the allowed paths, run the configured checks, and report the result succinctly.'
+      : 'Read the requirement and constraints below, inspect the target project, implement the change directly in the workspace, and run the configured local checks. Do not call the AI Factory LLM pipeline for this task.',
     '',
     '## Target Project',
     '',
@@ -362,4 +380,21 @@ export async function createHandoffPackage(
   ].join('\n');
   writeFileSync(join(handoffDir, 'handoff.md'), content, 'utf8');
   return runId;
+}
+
+export async function createHandoffPackage(
+  requirementId: string,
+  config: FactoryConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  return createImplementationPackage(requirementId, config, 'handoff', fetchImpl);
+}
+
+/** Create the same grounded implementation package used by handoff, but for Codex direct mode. */
+export async function createDirectPackage(
+  requirementId: string,
+  config: FactoryConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string> {
+  return createImplementationPackage(requirementId, config, 'direct', fetchImpl);
 }

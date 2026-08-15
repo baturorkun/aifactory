@@ -84,7 +84,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(agentGuidelines, /## AI Factory Workflow/);
     assert.match(agentGuidelines, /factory requirement new <title>/);
     assert.match(agentGuidelines, /factory requirement submit <requirement-id>/);
-    assert.match(agentGuidelines, /factory requirement mode <requirement-id> <pipeline\|handoff>/);
+    assert.match(agentGuidelines, /factory requirement mode <requirement-id> <pipeline\|handoff\|direct>/);
     assert.match(agentGuidelines, /factory requirement platform-sync <requirement-id>/);
     assert.match(agentGuidelines, /factory requirement cancel <requirement-id>/);
     assert.match(ci, /ai_factory_requirement_branch:/);
@@ -114,7 +114,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /export CODEX_HOME="\$MOUNTED_CODEX_HOME"/);
     assert.match(ci, /test -r "\$CODEX_HOME\/auth\.json"/);
     assert.match(ci, /codex login status/);
-    assert.match(ci, /handoff\)[\s\S]*GitLab AI Factory execution is skipped/);
+    assert.match(ci, /handoff\|direct\)[\s\S]*GitLab AI Factory pipeline execution is skipped/);
     assert.match(githubActions, /name: AI Factory/);
     assert.match(githubActions, /factory\/RQ-\*/);
     assert.match(githubActions, /contents: write/);

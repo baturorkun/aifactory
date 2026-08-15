@@ -10,6 +10,7 @@ import {
   createHandoffPackage,
   finishHandoffRun,
 } from './orchestrator/handoff';
+import { runDirectCodex } from './orchestrator/direct';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import {
@@ -84,13 +85,13 @@ const requirement = program
 requirement
   .command('new <title>')
   .description('Reserve the next requirement ID on main and switch to its draft branch')
-  .option('--mode <mode>', 'Execution mode: handoff or pipeline', 'handoff')
+  .option('--mode <mode>', 'Execution mode: handoff, pipeline, or direct', 'handoff')
   .option('--platform <platform>', 'Repository platform: github, gitlab, or none')
   .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline', false)
   .action(async (title: string, opts: { mode: string; fast: boolean; platform?: string }) => {
     try {
-      if (opts.mode !== 'handoff' && opts.mode !== 'pipeline') {
-        throw new Error('Invalid mode. Choose handoff or pipeline.');
+      if (!['handoff', 'pipeline', 'direct'].includes(opts.mode)) {
+        throw new Error('Invalid mode. Choose handoff, pipeline, or direct.');
       }
       const result = await createDraftRequirement(
         title,
@@ -186,8 +187,8 @@ requirement
   .description('Change a draft requirement execution mode without committing or pushing')
   .action((reqId: string, mode: string) => {
     try {
-      if (mode !== 'handoff' && mode !== 'pipeline') {
-        throw new Error('Invalid mode. Choose handoff or pipeline.');
+      if (!['handoff', 'pipeline', 'direct'].includes(mode)) {
+        throw new Error('Invalid mode. Choose handoff, pipeline, or direct.');
       }
       const updated = setRequirementMode(
         reqId,
@@ -403,6 +404,23 @@ program
       printRunSummary(readManifest(resolve(config.paths.runs, runId)));
       console.log(chalk.dim(`\n  Begin  : pnpm factory -- handoff-begin ${runId}`));
       console.log(chalk.dim(`  Finish : pnpm factory -- handoff-finish ${runId}\n`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('direct <reqId>')
+  .description('Run one workspace-writing Codex CLI implementation pass, then quality gates')
+  .action(async (reqId: string) => {
+    try {
+      const runId = await runDirectCodex(reqId, loadConfig());
+      const manifest = readManifest(resolve(loadConfig().paths.runs, runId));
+      printRunSummary(manifest);
+      console.log(manifest.status === 'passed'
+        ? chalk.green(`\n✓ Direct Codex run passed — Run: ${chalk.bold(runId)}`)
+        : chalk.yellow(`\n⚠ Direct Codex run needs attention — Run: ${chalk.bold(runId)}`));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

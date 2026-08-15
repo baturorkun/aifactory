@@ -23,7 +23,7 @@ export interface RequirementPlatformContext {
   title: string;
   branch: string;
   targetBranch: string;
-  executionMode: 'handoff' | 'pipeline';
+  executionMode: 'handoff' | 'pipeline' | 'direct';
   requirementFile: string;
 }
 

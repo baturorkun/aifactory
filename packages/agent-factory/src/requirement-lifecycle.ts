@@ -795,6 +795,7 @@ export async function submitRequirement(
     };
   }
 
+  const mode = requirement.lifecycle!.executionMode;
   const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
   if (requirement.lifecycle!.repositoryProvider) {
     await syncRequirementPlatform(id, config, {
@@ -805,14 +806,14 @@ export async function submitRequirement(
   git(root, ['add', requirementFile]);
   const staged = spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: root });
   if (staged.status === 1) {
-    git(root, ['commit', '-m', `requirement(${id}): submit for pipeline`]);
+    git(root, ['commit', '-m', `requirement(${id}): submit for ${mode}`]);
   } else if (staged.status !== 0) {
     throw new Error(`Could not inspect staged changes for ${id}.`);
   }
   git(root, ['push', config.requirementBranches.remote, `HEAD:${branch}`]);
   return {
     requirementId: id,
-    mode: 'pipeline',
+    mode,
     status: 'ready',
     pipelineFast: requirement.lifecycle!.pipelineFast,
     pushed: true,
@@ -822,13 +823,14 @@ export async function submitRequirement(
 export function requirementExecutionDecision(
   requirementId: string,
   config: FactoryConfig,
-): 'run' | 'draft' | 'handoff' | 'legacy' {
+): 'run' | 'draft' | 'handoff' | 'direct' | 'legacy' {
   const requirement = parseRequirement(requirementId, config.paths.requirements);
   if (!requirement.lifecycle) return 'legacy';
   const { root, requirementPath } = assertActiveRequirementBranch(requirementId, config);
   assertRequirementIsolation(requirementId, root, requirementPath, config);
   if (requirement.lifecycle.status !== 'ready') return 'draft';
-  return requirement.lifecycle.executionMode === 'pipeline' ? 'run' : 'handoff';
+  if (requirement.lifecycle.executionMode === 'pipeline') return 'run';
+  return requirement.lifecycle.executionMode;
 }
 
 export function assertRequirementExecution(

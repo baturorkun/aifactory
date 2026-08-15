@@ -12,6 +12,7 @@ export const AgentRoleSchema = z.enum([
   'reviewer',
   'domain-guard',
   'handoff',
+  'direct',
 ]);
 export type AgentRole = z.infer<typeof AgentRoleSchema>;
 
@@ -221,7 +222,7 @@ export type GateResults = z.infer<typeof GateResultsSchema>;
 export const RunManifestSchema = z.object({
   runId: z.string(),
   requirementId: z.string(),
-  executionMode: z.enum(['agent', 'handoff']).default('agent'),
+  executionMode: z.enum(['agent', 'handoff', 'direct']).default('agent'),
   fast: z.boolean().default(false),
   handoffPath: z.string().optional(),
   projectGuidelines: z
@@ -262,7 +263,7 @@ export type RunManifest = z.infer<typeof RunManifestSchema>;
 export const RequirementStatusSchema = z.enum(['draft', 'ready', 'completed', 'cancelled']);
 export type RequirementStatus = z.infer<typeof RequirementStatusSchema>;
 
-export const RequirementExecutionModeSchema = z.enum(['handoff', 'pipeline']);
+export const RequirementExecutionModeSchema = z.enum(['handoff', 'pipeline', 'direct']);
 export type RequirementExecutionMode = z.infer<typeof RequirementExecutionModeSchema>;
 
 export const RequirementLifecycleSchema = z.object({
