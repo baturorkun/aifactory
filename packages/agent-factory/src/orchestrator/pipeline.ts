@@ -214,9 +214,24 @@ function validateConfiguredPath(target: TargetProjectConfig, artifactPath: strin
   return validateTargetPath(targetRoot, artifactPath, target.allowedPaths);
 }
 
-function existingTaskFiles(task: Task, target: TargetProjectConfig): Array<{ path: string; content: string }> {
-  if (!task.targetFiles?.length) return [];
-  return task.targetFiles.flatMap((artifactPath) => {
+export function collectCoderExistingFiles(
+  task: Task,
+  architecture: ArchitectureOutput,
+  target: TargetProjectConfig,
+  fixContext?: FixContext,
+): Array<{ path: string; content: string }> {
+  const paths = new Set<string>(task.targetFiles ?? []);
+  for (const component of architecture.components) {
+    paths.add(component.path);
+    for (const dependency of component.dependencies) paths.add(dependency);
+  }
+  for (const finding of fixContext?.reviewFindings ?? []) {
+    if (finding.file) paths.add(finding.file);
+  }
+  for (const violation of fixContext?.domainViolations ?? []) {
+    if (violation.file) paths.add(violation.file);
+  }
+  return [...paths].sort().flatMap((artifactPath) => {
     const absolutePath = validateConfiguredPath(target, artifactPath);
     if (!absolutePath || !existsSync(absolutePath) || extname(artifactPath) === '') return [];
     return [{ path: artifactPath, content: readFileSync(absolutePath, 'utf8') }];
@@ -987,7 +1002,7 @@ async function runTaskPipeline(
           architecture,
           requirement,
           constraints,
-          existingTaskFiles(task, config.targetProject),
+          collectCoderExistingFiles(task, architecture, config.targetProject, fixContext),
           config.targetProject.allowedPaths,
           fixContext,
           formatGroundingContext(config, ragGrounding, 'coder'),

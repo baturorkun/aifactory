@@ -7,7 +7,7 @@ import type { ArchitectureOutput, Requirement, Task } from '@aifactory/contracts
 import { FactoryConfigSchema } from '../config';
 import { PipelineCheckpointSchema, type PipelineCheckpointProgress } from './checkpoint';
 import { readManifest } from './manifest';
-import { collectReviewSupportingFiles, runPipeline, validateTestOutputForTask } from './pipeline';
+import { collectCoderExistingFiles, collectReviewSupportingFiles, runPipeline, validateTestOutputForTask } from './pipeline';
 
 const task: Task = {
   id: 'task-1',
@@ -86,6 +86,43 @@ test('review context resolves referenced unchanged files by basename', () => {
       path: 'src/editor/core/canvas-interaction.ts',
       content: 'existing keyboard handler',
     }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('coder context includes architecture dependencies and blocker files outside task hints', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-coder-context-'));
+  try {
+    mkdirSync(join(root, 'src/editor/core'), { recursive: true });
+    mkdirSync(join(root, 'src/editor/geometry'), { recursive: true });
+    mkdirSync(join(root, 'src/editor/widgets'), { recursive: true });
+    writeFileSync(join(root, 'src/editor/widgets/definitions.ts'), 'task target');
+    writeFileSync(join(root, 'src/editor/geometry/affine.ts'), 'architecture dependency');
+    writeFileSync(join(root, 'src/editor/core/geometry.ts'), 'review blocker');
+    const files = collectCoderExistingFiles(
+      { ...task, targetFiles: ['src/editor/widgets/definitions.ts'] },
+      {
+        ...architecture,
+        components: [{
+          ...architecture.components[0]!,
+          path: 'src/editor/widgets/definitions.ts',
+          dependencies: ['src/editor/geometry/affine.ts'],
+        }],
+      },
+      { root, applyArtifacts: true, allowedPaths: ['src'], commands: {} },
+      {
+        reviewFindings: [{
+          severity: 'blocker', file: 'src/editor/core/geometry.ts', message: 'Fix geometry.',
+        }],
+        domainViolations: [],
+      },
+    );
+    assert.deepEqual(files.map((file) => file.path), [
+      'src/editor/core/geometry.ts',
+      'src/editor/geometry/affine.ts',
+      'src/editor/widgets/definitions.ts',
+    ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
