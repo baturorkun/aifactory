@@ -267,8 +267,9 @@ requirement.md
 ```
 
 Requirement-branch synchronization checkpoints every reviewed task iteration and
-failed quality-gate repair state to
-`factory-checkpoint/<RQ-ID>`. A retry of `sync-requirement` automatically restores
+failed quality-gate repair state to the custom Git ref
+`refs/aifactory/checkpoints/<RQ-ID>`. Because it is neither a branch nor a tag,
+checkpoint updates do not create GitHub Actions runs or GitLab pipelines. A retry of `sync-requirement` automatically restores
 that checkpoint, reuses the saved plan and architecture, skips passed tasks, and
 continues with the last reviewer/domain-guard findings. Use
 `resume-requirement <RQ-ID> --push` to require a checkpoint explicitly. A changed
@@ -277,9 +278,9 @@ Use `sync-requirement <RQ-ID> --fresh --push` when an invalidated checkpoint mus
 be discarded intentionally. Generated CI jobs accept `AIFACTORY_FRESH=true` and
 forward the same option for a one-time clean retry.
 
-Checkpoint commits always include `[skip ci]`, which suppresses push pipelines
-on both GitHub and GitLab without platform detection. Generated GitLab pipelines
-also reject `factory-checkpoint/*` at the workflow level as defense in depth.
+Legacy `factory-checkpoint/*` branches remain readable during migration. Generated
+GitLab pipelines also reject those legacy branches at the workflow level as defense
+in depth.
 
 Planner task target files are advisory scope hints. Coder and Tester may use a
 different path when the real project structure requires it, but every artifact

@@ -129,6 +129,13 @@ export function checkpointBranchName(requirementId: string): string {
   return `factory-checkpoint/${requirementId.toUpperCase()}`;
 }
 
+export function checkpointRefName(requirementId: string): string {
+  if (!/^RQ-[0-9]+$/i.test(requirementId)) {
+    throw new Error(`Invalid requirement ID: ${requirementId}`);
+  }
+  return `refs/aifactory/checkpoints/${requirementId.toUpperCase()}`;
+}
+
 export function checkpointStatePath(projectRoot: string, requirementId: string): string {
   return resolve(
     projectRoot,

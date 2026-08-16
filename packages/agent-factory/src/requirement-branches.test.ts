@@ -26,14 +26,10 @@ test('requirement branch names are stable and reject unsafe IDs', () => {
   assert.throws(() => requirementBranchName('../main'), /Invalid requirement ID/);
 });
 
-test('checkpoint pushes use platform-neutral git arguments unless pipeline creation is explicitly suppressed', () => {
+test('checkpoint pushes use a CI-neutral custom ref namespace', () => {
   assert.deepEqual(
-    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1'),
-    ['push', 'origin', 'abc123:refs/heads/factory-checkpoint/RQ-1'],
-  );
-  assert.deepEqual(
-    checkpointPushArgs('origin', 'abc123', 'factory-checkpoint/RQ-1', { noPipeline: true }),
-    ['push', '-o', 'ci.no_pipeline', 'origin', 'abc123:refs/heads/factory-checkpoint/RQ-1'],
+    checkpointPushArgs('origin', 'abc123', 'refs/aifactory/checkpoints/RQ-1'),
+    ['push', 'origin', 'abc123:refs/aifactory/checkpoints/RQ-1'],
   );
 });
 
@@ -63,7 +59,7 @@ test('changed requirements are detected from added and updated Markdown files', 
   }
 });
 
-test('checkpoint branch preserves artifacts and restores validated task state', () => {
+test('checkpoint ref preserves artifacts and restores validated task state', () => {
   const root = mkdtempSync(join(tmpdir(), 'aifactory-checkpoint-branch-'));
   const remote = join(root, 'remote.git');
   const project = join(root, 'project');
@@ -122,11 +118,21 @@ test('checkpoint branch preserves artifacts and restores validated task state', 
     const restored = restoreCheckpoint(prepared, config, 'RQ-0037', false);
     assert.equal(restored?.previousRunId, 'run-1');
     assert.equal(readFileSync(join(project, 'src', 'main.ts'), 'utf8'), 'export const value = 2;\n');
-    assert.match(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
+    assert.match(git(remote, 'show-ref'), /refs\/aifactory\/checkpoints\/RQ-0037/);
+    assert.doesNotMatch(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
     assert.match(
-      git(remote, 'log', '-1', '--format=%s', 'refs/heads/factory-checkpoint/RQ-0037'),
+      git(remote, 'log', '-1', '--format=%s', 'refs/aifactory/checkpoints/RQ-0037'),
       /^checkpoint\(RQ-0037\): run-1$/,
     );
+    const checkpointCommit = git(remote, 'rev-parse', 'refs/aifactory/checkpoints/RQ-0037');
+    discardCheckpoint(project, config, 'RQ-0037');
+    assert.doesNotMatch(git(remote, 'show-ref'), /refs\/aifactory\/checkpoints\/RQ-0037/);
+
+    git(project, 'push', 'origin', `${checkpointCommit}:refs/heads/factory-checkpoint/RQ-0037`);
+    git(project, 'restore', 'src/main.ts');
+    const legacyRestored = restoreCheckpoint(prepared, config, 'RQ-0037', false);
+    assert.equal(legacyRestored?.previousRunId, 'run-1');
+    assert.equal(readFileSync(join(project, 'src', 'main.ts'), 'utf8'), 'export const value = 2;\n');
     discardCheckpoint(project, config, 'RQ-0037');
     assert.doesNotMatch(git(remote, 'show-ref', '--heads'), /factory-checkpoint\/RQ-0037/);
   } finally {

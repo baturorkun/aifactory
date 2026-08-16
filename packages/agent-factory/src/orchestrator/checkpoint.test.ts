@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   checkpointBranchName,
+  checkpointRefName,
   describeCheckpointResume,
   PipelineCheckpointSchema,
   validatePipelineCheckpoint,
@@ -26,9 +27,11 @@ const checkpoint = PipelineCheckpointSchema.parse({
   artifactPaths: [],
 });
 
-test('checkpoint branch names are isolated from requirement branches', () => {
+test('checkpoint refs are isolated from requirement branches', () => {
   assert.equal(checkpointBranchName('rq-37'), 'factory-checkpoint/RQ-37');
+  assert.equal(checkpointRefName('rq-37'), 'refs/aifactory/checkpoints/RQ-37');
   assert.throws(() => checkpointBranchName('../main'), /Invalid requirement ID/);
+  assert.throws(() => checkpointRefName('../main'), /Invalid requirement ID/);
 });
 
 test('checkpoint validation rejects stale requirement and source state', () => {

@@ -8,6 +8,7 @@ import { runPipeline, type PipelineOptions } from './orchestrator/pipeline';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import {
   checkpointBranchName,
+  checkpointRefName,
   checkpointStatePath,
   readPipelineCheckpoint,
   validatePipelineCheckpoint,
@@ -71,15 +72,9 @@ function gitWithIndex(cwd: string, indexPath: string, args: string[]): string {
 export function checkpointPushArgs(
   remote: string,
   commit: string,
-  branch: string,
-  options: { noPipeline?: boolean } = {},
+  checkpointRef: string,
 ): string[] {
-  return [
-    'push',
-    ...(options.noPipeline ? ['-o', 'ci.no_pipeline'] : []),
-    remote,
-    `${commit}:refs/heads/${branch}`,
-  ];
+  return ['push', remote, `${commit}:${checkpointRef}`];
 }
 
 function sha256(value: string): string {
@@ -139,10 +134,14 @@ function readMetadata(path: string): RequirementBranchMetadata | undefined {
 function remoteCheckpointCommit(
   root: string,
   remote: string,
-  branch: string,
+  checkpointRef: string,
 ): string | undefined {
-  const output = git(root, ['ls-remote', '--heads', remote, branch], { allowFailure: true });
+  const output = git(root, ['ls-remote', remote, checkpointRef], { allowFailure: true });
   return output.split(/\s+/)[0] || undefined;
+}
+
+function legacyCheckpointRefName(requirementId: string): string {
+  return `refs/heads/${checkpointBranchName(requirementId)}`;
 }
 
 function prepareBranch(
@@ -210,9 +209,11 @@ export function pushCheckpoint(
   config: FactoryConfig,
   checkpoint: PipelineCheckpoint,
 ): void {
-  const branch = checkpointBranchName(checkpoint.requirementId);
+  const checkpointRef = checkpointRefName(checkpoint.requirementId);
+  const legacyRef = legacyCheckpointRefName(checkpoint.requirementId);
   const remote = config.requirementBranches.remote;
-  const previousCommit = remoteCheckpointCommit(prepared.root, remote, branch);
+  const previousCommit = remoteCheckpointCommit(prepared.root, remote, checkpointRef)
+    ?? remoteCheckpointCommit(prepared.root, remote, legacyRef);
   const parent = previousCommit ?? prepared.sourceCommit;
   const statePath = checkpointStatePath(prepared.root, checkpoint.requirementId);
   writePipelineCheckpoint(statePath, checkpoint);
@@ -240,9 +241,7 @@ export function pushCheckpoint(
       '-m',
       `checkpoint(${checkpoint.requirementId}): ${checkpoint.previousRunId}`,
     ]);
-    git(prepared.root, checkpointPushArgs(remote, commit, branch, {
-      noPipeline: Boolean(config.repositoryPlatforms.gitlab),
-    }));
+    git(prepared.root, checkpointPushArgs(remote, commit, checkpointRef));
   } finally {
     rmSync(indexPath, { force: true });
   }
@@ -254,10 +253,16 @@ export function restoreCheckpoint(
   requirementId: string,
   fast: boolean,
 ): PipelineCheckpoint | undefined {
-  const branch = checkpointBranchName(requirementId);
+  const checkpointRef = checkpointRefName(requirementId);
+  const legacyRef = legacyCheckpointRefName(requirementId);
   const remote = config.requirementBranches.remote;
-  if (!remoteCheckpointCommit(prepared.root, remote, branch)) return undefined;
-  git(prepared.root, ['fetch', remote, branch]);
+  const remoteRef = remoteCheckpointCommit(prepared.root, remote, checkpointRef)
+    ? checkpointRef
+    : remoteCheckpointCommit(prepared.root, remote, legacyRef)
+      ? legacyRef
+      : undefined;
+  if (!remoteRef) return undefined;
+  git(prepared.root, ['fetch', remote, remoteRef]);
   const statePath = checkpointStatePath(prepared.root, requirementId);
   const stateRelative = relative(prepared.root, statePath).split('\\').join('/');
   const raw = git(prepared.root, ['show', `FETCH_HEAD:${stateRelative}`]);
@@ -282,6 +287,11 @@ export function discardCheckpoint(
   requirementId: string,
 ): void {
   rmSync(checkpointStatePath(root, requirementId), { force: true });
+  git(root, [
+    'push',
+    config.requirementBranches.remote,
+    `:${checkpointRefName(requirementId)}`,
+  ], { allowFailure: true });
   git(root, [
     'push',
     config.requirementBranches.remote,
