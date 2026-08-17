@@ -82,11 +82,23 @@ test('new projects enable the draft requirement branch workflow', () => {
     });
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
     assert.match(agentGuidelines, /## AI Factory Workflow/);
-    assert.match(agentGuidelines, /factory requirement new <title>/);
-    assert.match(agentGuidelines, /factory requirement submit <requirement-id>/);
-    assert.match(agentGuidelines, /factory requirement mode <requirement-id> <pipeline\|handoff\|direct>/);
-    assert.match(agentGuidelines, /factory requirement platform-sync <requirement-id>/);
-    assert.match(agentGuidelines, /factory requirement cancel <requirement-id>/);
+    assert.match(agentGuidelines, /git rev-parse --show-toplevel/);
+    assert.match(agentGuidelines, /git branch --show-current/);
+    assert.ok(
+      agentGuidelines.includes(
+        'do **not** use `pnpm --dir ../aifactory factory -- --project <project> ...` locally',
+      ),
+    );
+    assert.ok(
+      agentGuidelines.includes(
+        '`../aifactory/node_modules/.bin/tsx --tsconfig ../aifactory/tsconfig.json ../aifactory/packages/agent-factory/src/cli.ts --project . <command>`',
+      ),
+    );
+    assert.match(agentGuidelines, /requirement new <title>/);
+    assert.match(agentGuidelines, /requirement submit <requirement-id>/);
+    assert.match(agentGuidelines, /requirement mode <requirement-id> <pipeline\|handoff\|direct>/);
+    assert.match(agentGuidelines, /requirement platform-sync <requirement-id>/);
+    assert.match(agentGuidelines, /requirement cancel <requirement-id>/);
     assert.match(ci, /ai_factory_requirement_branch:/);
     assert.match(ci, /factory-checkpoint\\\//);
     assert.match(ci, /when: never/);
