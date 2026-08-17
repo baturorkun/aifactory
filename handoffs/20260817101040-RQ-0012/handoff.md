@@ -116,7 +116,6 @@ Read the requirement and constraints below, inspect the target project, implemen
 - requirements/RQ-0008-librechat-rag-web-chat.md
 - requirements/RQ-0009-github-issue-pull-request-integration.md
 - requirements/RQ-0010-codex-cli-pipeline-model-provider.md
-- requirements/RQ-0011-add-arista-eos-platform-support.md
 - requirements/RQ-0012-generate-project-root-safe-agent-lifecycle-guidance.md
 - rsync.sh
 - services/rag-web/Dockerfile
