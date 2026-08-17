@@ -1,6 +1,6 @@
 ---
 id: RQ-0012
-status: ready
+status: completed
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"

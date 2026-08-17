@@ -1,6 +1,6 @@
 ---
 id: RQ-0009
-status: draft
+status: completed
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
