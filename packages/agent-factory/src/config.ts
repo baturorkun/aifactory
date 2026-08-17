@@ -144,6 +144,7 @@ const RepositoryPlatformsSchema = z.object({
       repository: z.string().optional(),
       token: z.string().optional(),
       targetBranch: z.string().optional(),
+      removeSourceBranchOnMerge: z.boolean().default(true),
       labels: PlatformLabelsSchema.default({}),
     })
     .optional(),

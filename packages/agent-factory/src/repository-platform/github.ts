@@ -31,6 +31,10 @@ interface GitHubComment {
   body?: string;
 }
 
+interface GitHubRepository {
+  delete_branch_on_merge?: boolean;
+}
+
 function normalizeLabels(labels?: Array<{ name: string } | string>): string[] {
   if (!labels) return [];
   return labels.map((l) => (typeof l === 'string' ? l : l.name));
@@ -152,6 +156,9 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
     sourceBranch: string;
     targetBranch: string;
   }): Promise<ChangeRequest> {
+    if (this.settings.removeSourceBranchOnMerge) {
+      await this.ensureSourceBranchRemoval();
+    }
     const pr = await this.request<GitHubPullRequest>('/pulls', {
       method: 'POST',
       body: JSON.stringify({
@@ -163,6 +170,15 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
       }),
     });
     return asChangeRequest(pr);
+  }
+
+  private async ensureSourceBranchRemoval(): Promise<void> {
+    const repository = await this.request<GitHubRepository>('');
+    if (repository.delete_branch_on_merge) return;
+    await this.request<GitHubRepository>('', {
+      method: 'PATCH',
+      body: JSON.stringify({ delete_branch_on_merge: true }),
+    });
   }
 
   async closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest> {

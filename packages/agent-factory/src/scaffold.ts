@@ -822,6 +822,7 @@ function writeFactoryConfig(
         repository: '${GITHUB_REPOSITORY:-}',
         token: '${GITHUB_TOKEN:-}',
         targetBranch: 'main',
+        removeSourceBranchOnMerge: true,
         labels: {
           draft: 'factory::draft',
           ready: 'factory::ready',

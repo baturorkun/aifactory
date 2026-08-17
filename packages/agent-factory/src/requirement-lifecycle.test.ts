@@ -429,6 +429,7 @@ test('new requirement and submit synchronize a GitHub Issue and Draft PR', async
     repository: 'group/project',
     token: 'secret',
     targetBranch: 'main',
+    removeSourceBranchOnMerge: true,
     labels: {
       draft: 'factory::draft',
       ready: 'factory::ready',
@@ -505,6 +506,7 @@ test('cancel closes an existing GitHub PR before deleting its branch', async () 
     repository: 'group/project',
     token: 'secret',
     targetBranch: 'main',
+    removeSourceBranchOnMerge: true,
     labels: {
       draft: 'factory::draft',
       ready: 'factory::ready',

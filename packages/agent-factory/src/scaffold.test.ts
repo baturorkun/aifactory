@@ -36,12 +36,14 @@ test('new projects enable the draft requirement branch workflow', () => {
           projectId: string;
           token: string;
           targetBranch: string;
+          removeSourceBranchOnMerge: boolean;
         };
         github: {
           baseUrl: string;
           repository: string;
           token: string;
           targetBranch: string;
+          removeSourceBranchOnMerge: boolean;
         };
       };
       projectGuidelines: {
@@ -80,6 +82,8 @@ test('new projects enable the draft requirement branch workflow', () => {
       required: true,
       maxContextChars: 20000,
     });
+    assert.equal(config.repositoryPlatforms.gitlab.removeSourceBranchOnMerge, true);
+    assert.equal(config.repositoryPlatforms.github.removeSourceBranchOnMerge, true);
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
     assert.match(agentGuidelines, /## AI Factory Workflow/);
     assert.match(agentGuidelines, /git rev-parse --show-toplevel/);
@@ -198,6 +202,7 @@ test('new projects enable the draft requirement branch workflow', () => {
       repository: '${GITHUB_REPOSITORY:-}',
       token: '${GITHUB_TOKEN:-}',
       targetBranch: 'main',
+      removeSourceBranchOnMerge: true,
       labels: {
         draft: 'factory::draft',
         ready: 'factory::ready',

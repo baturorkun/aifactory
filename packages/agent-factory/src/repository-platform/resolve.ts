@@ -115,6 +115,7 @@ function githubSettings(
     repository: values.GITHUB_REPOSITORY,
     token: values.GITHUB_TOKEN,
     targetBranch: nonEmpty(configured?.targetBranch) ?? config.requirementBranches.baseBranch,
+    removeSourceBranchOnMerge: configured?.removeSourceBranchOnMerge ?? true,
     labels: {
       draft: nonEmpty(labels?.draft) ?? 'factory::draft',
       ready: nonEmpty(labels?.ready) ?? 'factory::ready',

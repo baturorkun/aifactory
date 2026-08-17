@@ -36,6 +36,7 @@ test('repository platform resolution auto-detects complete GitHub credentials', 
     assert.equal(resolved.settings.baseUrl, 'https://api.github.com');
     assert.equal(resolved.settings.repository, 'owner/repo');
     assert.equal(resolved.settings.targetBranch, 'main');
+    assert.equal(resolved.settings.removeSourceBranchOnMerge, true);
   }
 });
 

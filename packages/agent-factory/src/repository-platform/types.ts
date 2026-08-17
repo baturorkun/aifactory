@@ -77,6 +77,7 @@ export interface GitHubPlatformSettings {
   repository: string;
   token: string;
   targetBranch: string;
+  removeSourceBranchOnMerge: boolean;
   gitIdentity?: {
     name?: string;
     email?: string;
