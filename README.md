@@ -436,8 +436,14 @@ interrupted link operation with
 If both providers are fully configured, explicit platform selection is
 required. The
 reservation commit uses `[skip ci]`, so the base-branch reservation and initial
-draft/linkage pushes do not create pipelines. Finish the generated description and
-acceptance criteria, optionally switch execution mode, and submit:
+draft/linkage pushes do not create pipelines. After creation, finish the
+generated description and acceptance criteria only in the local requirement
+branch. Incremental wording and scope changes are not committed or pushed and
+do not keep the Draft Pull/Merge Request synchronized. Batch those local edits
+until the user explicitly requests a lifecycle transition such as submit,
+handoff, direct execution, or pipeline execution. `requirement platform-sync`
+is only for creating or recovering missing platform links, not for saving draft
+edits. Optionally switch execution mode, and submit:
 
 ```bash
 pnpm factory -- --project ../myproject requirement mode RQ-0001 pipeline

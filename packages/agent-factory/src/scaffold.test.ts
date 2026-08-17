@@ -99,6 +99,10 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(agentGuidelines, /requirement mode <requirement-id> <pipeline\|handoff\|direct>/);
     assert.match(agentGuidelines, /requirement platform-sync <requirement-id>/);
     assert.match(agentGuidelines, /requirement cancel <requirement-id>/);
+    assert.match(agentGuidelines, /## Draft Requirement Push Policy/);
+    assert.match(agentGuidelines, /edit the requirement draft only in the local requirement branch/);
+    assert.match(agentGuidelines, /They do not authorize a Git commit, push, platform sync/);
+    assert.match(agentGuidelines, /Before any requirement-related push/);
     assert.match(ci, /ai_factory_requirement_branch:/);
     assert.match(ci, /factory-checkpoint\\\//);
     assert.match(ci, /when: never/);
