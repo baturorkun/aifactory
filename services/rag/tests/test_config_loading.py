@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from aifactory_rag.config import load_factory_config
 
@@ -41,6 +43,52 @@ class ConfigLoadingTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeError, "UNSET_RAG_TEST_VAR"):
                 load_factory_config(path)
+
+    def test_source_exclude_additions_accepts_json_array_from_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_config(
+                directory,
+                {
+                    "rag": {
+                        "sources": [
+                            {
+                                "id": "simics",
+                                "rootPath": "/tmp/simics",
+                                "excludeAdditions": "${TEST_RAG_EXCLUDES:-[]}",
+                            }
+                        ]
+                    }
+                },
+            )
+
+            with patch.dict(os.environ, {"TEST_RAG_EXCLUDES": '["**/*.txt","**/win64/**"]'}):
+                config = load_factory_config(path)
+
+            self.assertEqual(
+                config.rag.sources[0].exclude_additions,
+                ["**/*.txt", "**/win64/**"],
+            )
+
+    def test_source_exclude_additions_rejects_invalid_environment_value(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_config(
+                directory,
+                {
+                    "rag": {
+                        "sources": [
+                            {
+                                "id": "simics",
+                                "rootPath": "/tmp/simics",
+                                "excludeAdditions": "${TEST_RAG_EXCLUDES}",
+                            }
+                        ]
+                    }
+                },
+            )
+
+            with patch.dict(os.environ, {"TEST_RAG_EXCLUDES": "**/*.txt"}):
+                with self.assertRaisesRegex(ValueError, "JSON array of glob strings"):
+                    load_factory_config(path)
 
 
 if __name__ == "__main__":

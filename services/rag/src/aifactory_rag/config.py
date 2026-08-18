@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)(?::-([^}]*))?\}", re.IGNORECASE)
@@ -85,8 +85,13 @@ class RagSourceConfig(BaseModel):
             "**/*.gql",
             "**/*.dml",
             "**/*.simics",
+            "**/*.mk",
+            "**/*.inc",
+            "**/*.include",
+            "**/*.cmake",
             "**/Dockerfile",
             "**/Makefile",
+            "**/GNUmakefile",
             "**/Rakefile",
             "**/Gemfile",
             "**/Procfile",
@@ -110,6 +115,20 @@ class RagSourceConfig(BaseModel):
             "**/*.lock",
         ]
     )
+    exclude_additions: list[str] = Field(default_factory=list, alias="excludeAdditions")
+
+    @field_validator("exclude_additions", mode="before")
+    @classmethod
+    def parse_exclude_additions(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError("excludeAdditions environment value must be a JSON array of glob strings") from exc
+        if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+            raise ValueError("excludeAdditions environment value must be a JSON array of glob strings")
+        return parsed
 
 
 class RagIngestConfig(BaseModel):
@@ -121,11 +140,15 @@ class RagIngestConfig(BaseModel):
 
 
 class RagEmbeddingConfig(BaseModel):
-    provider: Literal["openai", "gemini", "ollama"] = "openai"
+    provider: Literal["openai", "gemini", "ollama", "local"] = "openai"
     model: str = "text-embedding-3-small"
     dimensions: int = 1536
     api_key: str | None = Field(default=None, alias="apiKey")
     base_url: str | None = Field(default=None, alias="baseUrl")
+    cache_dir: str | None = Field(default=None, alias="cacheDir")
+    model_path: str | None = Field(default=None, alias="modelPath")
+    local_files_only: bool = Field(default=False, alias="localFilesOnly")
+    threads: int | None = Field(default=None, gt=0)
     max_retries: int = Field(default=6, ge=0, alias="maxRetries")
     retry_base_seconds: float = Field(default=2.0, gt=0, alias="retryBaseSeconds")
     retry_max_seconds: float = Field(default=60.0, gt=0, alias="retryMaxSeconds")

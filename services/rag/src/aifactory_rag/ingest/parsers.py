@@ -58,10 +58,15 @@ PLAIN_TEXT_EXTENSIONS = {
     ".gql",
     ".dml",
     ".simics",
+    ".mk",
+    ".inc",
+    ".include",
+    ".cmake",
 }
 PLAIN_TEXT_FILENAMES = {
     "dockerfile",
     "makefile",
+    "gnumakefile",
     "rakefile",
     "gemfile",
     "procfile",

@@ -171,6 +171,7 @@ const RagSourceSchema = z.object({
       '**/*.pptx',
     ]),
   exclude: z.array(z.string()).default(['**/~$*', '**/.DS_Store']),
+  excludeAdditions: z.array(z.string()).default([]),
 });
 
 const RagGroundingAgentSchema = z.enum([
@@ -219,11 +220,15 @@ const RagConfigSchema = z.object({
     .default({}),
   embedding: z
     .object({
-      provider: z.enum(['openai', 'gemini', 'ollama']).default('openai'),
+      provider: z.enum(['openai', 'gemini', 'ollama', 'local']).default('openai'),
       model: z.string().default('text-embedding-3-small'),
       dimensions: z.number().int().positive().default(1536),
       apiKey: z.string().optional(),
       baseUrl: z.string().optional(),
+      cacheDir: z.string().optional(),
+      modelPath: z.string().optional(),
+      localFilesOnly: z.boolean().default(false),
+      threads: z.number().int().positive().optional(),
       maxRetries: z.number().int().min(0).default(6),
       retryBaseSeconds: z.number().positive().default(2),
       retryMaxSeconds: z.number().positive().default(60),

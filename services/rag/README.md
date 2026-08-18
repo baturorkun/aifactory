@@ -181,6 +181,58 @@ configured source root. The web chat renders cited sources as download links.
 `POST /query` accepts an optional `sourceIds` array. When supplied, retrieval is
 limited to those configured sources.
 
+During filesystem ingest, the reserved first-level directories `code/` and
+`documentation/` are stored unchanged as `contentType` in both document and
+chunk metadata. For example, `code/devices/uart.dml` receives
+`contentType: "code"` and `documentation/reference.pdf` receives
+`contentType: "documentation"`. Other directory names and files directly under
+the source root do not receive a `contentType` value, so documentation-only
+sources do not need special metadata configuration.
+
+Use `excludeAdditions` for source-specific exclusions without replacing the
+shared generated/cache exclusions. For example, a general-purpose Simics
+source can retain first-party devices, components, extensions, targets, and
+tests while ignoring installed runtime copies and the vendored SystemC kernel:
+
+```json
+{
+  "id": "simics",
+  "type": "filesystem",
+  "rootPath": "${RAG_SOURCE_3_PATH}",
+  "excludeAdditions": "${RAG_SOURCE_3_EXCLUDE_ADDITIONS:-[]}"
+}
+```
+
+Set the source-specific glob list as a JSON array in `.env`:
+
+```dotenv
+RAG_SOURCE_3_EXCLUDE_ADDITIONS='["**/*.txt","**/win64/**","**/flexnet/**","**/licenses/**","**/packageinfo/**","**/vmxmon/**","**/src/external/systemc/**"]'
+```
+
+Simics build and target files with `.mk`, `.inc`, `.include`, and `.cmake`
+extensions, plus `GNUmakefile`, are parsed as plain text.
+
+## Local Embeddings
+
+Embedding generation can run entirely inside the RAG Python process with
+FastEmbed and ONNX Runtime; no embedding API key or separate HTTP service is
+required:
+
+```dotenv
+RAG_EMBEDDING_PROVIDER=local
+RAG_EMBEDDING_MODEL=BAAI/bge-small-en-v1.5
+RAG_EMBEDDING_DIMENSIONS=384
+RAG_EMBEDDING_CACHE_DIR=./.cache/fastembed
+RAG_EMBEDDING_MODEL_PATH=
+RAG_EMBEDDING_LOCAL_FILES_ONLY=false
+RAG_EMBEDDING_THREADS=4
+```
+
+The first model-name-based run downloads the model into the configured cache.
+After that, set `RAG_EMBEDDING_LOCAL_FILES_ONLY=true` to prohibit network
+access. For an air-gapped installation, pre-stage the compatible ONNX model and
+set `RAG_EMBEDDING_MODEL_PATH` to that directory.
+
 ## Project-Configured Grounding
 
 The AI Factory root config holds shared connection settings:
@@ -209,7 +261,7 @@ source and agent selection:
       "enabled": true,
       "mode": "always",
       "marker": "@rag",
-      "sourceIds": ["${RAG_SOURCE_2_ID:-source-2}"],
+      "sourceIds": ["${RAG_SOURCE_ID:-source-1}"],
       "agents": ["planner", "architect", "coder", "domain-guard"],
       "queryPrefix": "Answer using the project's domain documentation."
     }

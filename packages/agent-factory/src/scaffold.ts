@@ -80,6 +80,8 @@ function writeCommonFiles(projectRoot: string, projectName: string): void {
       '# AI_CODEX_REASONING_EFFORT=medium',
       '',
       '# RAG settings:',
+      '# RAG_CHAT_URL=http://127.0.0.1:8765/query',
+      '# RAG_SOURCE_ID=fileserver',
       '# RAG_DATABASE_URL=postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag',
       '# RAG_FILESERVER_PATH=/mnt/company-share/docs',
       '# RAG_EMBEDDING_PROVIDER=gemini',
@@ -886,9 +888,10 @@ function writeFactoryConfig(
       },
       grounding: {
         enabled: false,
+        chatUrl: '${RAG_CHAT_URL:-http://127.0.0.1:8765/query}',
         mode: 'always',
         marker: '@rag',
-        sourceIds: [],
+        sourceIds: ['${RAG_SOURCE_ID:-fileserver}'],
         agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
         timeoutMs: 120000,
         failOpen: true,
@@ -1241,7 +1244,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
         test: 'pnpm simics:test',
       },
       900_000,
-      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/Makefile'],
+      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile'],
     );
     writeSimicsTemplate(projectRoot, projectName);
   } else {

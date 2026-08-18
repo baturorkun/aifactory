@@ -52,6 +52,13 @@ test('new projects enable the draft requirement branch workflow', () => {
         required: boolean;
         maxContextChars: number;
       };
+      rag: {
+        grounding: {
+          enabled: boolean;
+          chatUrl: string;
+          sourceIds: string[];
+        };
+      };
     };
     assert.deepEqual(config.model, {
       provider: '${AI_PROVIDER}',
@@ -83,6 +90,12 @@ test('new projects enable the draft requirement branch workflow', () => {
       required: true,
       maxContextChars: 20000,
     });
+    assert.equal(config.rag.grounding.enabled, false);
+    assert.equal(
+      config.rag.grounding.chatUrl,
+      '${RAG_CHAT_URL:-http://127.0.0.1:8765/query}',
+    );
+    assert.deepEqual(config.rag.grounding.sourceIds, ['${RAG_SOURCE_ID:-fileserver}']);
     assert.equal(config.repositoryPlatforms.gitlab.removeSourceBranchOnMerge, true);
     assert.equal(config.repositoryPlatforms.github.removeSourceBranchOnMerge, true);
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
@@ -219,6 +232,9 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(envExample, /GITHUB_API_URL=/);
     assert.match(envExample, /GITHUB_REPOSITORY=/);
     assert.match(envExample, /GITHUB_TOKEN=/);
+    assert.match(envExample, /RAG_CHAT_URL=/);
+    assert.match(envExample, /RAG_SOURCE_ID=fileserver/);
+    assert.doesNotMatch(envExample, /RAG_SOURCE_\d+_ID/);
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }
@@ -248,6 +264,9 @@ test('simics template scaffolds a licensed-runner project without proprietary de
     assert.ok(config.targetProject.allowedPaths.includes('targets'));
     assert.ok(config.rag.sources[0]?.include.includes('**/*.dml'));
     assert.ok(config.rag.sources[0]?.include.includes('**/*.simics'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/*.mk'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/*.include'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/GNUmakefile'));
     for (const path of [
       'dml/README.md',
       'targets/README.md',

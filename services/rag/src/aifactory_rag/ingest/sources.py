@@ -15,6 +15,11 @@ class SourceFile:
     modified_timestamp: float
 
 
+def effective_excludes(source: RagSourceConfig) -> list[str]:
+    """Return the base and source-specific exclude patterns in evaluation order."""
+    return list(dict.fromkeys([*source.exclude, *source.exclude_additions]))
+
+
 def normalize_subdir(source: RagSourceConfig, subdir: str | None) -> str | None:
     root = Path(source.root_path).expanduser().resolve()
     if not root.exists():
@@ -51,7 +56,7 @@ def scan_files(source: RagSourceConfig, subdir: str | None = None) -> list[Sourc
         relative = path.relative_to(root).as_posix()
         if not _included(relative, source.include):
             continue
-        if _excluded(relative, source.exclude):
+        if _excluded(relative, effective_excludes(source)):
             continue
         stat = path.stat()
         files.append(
