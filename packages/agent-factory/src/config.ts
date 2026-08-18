@@ -94,6 +94,7 @@ const DomainConfigSchema = z.object({
 });
 
 const TargetCommandsSchema = z.object({
+  build: z.string().optional(),
   typeCheck: z.string().optional(),
   lint: z.string().optional(),
   test: z.string().optional(),
@@ -102,8 +103,10 @@ const TargetCommandsSchema = z.object({
 const TargetProjectSchema = z.object({
   root: z.string().optional(),
   applyArtifacts: z.boolean().default(false),
+  profile: z.string().min(1).optional(),
   allowedPaths: z.array(z.string()).default([]),
   commands: TargetCommandsSchema.default({}),
+  commandTimeoutMs: z.number().int().positive().optional(),
 });
 
 const ProjectGuidelinesSchema = z.object({

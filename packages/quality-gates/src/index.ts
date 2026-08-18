@@ -25,7 +25,9 @@ export interface GateReport {
 export interface TargetGateOptions {
   targetRoot?: string;
   artifactPaths?: string[];
+  commandTimeoutMs?: number;
   commands?: {
+    build?: string;
     typeCheck?: string;
     lint?: string;
     test?: string;
@@ -55,11 +57,12 @@ function exec(
   cmd: string,
   cwd?: string,
   env?: NodeJS.ProcessEnv,
+  timeoutMs = 120_000,
 ): { output: string; success: boolean } {
   try {
     const out = execSync(cmd, {
       cwd: cwd ?? process.cwd(),
-      timeout: 120_000,
+      timeout: timeoutMs,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: env ? { ...process.env, ...env } : process.env,
@@ -77,6 +80,7 @@ function commandGate(
   command: string | undefined,
   cwd: string,
   env?: NodeJS.ProcessEnv,
+  timeoutMs?: number,
 ): GateReport {
   const start = Date.now();
   const configKey = gate === 'tests' ? 'test' : gate;
@@ -89,7 +93,7 @@ function commandGate(
     };
   }
 
-  const { output, success } = exec(command, cwd, env);
+  const { output, success } = exec(command, cwd, env, timeoutMs);
   return {
     gate,
     status: success ? 'passed' : 'failed',
@@ -163,8 +167,12 @@ function typeCheck(runDir: string, projectRoot: string): GateReport {
   };
 }
 
-function targetTypeCheck(targetRoot: string, command?: string): GateReport {
-  return commandGate('typeCheck', command, targetRoot);
+function targetTypeCheck(targetRoot: string, command?: string, timeoutMs?: number): GateReport {
+  return commandGate('typeCheck', command, targetRoot, undefined, timeoutMs);
+}
+
+function targetBuildCheck(targetRoot: string, command?: string, timeoutMs?: number): GateReport {
+  return commandGate('build', command, targetRoot, undefined, timeoutMs);
 }
 
 // ============================================================
@@ -194,8 +202,8 @@ function lintCheck(runDir: string, projectRoot: string): GateReport {
   };
 }
 
-function targetLintCheck(targetRoot: string, command?: string): GateReport {
-  return commandGate('lint', command, targetRoot);
+function targetLintCheck(targetRoot: string, command?: string, timeoutMs?: number): GateReport {
+  return commandGate('lint', command, targetRoot, undefined, timeoutMs);
 }
 
 // ============================================================
@@ -233,10 +241,11 @@ function targetTestCheck(
   targetRoot: string,
   command?: string,
   artifactPaths: string[] = [],
+  timeoutMs?: number,
 ): GateReport {
   return commandGate('tests', command, targetRoot, {
     AI_FACTORY_ARTIFACT_PATHS: JSON.stringify(artifactPaths),
-  });
+  }, timeoutMs);
 }
 
 // ============================================================
@@ -366,14 +375,17 @@ export async function runAllGates(
   const targetRoot = target?.targetRoot ? resolve(target.targetRoot) : undefined;
   const reports: GateReport[] = [
     schemaCheck(runDir),
+    ...(targetRoot
+      ? [targetBuildCheck(targetRoot, target?.commands?.build, target?.commandTimeoutMs)]
+      : [commandGate('build', undefined, projectRoot)]),
     targetRoot
-      ? targetTypeCheck(targetRoot, target?.commands?.typeCheck)
+      ? targetTypeCheck(targetRoot, target?.commands?.typeCheck, target?.commandTimeoutMs)
       : typeCheck(runDir, projectRoot),
     targetRoot
-      ? targetLintCheck(targetRoot, target?.commands?.lint)
+      ? targetLintCheck(targetRoot, target?.commands?.lint, target?.commandTimeoutMs)
       : lintCheck(runDir, projectRoot),
     targetRoot
-      ? targetTestCheck(targetRoot, target?.commands?.test, target?.artifactPaths)
+      ? targetTestCheck(targetRoot, target?.commands?.test, target?.artifactPaths, target?.commandTimeoutMs)
       : testCheck(runDir, projectRoot),
     targetRoot
       ? targetSecurityCheck(targetRoot, target?.artifactPaths)

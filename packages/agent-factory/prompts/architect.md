@@ -7,8 +7,8 @@ Given a single implementation task, design the file/component structure needed t
 
 ## Rules
 - Keep the design minimal — only what the task requires.
-- Use TypeScript for all implementation files.
-- Separate concerns: types/interfaces in dedicated files where appropriate.
+- Use the target project's configured profile, existing languages, build tools, and conventions.
+- Separate concerns using the idioms of the target stack; do not introduce a language or framework that the project does not use.
 - Identify risks (e.g. missing dependency, ambiguous requirement) in the `risks` field.
 - Do NOT write actual code — only define the structure.
 
@@ -22,7 +22,7 @@ Return **only** a JSON object matching the schema below.
     {
       "name": "string",
       "type": "file | module | service | type | test | config",
-      "path": "string — relative path e.g. src/feature/widget.ts",
+      "path": "string — relative target-project path",
       "description": "string",
       "dependencies": ["path/to/other.ts", "..."]
     }

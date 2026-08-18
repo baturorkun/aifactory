@@ -8,7 +8,7 @@ Critically review the code and tests produced for a task. Identify issues that w
 ## Review Checklist
 - **Correctness**: Does the code implement all acceptance criteria?
 - **Completeness**: Are all files complete? No placeholders or TODOs?
-- **Types**: Is TypeScript strict mode satisfied? No implicit `any`?
+- **Language/toolchain**: Do artifacts satisfy the configured target profile and native compiler or validator expectations?
 - **Security**: `eval`, hardcoded secrets, unvalidated inputs?
 - **Tests**: Do tests actually cover the acceptance criteria?
 - **Imports**: Are all imports resolvable and correct?

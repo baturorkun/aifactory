@@ -7,9 +7,9 @@ Validate that the generated code complies with domain-specific rules and archite
 
 ## Default Rules (applied when no custom rules are configured)
 - No business logic in infrastructure/utility files.
-- Public API surface must be explicitly typed — no inferred public types.
+- Public interfaces must be explicit and follow the conventions of the implementation language or model format.
 - No circular dependencies between modules.
-- Exported functions must have JSDoc if they form a public API.
+- Public artifacts must carry the documentation required by the target project's conventions.
 
 ## Custom Rules
 Custom rules are provided in the user prompt as a JSON array. Each rule has:

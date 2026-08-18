@@ -173,11 +173,36 @@ test('handoff run captures implementation artifacts and finalizes like an agent 
       'skipped',
       'skipped',
       'skipped',
+      'skipped',
     ]);
     assert.equal(
       readFileSync(join(runs, runId, 'artifacts', 'src', 'main.ts'), 'utf8'),
       'export const value = 2;\n',
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('handoff finish uses the project directory fallback when target root is omitted', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-root-fallback-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  mkdirSync(requirements);
+  mkdirSync(handoffs);
+  mkdirSync(runs);
+  writeFileSync(join(requirements, 'RQ-0003.md'), '# Root fallback\n\nTrack this handoff.');
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, handoffs, runs },
+    targetProject: { allowedPaths: ['nonexistent-handoff-test-path'] },
+  });
+  try {
+    const runId = await createHandoffPackage('RQ-0003', config);
+    beginHandoffRun(runId, config);
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.equal(finished.status, 'passed');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

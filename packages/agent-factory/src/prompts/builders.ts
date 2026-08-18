@@ -11,6 +11,17 @@ import type {
 import type { DomainRule } from '../config';
 import type { GateReport } from '@aifactory/quality-gates';
 
+function targetProfileSection(targetProfile?: string): string[] {
+  return targetProfile
+    ? [
+        '### Target Project Profile',
+        targetProfile,
+        'Use the languages, build tools, test frameworks, file formats, and conventions native to this profile and the supplied project. Do not substitute TypeScript, npm, Jest, or web conventions unless the project actually uses them.',
+        '',
+      ]
+    : [];
+}
+
 // ============================================================
 // PLANNER
 // ============================================================
@@ -20,6 +31,7 @@ export function buildPlannerPrompt(
   constraints: Record<string, unknown>,
   projectFiles: readonly string[] = [],
   ragContext?: string,
+  targetProfile?: string,
 ): string {
   const parts: string[] = [
     `## Requirement: ${requirement.id}`,
@@ -27,6 +39,8 @@ export function buildPlannerPrompt(
     '',
     '### Description',
     requirement.rawMarkdown,
+    '',
+    ...targetProfileSection(targetProfile),
   ];
 
   if (requirement.acceptanceCriteria.length > 0) {
@@ -77,6 +91,7 @@ export function buildArchitectPrompt(
   constraints: Record<string, unknown>,
   projectFiles: readonly string[] = [],
   ragContext?: string,
+  targetProfile?: string,
 ): string {
   return [
     `## Task: ${task.id}`,
@@ -90,6 +105,7 @@ export function buildArchitectPrompt(
       : []),
     '',
     '### Context',
+    ...targetProfileSection(targetProfile),
     `Requirement: ${requirement.title} (${requirement.id})`,
     `Plan summary: ${plan.summary}`,
     `Total tasks in plan: ${plan.tasks.length}`,
@@ -130,6 +146,7 @@ export function buildCoderPrompt(
   allowedPaths: readonly string[],
   fixContext?: FixContext,
   ragContext?: string,
+  targetProfile?: string,
 ): string {
   const parts: string[] = [
     `## Task: ${task.id} — ${task.title}`,
@@ -137,6 +154,7 @@ export function buildCoderPrompt(
     '### Description',
     task.description,
     '',
+    ...targetProfileSection(targetProfile),
     '### Architecture',
     '```json',
     JSON.stringify(architecture, null, 2),
@@ -165,7 +183,7 @@ export function buildCoderPrompt(
   if (existingFiles.length > 0) {
     parts.push('', '### Existing Target Files');
     for (const file of existingFiles) {
-      parts.push(`#### ${file.path}`, '```typescript', file.content, '```');
+      parts.push(`#### ${file.path}`, '```', file.content, '```');
     }
     parts.push(
       '',
@@ -207,12 +225,14 @@ export function buildQualityGateRepairPrompt(
   reports: readonly GateReport[],
   existingFiles: ReadonlyArray<{ path: string; content: string }>,
   allowedPaths: readonly string[],
+  targetProfile?: string,
 ): string {
   const failedReports = reports.filter((report) => report.status === 'failed');
   const parts = [
     `## Quality Gate Repair — ${requirement.id}`,
     `Requirement: ${requirement.title}`,
     '',
+    ...targetProfileSection(targetProfile),
     'The implementation has already been generated, but final project quality gates failed.',
     'Make the smallest coherent code changes needed to fix every reported error. Preserve unrelated behavior.',
     '',
@@ -257,6 +277,7 @@ export function buildTesterPrompt(
   allowedPaths: readonly string[],
   existingTests: ReadonlyArray<{ path: string; content: string }>,
   ragContext?: string,
+  targetProfile?: string,
 ): string {
   const fileBlocks = code.patches.flatMap((p) => [
     `#### ${p.path}`,
@@ -269,6 +290,7 @@ export function buildTesterPrompt(
   return [
     `## Task: ${task.id} — ${task.title}`,
     '',
+    ...targetProfileSection(targetProfile),
     '### Acceptance Criteria to Cover',
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
     '',
@@ -294,7 +316,7 @@ export function buildTesterPrompt(
           '### Existing Test Files',
           ...existingTests.flatMap((file) => [
             `#### ${file.path}`,
-            '```html',
+            '```',
             file.content,
             '```',
             '',
@@ -322,6 +344,7 @@ export function buildReviewerPrompt(
   requirement: Requirement,
   supportingFiles: ReadonlyArray<{ path: string; content: string }> = [],
   ragContext?: string,
+  targetProfile?: string,
 ): string {
   const codeBlocks = code.patches.flatMap((p) => [
     `#### ${p.path}`,
@@ -333,7 +356,7 @@ export function buildReviewerPrompt(
 
   const testBlocks = tests.tests.flatMap((t) => [
     `#### ${t.path}`,
-    '```typescript',
+    '```' + t.framework,
     t.content,
     '```',
     '',
@@ -350,6 +373,7 @@ export function buildReviewerPrompt(
   return [
     `## Task: ${task.id} — ${task.title}`,
     '',
+    ...targetProfileSection(targetProfile),
     '### Acceptance Criteria',
     ...task.acceptanceCriteria.map((c) => `- ${c}`),
     '',
@@ -382,6 +406,7 @@ export function buildDomainGuardPrompt(
   domainRules: DomainRule[],
   supportingFiles: ReadonlyArray<{ path: string; content: string }> = [],
   ragContext?: string,
+  targetProfile?: string,
 ): string {
   const rulesSection =
     domainRules.length === 0
@@ -407,6 +432,7 @@ export function buildDomainGuardPrompt(
   return [
     `## Task: ${task.id} — ${task.title}`,
     '',
+    ...targetProfileSection(targetProfile),
     '### Domain Rules',
     rulesSection,
     '',

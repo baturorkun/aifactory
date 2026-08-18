@@ -113,7 +113,7 @@ export const TestCaseSchema = z.object({
   path: z.string().min(1),
   content: z.string().min(1),
   covers: z.array(z.string()).min(1),
-  framework: z.string().default('jest'),
+  framework: z.string().default('project-native'),
 });
 
 export const TestOutputSchema = z.object({
@@ -212,6 +212,7 @@ export type GateResult = z.infer<typeof GateResultSchema>;
 
 export const GateResultsSchema = z.object({
   schemaCheck: GateResultSchema.default('pending'),
+  build: GateResultSchema.default('pending'),
   typeCheck: GateResultSchema.default('pending'),
   lint: GateResultSchema.default('pending'),
   tests: GateResultSchema.default('pending'),

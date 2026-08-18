@@ -168,12 +168,12 @@ function pathAllowedByHints(artifactPath: string, hints: readonly string[]): boo
 }
 
 const PROJECT_INDEX_EXTENSIONS = new Set([
-  '.c', '.cc', '.cpp', '.css', '.go', '.h', '.hpp', '.html', '.java', '.js',
-  '.json', '.jsx', '.md', '.mjs', '.py', '.rs', '.sh', '.ts', '.tsx', '.yaml', '.yml',
+  '.c', '.cc', '.cpp', '.css', '.dml', '.go', '.h', '.hpp', '.html', '.java', '.js',
+  '.json', '.jsx', '.md', '.mjs', '.py', '.rs', '.sh', '.simics', '.ts', '.tsx', '.yaml', '.yml',
 ]);
 const PROJECT_INDEX_MAX_FILES = 500;
 
-function projectFileIndex(target: TargetProjectConfig): string[] {
+export function projectFileIndex(target: TargetProjectConfig): string[] {
   const targetRoot = resolveTargetRoot(target);
   if (!targetRoot) return [];
   const files = new Set<string>();
@@ -278,7 +278,8 @@ function existingArtifactFiles(
 }
 
 const REVIEW_CONTEXT_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.mjs', '.cjs', '.html', '.css', '.json',
+  '.c', '.cc', '.cpp', '.cjs', '.css', '.dml', '.h', '.hpp', '.html', '.js',
+  '.json', '.mjs', '.py', '.sh', '.simics', '.ts', '.tsx', '.yaml', '.yml',
 ]);
 const REVIEW_CONTEXT_MAX_FILES = 8;
 const REVIEW_CONTEXT_MAX_CHARS = 40_000;
@@ -289,8 +290,12 @@ function referencedFileHints(requirement: Requirement, architecture: Architectur
     hints.add(component.path);
     for (const dependency of component.dependencies) hints.add(dependency);
   }
-  const filePattern = /(?:^|[`\s(])([A-Za-z0-9_./-]+\.(?:ts|tsx|js|mjs|cjs|html|css|json))(?=$|[`\s),:])/g;
+  const filePattern = /(?:^|[`\s(])([A-Za-z0-9_./-]+\.(?:c|cc|cpp|css|dml|h|hpp|html|js|mjs|cjs|json|py|sh|simics|ts|tsx|yaml|yml))(?=$|[`\s),:])/g;
   for (const match of requirement.rawMarkdown.matchAll(filePattern)) {
+    if (match[1]) hints.add(match[1]);
+  }
+  const extensionlessPattern = /(?:^|[`\s(])([A-Za-z0-9_./-]*(?:Makefile|Dockerfile))(?=$|[`\s),:])/g;
+  for (const match of requirement.rawMarkdown.matchAll(extensionlessPattern)) {
     if (match[1]) hints.add(match[1]);
   }
   return [...hints];
@@ -321,7 +326,7 @@ export function collectReviewSupportingFiles(
   for (const allowedPath of target.allowedPaths) {
     const absolutePath = resolve(targetRoot, allowedPath);
     if (!existsSync(absolutePath)) continue;
-    if (extname(allowedPath)) candidates.push(allowedPath);
+    if (statSync(absolutePath).isFile()) candidates.push(allowedPath);
     else walkContextFiles(targetRoot, allowedPath, candidates);
   }
 
@@ -407,11 +412,11 @@ export function validateCodeOutputForTask(
   return { ...parsed, patches };
 }
 
-function coderResponseSchema(task: Task): Record<string, unknown> {
+function coderResponseSchema(): Record<string, unknown> {
   return buildCodePatchResponseSchema();
 }
 
-function testerResponseSchema(task: Task): Record<string, unknown> {
+function testerResponseSchema(): Record<string, unknown> {
   return buildTestOutputResponseSchema();
 }
 
@@ -437,7 +442,7 @@ export function validateTestOutputForTask(
 }
 
 function hasRepairableGateFailure(results: GateResults): boolean {
-  return results.typeCheck === 'failed' || results.lint === 'failed' || results.tests === 'failed';
+  return results.build === 'failed' || results.typeCheck === 'failed' || results.lint === 'failed' || results.tests === 'failed';
 }
 
 function hasUnsafeGateFailure(results: GateResults): boolean {
@@ -666,6 +671,7 @@ export async function runPipeline(
         targetRoot,
         artifactPaths: readManifest(runDir).artifacts,
         commands: effectiveConfig.targetProject.commands,
+        commandTimeoutMs: effectiveConfig.targetProject.commandTimeoutMs,
       });
       updateGateResults(runDir, gateResults);
 
@@ -720,6 +726,7 @@ export async function runPipeline(
       console.log('\n  ▸ Gates: skipped');
       updateGateResults(runDir, {
         schemaCheck: 'skipped',
+        build: 'skipped',
         typeCheck: 'skipped',
         lint: 'skipped',
         tests: 'skipped',
@@ -806,6 +813,7 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
         reports,
         existingArtifactFiles(runDir, config.targetProject),
         config.targetProject.allowedPaths,
+        config.targetProject.profile,
       ),
       model,
       maxRetries: config.pipeline.maxRetries,
@@ -835,6 +843,7 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
       targetRoot: resolveTargetRoot(config.targetProject),
       artifactPaths: readManifest(runDir).artifacts,
       commands: config.targetProject.commands,
+      commandTimeoutMs: config.targetProject.commandTimeoutMs,
     });
     updateGateResults(runDir, gateResults);
 
@@ -853,6 +862,7 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
       targetRoot: resolveTargetRoot(config.targetProject),
       artifactPaths: readManifest(runDir).artifacts,
       commands: config.targetProject.commands,
+      commandTimeoutMs: config.targetProject.commandTimeoutMs,
     });
     updateGateResults(runDir, gateResults);
   }
@@ -886,6 +896,7 @@ async function runPlannerAgent(
       constraints,
       projectFileIndex(config.targetProject),
       formatGroundingContext(config, ragGrounding, 'planner'),
+      config.targetProject.profile,
     ),
     model,
     maxRetries: config.pipeline.maxRetries,
@@ -951,6 +962,7 @@ async function runTaskPipeline(
         constraints,
         projectFileIndex(config.targetProject),
         formatGroundingContext(config, ragGrounding, 'architect'),
+        config.targetProject.profile,
       ),
       model: primaryModel,
       maxRetries: config.pipeline.maxRetries,
@@ -1023,10 +1035,11 @@ async function runTaskPipeline(
           config.targetProject.allowedPaths,
           fixContext,
           formatGroundingContext(config, ragGrounding, 'coder'),
+          config.targetProject.profile,
         ),
         model: primaryModel,
         maxRetries: config.pipeline.maxRetries,
-        responseSchema: coderResponseSchema(task),
+        responseSchema: coderResponseSchema(),
         validate: makeCodeValidator(task, config.targetProject),
         extractJSON,
         outputFileName: `coder-${task.id}-iter${iter}.json`,
@@ -1092,10 +1105,11 @@ async function runTaskPipeline(
           config.targetProject.allowedPaths,
           existingTaskTestFiles(task, config.targetProject),
           formatGroundingContext(config, ragGrounding, 'tester'),
+          config.targetProject.profile,
         ),
         model: primaryModel,
         maxRetries: config.pipeline.maxRetries,
-        responseSchema: testerResponseSchema(task),
+        responseSchema: testerResponseSchema(),
         validate: (raw: unknown): TestOutput =>
           validateTestOutputForTask(raw, task, constraints, config.targetProject),
         extractJSON,
@@ -1155,6 +1169,7 @@ async function runTaskPipeline(
           requirement,
           supportingFiles,
           formatGroundingContext(config, ragGrounding, 'reviewer'),
+          config.targetProject.profile,
         ),
         model: reviewerModel,
         maxRetries: config.pipeline.maxRetries,
@@ -1214,6 +1229,7 @@ async function runTaskPipeline(
         config.domain.rules,
         supportingFiles,
         formatGroundingContext(config, ragGrounding, 'domain-guard'),
+        config.targetProject.profile,
       ),
       model: reviewerModel,
       maxRetries: config.pipeline.maxRetries,

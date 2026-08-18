@@ -5,7 +5,7 @@ import type { FactoryConfig } from '../config';
 import { parseRequirement } from '../requirements/parser';
 import { runAllGates } from '@aifactory/quality-gates';
 import type { GateResults, RunManifest } from '@aifactory/contracts';
-import { resolveTargetRoot, validateTargetPath } from '../workspace/apply';
+import { validateTargetPath } from '../workspace/apply';
 import {
   addArtifact,
   addStep,
@@ -174,8 +174,8 @@ export async function finishImplementationRun(
 
   try {
     const baseline = readBaseline(runDir);
-    const targetRoot = resolveTargetRoot(config.targetProject);
-    if (!targetRoot || resolve(targetRoot) !== resolve(baseline.targetRoot)) {
+    const targetRoot = resolve(config.targetProject.root ?? '.');
+    if (targetRoot !== resolve(baseline.targetRoot)) {
       throw new Error('The configured target project does not match the handoff baseline.');
     }
 
@@ -200,6 +200,7 @@ export async function finishImplementationRun(
     if (options.skipGates) {
       gateResults = {
         schemaCheck: 'skipped',
+        build: 'skipped',
         typeCheck: 'skipped',
         lint: 'skipped',
         tests: 'skipped',
@@ -211,6 +212,7 @@ export async function finishImplementationRun(
         targetRoot,
         artifactPaths: changedFiles,
         commands: config.targetProject.commands,
+        commandTimeoutMs: config.targetProject.commandTimeoutMs,
       });
     }
     updateGateResults(runDir, gateResults);
@@ -356,10 +358,13 @@ async function createImplementationPackage(
     '## Target Project',
     '',
     '- Root: ' + targetRoot,
+    '- Profile: ' + (config.targetProject.profile ?? '(not configured)'),
     '- Allowed paths: ' + ((config.targetProject.allowedPaths ?? []).join(', ') || '(not configured)'),
+    '- Build: ' + (config.targetProject.commands.build ?? '(not configured)'),
     '- Typecheck: ' + (config.targetProject.commands.typeCheck ?? '(not configured)'),
     '- Lint: ' + (config.targetProject.commands.lint ?? '(not configured)'),
     '- Test: ' + (config.targetProject.commands.test ?? '(not configured)'),
+    '- Command timeout: ' + (config.targetProject.commandTimeoutMs ?? 120_000) + ' ms',
     '',
     '## Existing Files',
     '',

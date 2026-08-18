@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { relative, resolve } from 'path';
 
-export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python';
+export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'simics';
 
 export type NewProjectOptions = {
   dir?: string;
@@ -15,7 +15,7 @@ export type NewProjectResult = {
   template: ProjectTemplate;
 };
 
-export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python'];
+export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python', 'simics'];
 
 const PROJECT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const TYPESCRIPT_CONFIG_PATHS = ['tsconfig.json', 'tsconfig.build.json'];
@@ -757,8 +757,11 @@ function writeContainerFiles(projectRoot: string, projectName: string): void {
 function writeFactoryConfig(
   projectRoot: string,
   promptsPath: string,
+  profile: string,
   allowedPaths: string[],
-  commands: { typeCheck?: string; lint?: string; test?: string },
+  commands: { build?: string; typeCheck?: string; lint?: string; test?: string },
+  commandTimeoutMs = 120_000,
+  ragIncludes?: string[],
 ): void {
   writeJson(resolve(projectRoot, 'factory.config.json'), {
     model: {
@@ -788,8 +791,10 @@ function writeFactoryConfig(
     targetProject: {
       root: '.',
       applyArtifacts: true,
+      profile,
       allowedPaths,
       commands,
+      commandTimeoutMs,
     },
     projectGuidelines: {
       files: ['./AGENTS.md'],
@@ -845,7 +850,7 @@ function writeFactoryConfig(
           id: 'fileserver',
           type: 'filesystem',
           rootPath: '${RAG_FILESERVER_PATH:-./references}',
-          include: ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
+          include: ragIncludes ?? ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
           exclude: ['**/~$*', '**/.DS_Store'],
         },
       ],
@@ -1007,6 +1012,131 @@ function writePythonTemplate(projectRoot: string): void {
   writeFileSync(resolve(projectRoot, 'src/__init__.py'), '', 'utf8');
 }
 
+function writeSimicsTemplate(projectRoot: string, projectName: string): void {
+  for (const dir of ['dml', 'targets', 'python', 'scripts', 'tests']) {
+    mkdirSync(resolve(projectRoot, dir), { recursive: true });
+  }
+
+  patchPackageScripts(projectRoot, {
+    'simics:build': 'node scripts/simics-command.mjs build',
+    'simics:check': 'node scripts/simics-command.mjs check',
+    'simics:test': 'node scripts/simics-command.mjs test',
+  });
+
+  writeFileSync(
+    resolve(projectRoot, 'README.md'),
+    [
+      `# ${projectName}`,
+      '',
+      'AI Factory workspace for a Wind River/Intel Simics board or device model.',
+      '',
+      '## Layout',
+      '',
+      '- `dml/`: DML device models.',
+      '- `targets/`: Simics target and command scripts.',
+      '- `python/`: project-owned Python helpers and extensions.',
+      '- `scripts/`: portable validation wrappers.',
+      '- `tests/`: deterministic, non-interactive model tests.',
+      '- `references/`: authorized documentation and concise implementation notes.',
+      '',
+      '## Licensed validation',
+      '',
+      'AI Factory does not install or redistribute Simics. Configure each validation command as a JSON argv array on the licensed workstation or self-hosted runner:',
+      '',
+      '```text',
+      'SIMICS_BUILD_COMMAND_JSON=["/path/to/project-build-command","arg"]',
+      'SIMICS_CHECK_COMMAND_JSON=["/path/to/static-check-command","arg"]',
+      'SIMICS_TEST_COMMAND_JSON=["/path/to/batch-test-command","arg"]',
+      '```',
+      '',
+      'The wrappers execute without a shell and preserve the child exit code. A missing command is a failed, unverified gate—not a successful simulation.',
+      '',
+      'Keep installation paths and license values in runner environment configuration. Do not commit proprietary packages, documentation, firmware, checkpoints, build output, or credentials.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'scripts/simics-command.mjs'),
+    [
+      "import { spawnSync } from 'node:child_process';",
+      '',
+      "const modes = new Map([['build', 'SIMICS_BUILD_COMMAND_JSON'], ['check', 'SIMICS_CHECK_COMMAND_JSON'], ['test', 'SIMICS_TEST_COMMAND_JSON']]);",
+      'const mode = process.argv[2];',
+      'const variable = modes.get(mode);',
+      'if (!variable) {',
+      "  console.error('Usage: node scripts/simics-command.mjs <build|check|test>');",
+      '  process.exit(2);',
+      '}',
+      'const raw = process.env[variable];',
+      'if (!raw) {',
+      '  console.error(`${variable} is not configured; licensed Simics validation was not run.`);',
+      '  process.exit(2);',
+      '}',
+      'let argv;',
+      'try { argv = JSON.parse(raw); } catch {',
+      '  console.error(`${variable} must be a JSON array of command arguments.`);',
+      '  process.exit(2);',
+      '}',
+      "if (!Array.isArray(argv) || argv.length === 0 || argv.some((item) => typeof item !== 'string' || item.length === 0)) {",
+      '  console.error(`${variable} must be a non-empty JSON array of non-empty strings.`);',
+      '  process.exit(2);',
+      '}',
+      'const result = spawnSync(argv[0], argv.slice(1), { cwd: process.cwd(), env: process.env, stdio: \'inherit\', shell: false });',
+      'if (result.error) {',
+      '  console.error(result.error.message);',
+      '  process.exit(2);',
+      '}',
+      'process.exit(result.status ?? 2);',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  for (const [path, title] of [
+    ['dml/README.md', 'DML device models'],
+    ['targets/README.md', 'Simics targets and command scripts'],
+    ['python/README.md', 'Python helpers and extensions'],
+    ['tests/README.md', 'Non-interactive Simics tests'],
+  ]) {
+    writeFileSync(resolve(projectRoot, path), `# ${title}\n\nAdd project-owned sources here.\n`, 'utf8');
+  }
+
+  writeFileSync(
+    resolve(projectRoot, '.gitattributes'),
+    ['*.dml text eol=lf', '*.simics text eol=lf', '*.py text eol=lf', '*.mjs text eol=lf', 'Makefile text eol=lf', ''].join('\n'),
+    'utf8',
+  );
+  const gitignorePath = resolve(projectRoot, '.gitignore');
+  writeFileSync(
+    gitignorePath,
+    readFileSync(gitignorePath, 'utf8') + [
+      '# Simics generated, licensed, or project-local material',
+      'build/',
+      'checkpoints/',
+      'firmware/',
+      '*.ckpt',
+      '*.log',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const envExamplePath = resolve(projectRoot, '.env.example');
+  writeFileSync(
+    envExamplePath,
+    readFileSync(envExamplePath, 'utf8') + [
+      '# Licensed Simics runner commands. Each value is a JSON argv array.',
+      '# SIMICS_BUILD_COMMAND_JSON=["/path/to/project-build-command","arg"]',
+      '# SIMICS_CHECK_COMMAND_JSON=["/path/to/static-check-command","arg"]',
+      '# SIMICS_TEST_COMMAND_JSON=["/path/to/batch-test-command","arg"]',
+      '# Keep installation paths and license values in runner secrets/environment.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 export function createTargetProject(projectName: string, options: NewProjectOptions): NewProjectResult {
   assertValidProjectName(projectName);
   assertValidTemplate(options.template);
@@ -1066,6 +1196,19 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       '- Do not make unrelated changes.',
       '- Verify implementation changes with the configured quality gates.',
       '',
+      ...(options.template === 'simics'
+        ? [
+            '## Simics Model Development',
+            '',
+            '- Treat the configured Simics version, installed packages, official documentation, and reproducible simulator behavior as authoritative.',
+            '- Do not invent registers, memory maps, interfaces, commands, or device behavior when the available evidence is incomplete.',
+            '- Keep DML model logic, target composition, helper extensions, and tests in their generated project directories.',
+            '- Prefer deterministic non-interactive tests for reset state, register access, interrupts, connections, checkpoints, and firmware boot behavior that is within scope.',
+            '- A model is not behaviorally verified unless the configured licensed-runner command completed successfully; static review is not a substitute for simulator execution.',
+            '- Keep Simics installation paths, license values, proprietary packages, documentation, firmware, checkpoints, and generated build output out of source control and AI Factory run artifacts.',
+            '',
+          ]
+        : []),
     ].join('\n'),
     'utf8',
   );
@@ -1074,20 +1217,35 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   writeGithubActions(projectRoot, projectName);
 
   if (options.template === 'vanilla-ts') {
-    writeFactoryConfig(projectRoot, promptsPath, ['public', 'src', 'tests', 'Dockerfile', 'nginx.conf', '.dockerignore', '.gitlab-ci.yml', '.github/workflows', ...TYPESCRIPT_CONFIG_PATHS], {
+    writeFactoryConfig(projectRoot, promptsPath, 'vanilla-typescript', ['public', 'src', 'tests', 'Dockerfile', 'nginx.conf', '.dockerignore', '.gitlab-ci.yml', '.github/workflows', ...TYPESCRIPT_CONFIG_PATHS], {
       typeCheck: 'pnpm typecheck',
       test: undefined,
     });
     writeVanillaTsTemplate(projectRoot, projectName, tscScript);
     writeContainerFiles(projectRoot, projectName);
   } else if (options.template === 'python') {
-    writeFactoryConfig(projectRoot, promptsPath, ['src', 'tests'], {
+    writeFactoryConfig(projectRoot, promptsPath, 'python', ['src', 'tests'], {
       typeCheck: 'pnpm typecheck',
       test: 'pnpm test',
     });
     writePythonTemplate(projectRoot);
+  } else if (options.template === 'simics') {
+    writeFactoryConfig(
+      projectRoot,
+      promptsPath,
+      'simics',
+      ['dml', 'targets', 'python', 'scripts', 'tests', 'Makefile', 'README.md', '.gitattributes', '.gitignore'],
+      {
+        build: 'pnpm simics:build',
+        typeCheck: 'pnpm simics:check',
+        test: 'pnpm simics:test',
+      },
+      900_000,
+      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/Makefile'],
+    );
+    writeSimicsTemplate(projectRoot, projectName);
   } else {
-    writeFactoryConfig(projectRoot, promptsPath, [], {});
+    writeFactoryConfig(projectRoot, promptsPath, 'generic', [], {});
   }
 
   writeFileSync(resolve(projectRoot, 'requirements/.gitkeep'), '', 'utf8');
