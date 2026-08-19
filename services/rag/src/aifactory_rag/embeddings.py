@@ -182,7 +182,54 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
         return [float(value) for value in embedding]
 
 
+class LocalEmbeddingAdapter(EmbeddingAdapter):
+    """Generate dense embeddings in-process with FastEmbed and ONNX Runtime."""
+
+    def __init__(self, config: RagEmbeddingConfig):
+        try:
+            from fastembed import TextEmbedding
+        except ImportError as exc:
+            raise RuntimeError(
+                "Local embeddings require FastEmbed. Run: pnpm rag:install"
+            ) from exc
+
+        self.dimensions = config.dimensions
+        self._model = TextEmbedding(
+            model_name=config.model,
+            cache_dir=config.cache_dir,
+            threads=config.threads,
+            local_files_only=config.local_files_only,
+            specific_model_path=config.model_path or None,
+        )
+        model_dimensions = int(self._model.embedding_size)
+        if model_dimensions != self.dimensions:
+            raise RuntimeError(
+                f"Local embedding dimension mismatch: configured {self.dimensions}, "
+                f"model {config.model} produces {model_dimensions}"
+            )
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        return [self._vector(values) for values in self._model.passage_embed(texts)]
+
+    def embed_query(self, text: str) -> list[float]:
+        values = next(iter(self._model.query_embed(text)))
+        return self._vector(values)
+
+    def _vector(self, values: Any) -> list[float]:
+        raw = values.tolist() if hasattr(values, "tolist") else list(values)
+        vector = [float(value) for value in raw]
+        if len(vector) != self.dimensions:
+            raise RuntimeError(
+                f"Local embedding dimension mismatch: expected {self.dimensions}, received {len(vector)}"
+            )
+        return vector
+
+
 def create_embedding_adapter(config: RagEmbeddingConfig) -> EmbeddingAdapter:
+    if config.provider == "local":
+        return LocalEmbeddingAdapter(config)
     if config.provider == "ollama":
         return OllamaEmbeddingAdapter(config)
     if config.provider == "gemini":

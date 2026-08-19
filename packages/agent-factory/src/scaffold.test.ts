@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -51,6 +52,13 @@ test('new projects enable the draft requirement branch workflow', () => {
         required: boolean;
         maxContextChars: number;
       };
+      rag: {
+        grounding: {
+          enabled: boolean;
+          chatUrl: string;
+          sourceIds: string[];
+        };
+      };
     };
     assert.deepEqual(config.model, {
       provider: '${AI_PROVIDER}',
@@ -82,6 +90,12 @@ test('new projects enable the draft requirement branch workflow', () => {
       required: true,
       maxContextChars: 20000,
     });
+    assert.equal(config.rag.grounding.enabled, false);
+    assert.equal(
+      config.rag.grounding.chatUrl,
+      '${RAG_CHAT_URL:-http://127.0.0.1:8765/query}',
+    );
+    assert.deepEqual(config.rag.grounding.sourceIds, ['${RAG_SOURCE_ID:-fileserver}']);
     assert.equal(config.repositoryPlatforms.gitlab.removeSourceBranchOnMerge, true);
     assert.equal(config.repositoryPlatforms.github.removeSourceBranchOnMerge, true);
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
@@ -218,6 +232,88 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(envExample, /GITHUB_API_URL=/);
     assert.match(envExample, /GITHUB_REPOSITORY=/);
     assert.match(envExample, /GITHUB_TOKEN=/);
+    assert.match(envExample, /RAG_CHAT_URL=/);
+    assert.match(envExample, /RAG_SOURCE_ID=fileserver/);
+    assert.doesNotMatch(envExample, /RAG_SOURCE_\d+_ID/);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test('simics template scaffolds a licensed-runner project without proprietary dependencies', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'aifactory-simics-scaffold-'));
+  try {
+    const result = createTargetProject('board-twin', { dir: parent, template: 'simics' });
+    const config = JSON.parse(readFileSync(join(result.projectRoot, 'factory.config.json'), 'utf8')) as {
+      targetProject: {
+        profile: string;
+        allowedPaths: string[];
+        commandTimeoutMs: number;
+        commands: Record<string, string>;
+      };
+      rag: { sources: Array<{ include: string[] }> };
+    };
+    assert.equal(config.targetProject.profile, 'simics');
+    assert.equal(config.targetProject.commandTimeoutMs, 900_000);
+    assert.deepEqual(config.targetProject.commands, {
+      build: 'pnpm simics:build',
+      typeCheck: 'pnpm simics:check',
+      test: 'pnpm simics:test',
+    });
+    assert.ok(config.targetProject.allowedPaths.includes('dml'));
+    assert.ok(config.targetProject.allowedPaths.includes('targets'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/*.dml'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/*.simics'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/*.mk'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/*.include'));
+    assert.ok(config.rag.sources[0]?.include.includes('**/GNUmakefile'));
+    for (const path of [
+      'dml/README.md',
+      'targets/README.md',
+      'python/README.md',
+      'scripts/simics-command.mjs',
+      'tests/README.md',
+      '.gitattributes',
+    ]) {
+      assert.equal(existsSync(join(result.projectRoot, path)), true, path);
+    }
+    const wrapper = readFileSync(join(result.projectRoot, 'scripts/simics-command.mjs'), 'utf8');
+    assert.match(wrapper, /SIMICS_BUILD_COMMAND_JSON/);
+    assert.match(wrapper, /shell: false/);
+    const guidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
+    assert.match(guidelines, /## Simics Model Development/);
+    assert.match(guidelines, /not behaviorally verified/);
+    const readme = readFileSync(join(result.projectRoot, 'README.md'), 'utf8');
+    assert.match(readme, /does not install or redistribute Simics/);
+    assert.match(readme, /missing command is a failed, unverified gate/);
+    const unconfigured = spawnSync(
+      process.execPath,
+      ['scripts/simics-command.mjs', 'build'],
+      {
+        cwd: result.projectRoot,
+        encoding: 'utf8',
+        env: { ...process.env, SIMICS_BUILD_COMMAND_JSON: '' },
+      },
+    );
+    assert.equal(unconfigured.status, 2);
+    assert.match(unconfigured.stderr, /licensed Simics validation was not run/);
+    const childFailure = spawnSync(
+      process.execPath,
+      ['scripts/simics-command.mjs', 'test'],
+      {
+        cwd: result.projectRoot,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          SIMICS_TEST_COMMAND_JSON: JSON.stringify([process.execPath, '-e', 'process.exit(7)']),
+        },
+      },
+    );
+    assert.equal(childFailure.status, 7);
+    assert.throws(
+      () => createTargetProject('invalid-template', { dir: parent, template: 'unknown' }),
+      /empty, vanilla-ts, python, simics/,
+    );
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

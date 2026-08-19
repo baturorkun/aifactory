@@ -4,6 +4,7 @@ import type { ArchitectureOutput, Requirement, Task } from '@aifactory/contracts
 import { FilePatchSchema } from '@aifactory/contracts';
 import {
   buildCoderPrompt,
+  buildArchitectPrompt,
   buildDomainGuardPrompt,
   buildPlannerPrompt,
   buildQualityGateRepairPrompt,
@@ -166,4 +167,30 @@ test('review agents receive unchanged supporting integration context', () => {
   assert.match(reviewer, /context, not submitted changes/);
   assert.match(guard, /handleKeyboardActivation/);
   assert.match(guard, /Do not treat these files as submitted changes/);
+});
+
+test('all pipeline prompts receive a Simics target profile without TypeScript or Jest defaults', () => {
+  const code = {
+    taskId: task.id,
+    patches: [{ path: 'dml/device.dml', language: 'dml', mode: 'full' as const, content: 'dml 1.4;' }],
+    notes: [],
+    dependencies: [],
+  };
+  const tests = {
+    taskId: task.id,
+    tests: [{ name: 'register reset', path: 'tests/reset.simics', content: 'quit 0', covers: ['reset'], framework: 'simics-batch' }],
+    coverage: [],
+    setupNotes: [],
+  };
+  const profilePattern = /Target Project Profile[\s\S]*simics[\s\S]*Do not substitute TypeScript, npm, Jest/;
+  const prompts = [
+    buildPlannerPrompt(requirement, {}, [], undefined, 'simics'),
+    buildArchitectPrompt(task, { requirementId: requirement.id, summary: 'plan', tasks: [task], assumptions: [], outOfScope: [] }, requirement, {}, [], undefined, 'simics'),
+    buildCoderPrompt(task, architecture, requirement, {}, [], ['dml', 'tests'], undefined, undefined, 'simics'),
+    buildTesterPrompt(task, code, requirement, {}, ['dml', 'tests'], [], undefined, 'simics'),
+    buildReviewerPrompt(task, code, tests, requirement, [], undefined, 'simics'),
+    buildDomainGuardPrompt(task, code, requirement, [], [], undefined, 'simics'),
+    buildQualityGateRepairPrompt(requirement, [], [], ['dml', 'tests'], 'simics'),
+  ];
+  for (const prompt of prompts) assert.match(prompt, profilePattern);
 });

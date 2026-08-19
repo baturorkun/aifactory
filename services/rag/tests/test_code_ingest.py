@@ -6,7 +6,7 @@ from pathlib import Path
 
 from aifactory_rag.config import RagSourceConfig
 from aifactory_rag.ingest.parsers import parse_file
-from aifactory_rag.ingest.sources import scan_files
+from aifactory_rag.ingest.sources import effective_excludes, scan_files
 
 
 class CodeIngestTests(unittest.TestCase):
@@ -23,6 +23,21 @@ class CodeIngestTests(unittest.TestCase):
             path.write_text("FROM python:3.12-slim\n", encoding="utf-8")
 
             self.assertEqual(parse_file(path), "FROM python:3.12-slim\n")
+
+    def test_parse_file_supports_simics_build_and_include_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = {
+                "module.mk": "MODULE_CLASSES = sample_device\n",
+                "device.inc": "# shared DML definitions\n",
+                "console-system.include": "instantiate-components()\n",
+                "toolchain.cmake": "set(SIMICS_PROJECT ON)\n",
+                "GNUmakefile": "include config/project/module.mk\n",
+            }
+            for filename, content in files.items():
+                path = root / filename
+                path.write_text(content, encoding="utf-8")
+                self.assertEqual(parse_file(path), content)
 
     def test_parse_file_supports_simics_dml_and_command_scripts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -51,6 +66,29 @@ class CodeIngestTests(unittest.TestCase):
                 [file.relative_path for file in scan_files(source)],
                 ["Dockerfile", "src/main.py"],
             )
+
+    def test_source_specific_exclude_additions_preserve_default_excludes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "code").mkdir()
+            (root / "code" / "device.dml").write_text("dml 1.4;\n", encoding="utf-8")
+            (root / "code" / "notes.txt").write_text("ignore me\n", encoding="utf-8")
+            (root / "build").mkdir()
+            (root / "build" / "generated.dml").write_text("dml 1.4;\n", encoding="utf-8")
+            source = RagSourceConfig.model_validate(
+                {
+                    "id": "simics",
+                    "rootPath": str(root),
+                    "excludeAdditions": ["**/*.txt"],
+                }
+            )
+
+            self.assertEqual(
+                [file.relative_path for file in scan_files(source)],
+                ["code/device.dml"],
+            )
+            self.assertIn("**/build/**", effective_excludes(source))
+            self.assertIn("**/*.txt", effective_excludes(source))
 
 
 if __name__ == "__main__":

@@ -70,6 +70,7 @@ export function createRunDir(
     deletedFiles: [],
     gateResults: {
       schemaCheck: 'pending',
+      build: 'pending',
       typeCheck: 'pending',
       lint: 'pending',
       tests: 'pending',

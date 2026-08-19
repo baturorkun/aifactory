@@ -65,22 +65,14 @@
       {
         "id": "${RAG_SOURCE_1_ID:-source-1}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_1_PATH:-./references/source-1}"
+        "rootPath": "${RAG_SOURCE_1_PATH:-./references/source-1}",
+        "excludeAdditions": "${RAG_SOURCE_1_EXCLUDE_ADDITIONS:-[]}"
       },
       {
         "id": "${RAG_SOURCE_2_ID:-source-2}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}"
-      },
-      {
-        "id": "${RAG_SOURCE_3_ID:-source-3}",
-        "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}"
-      },
-      {
-        "id": "${RAG_SOURCE_4_ID:-source-4}",
-        "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_4_PATH:-./references/source-4}"
+        "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}",
+        "excludeAdditions": "${RAG_SOURCE_2_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "ingest": {
@@ -91,10 +83,14 @@
       "databaseReconnectDelaySeconds": 5
     },
     "embedding": {
-      "provider": "${RAG_EMBEDDING_PROVIDER:-gemini}",
-      "model": "${RAG_EMBEDDING_MODEL:-gemini-embedding-001}",
-      "dimensions": 1536,
+      "provider": "${RAG_EMBEDDING_PROVIDER:-local}",
+      "model": "${RAG_EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}",
+      "dimensions": "${RAG_EMBEDDING_DIMENSIONS:-384}",
       "apiKey": "${RAG_API_KEY:-}",
+      "cacheDir": "${RAG_EMBEDDING_CACHE_DIR:-./.cache/fastembed}",
+      "modelPath": "${RAG_EMBEDDING_MODEL_PATH:-}",
+      "localFilesOnly": "${RAG_EMBEDDING_LOCAL_FILES_ONLY:-false}",
+      "threads": "${RAG_EMBEDDING_THREADS:-4}",
       "maxRetries": 6,
       "retryBaseSeconds": 2,
       "retryMaxSeconds": 60,

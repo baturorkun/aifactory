@@ -129,6 +129,7 @@ pnpm factory --help
 pnpm factory new myproject --template empty
 pnpm factory new my-web-app --template vanilla-ts
 pnpm factory new my-python-app --template python
+pnpm factory new my-board-model --template simics
 ```
 
 By default, running this from inside `aifactory/` creates the target project one directory above it:
@@ -152,7 +153,7 @@ pnpm factory new myproject
 ```
 
 ```text
-Error: Missing --template. Choose one: empty, vanilla-ts, python
+Error: Missing --template. Choose one: empty, vanilla-ts, python, simics
 ```
 
 ### Templates
@@ -224,6 +225,21 @@ pnpm test
 
 The Python template uses Python standard library commands by default.
 
+#### `simics`
+
+Creates a language-aware workspace for Wind River/Intel Simics device and board
+models. The generated project includes `dml/`, `targets/`, `python/`, `scripts/`,
+and `tests/`, plus safe command wrappers for licensed-runner validation. AI
+Factory does not install or redistribute Simics, proprietary packages,
+documentation, firmware, checkpoints, or license material.
+
+The generated build, static-check, and batch-test gates read JSON argv arrays
+from `SIMICS_BUILD_COMMAND_JSON`, `SIMICS_CHECK_COMMAND_JSON`, and
+`SIMICS_TEST_COMMAND_JSON`. Configure those values only on a licensed local or
+self-hosted CI runner. Missing commands fail as unverified instead of reporting
+a successful simulation. Simics projects default to a 15-minute gate timeout,
+which can be changed through `targetProject.commandTimeoutMs`.
+
 ## Target Project Config
 
 Each target project has a `factory.config.json`.
@@ -275,8 +291,11 @@ The same config also controls where files can be written:
   "targetProject": {
     "root": ".",
     "applyArtifacts": true,
+    "profile": "vanilla-typescript",
     "allowedPaths": ["src", "tests", "tsconfig.json", "tsconfig.build.json"],
+    "commandTimeoutMs": 120000,
     "commands": {
+      "build": "pnpm build",
       "typeCheck": "pnpm typecheck",
       "test": "pnpm test"
     }
@@ -616,7 +635,7 @@ Requirement
   -> Quality Gates
 ```
 
-Quality gates are local checks such as schema validation, typecheck, lint, tests, and security checks when configured.
+Quality gates are local checks such as schema validation, build, typecheck, lint, tests, and security checks when configured.
 
 ## Directory Roles
 

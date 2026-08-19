@@ -15,10 +15,11 @@ from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import EmbeddingAdapter, create_embedding_adapter
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.parsers import parse_file
-from aifactory_rag.ingest.sources import SourceFile, normalize_subdir, scan_files
+from aifactory_rag.ingest.sources import SourceFile, effective_excludes, normalize_subdir, scan_files
 
 
 T = TypeVar("T")
+CONTENT_TYPE_DIRECTORIES = frozenset({"code", "documentation"})
 
 
 @dataclass
@@ -46,6 +47,14 @@ def _format_duration(seconds: float) -> str:
     return f"{int(hours)}h {int(minutes)}m {remaining:.1f}s"
 
 
+def _content_type_metadata(relative_path: str) -> dict[str, str]:
+    """Classify files in a mixed code/documentation source by its first directory."""
+    content_type, separator, _ = relative_path.partition("/")
+    if not separator or content_type not in CONTENT_TYPE_DIRECTORIES:
+        return {}
+    return {"contentType": content_type}
+
+
 def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir: str | None = None) -> IngestSummary:
     run_started = perf_counter()
     require_ingest_config(config)
@@ -55,7 +64,8 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
     print(f"RAG ingest source : {source.id}", flush=True)
     print(f"RAG ingest root   : {source.root_path}", flush=True)
     print(f"RAG include       : {', '.join(source.include) if source.include else '(all files)'}", flush=True)
-    print(f"RAG exclude       : {', '.join(source.exclude) if source.exclude else '(none)'}", flush=True)
+    excludes = effective_excludes(source)
+    print(f"RAG exclude       : {', '.join(excludes) if excludes else '(none)'}", flush=True)
     print(f"RAG subdirectory  : {normalized_subdir or '(entire source)'}", flush=True)
     files = scan_files(source, normalized_subdir)
     print(f"RAG matched files : {len(files)}", flush=True)
@@ -252,13 +262,13 @@ def _ingest_file(
             existing["file_size"] == file.size
             and existing["modified_at"].replace(tzinfo=timezone.utc) == modified_at
             and existing["status"] == "active"
-            and _chunk_config_matches(existing, config)
+            and _ingest_config_matches(existing, config)
         )
         if same_fast_fingerprint:
             return "skipped"
 
     content_hash = _sha256(file.path)
-    if existing and not force and existing["content_hash"] == content_hash and existing["status"] == "active" and _chunk_config_matches(existing, config):
+    if existing and not force and existing["content_hash"] == content_hash and existing["status"] == "active" and _ingest_config_matches(existing, config):
         _touch_document(conn, int(existing["id"]), file.size, modified_at)
         return "skipped"
 
@@ -305,7 +315,10 @@ def _replace_chunks(
             for index, chunk, embedding in zip(indices, batch_chunks, embeddings):
                 if len(embedding) == 0:
                     raise RuntimeError(f"Embedding provider returned an empty vector for chunk {index}")
-                metadata = {"relativePath": relative_path}
+                metadata = {
+                    "relativePath": relative_path,
+                    **_content_type_metadata(relative_path),
+                }
                 cur.execute(
                     """
                     INSERT INTO rag_chunks(document_id, source_id, chunk_index, text, embedding, metadata, status)
@@ -326,12 +339,18 @@ def _replace_chunks(
 def _can_resume(existing: dict[str, Any] | None, content_hash: str, config: RagConfig) -> bool:
     if not existing or existing.get("status") != "processing" or existing.get("content_hash") != content_hash:
         return False
-    return _chunk_config_matches(existing, config)
+    return _ingest_config_matches(existing, config)
 
 
-def _chunk_config_matches(existing: dict[str, Any], config: RagConfig) -> bool:
+def _ingest_config_matches(existing: dict[str, Any], config: RagConfig) -> bool:
     metadata = existing.get("metadata") or {}
-    return metadata.get("chunkSize") == config.ingest.chunk_size and metadata.get("chunkOverlap") == config.ingest.chunk_overlap
+    return (
+        metadata.get("chunkSize") == config.ingest.chunk_size
+        and metadata.get("chunkOverlap") == config.ingest.chunk_overlap
+        and metadata.get("embeddingProvider") == config.embedding.provider
+        and metadata.get("embeddingModel") == config.embedding.model
+        and metadata.get("embeddingDimensions") == config.embedding.dimensions
+    )
 
 
 def _reset_chunk_checkpoints(conn: psycopg.Connection, document_id: int) -> None:
@@ -365,7 +384,7 @@ def _upsert_source(conn: psycopg.Connection, source: RagSourceConfig) -> None:
               exclude_globs = EXCLUDED.exclude_globs,
               updated_at = now()
             """,
-            (source.id, source.type, source.root_path, json.dumps(source.include), json.dumps(source.exclude)),
+            (source.id, source.type, source.root_path, json.dumps(source.include), json.dumps(effective_excludes(source))),
         )
 
 
@@ -388,7 +407,16 @@ def _upsert_document(
     config: RagConfig,
     chunk_count: int,
 ) -> int:
-    metadata = {"extension": file.path.suffix.lower(), "chunkSize": config.ingest.chunk_size, "chunkOverlap": config.ingest.chunk_overlap, "expectedChunks": chunk_count}
+    metadata = {
+        "extension": file.path.suffix.lower(),
+        "chunkSize": config.ingest.chunk_size,
+        "chunkOverlap": config.ingest.chunk_overlap,
+        "expectedChunks": chunk_count,
+        "embeddingProvider": config.embedding.provider,
+        "embeddingModel": config.embedding.model,
+        "embeddingDimensions": config.embedding.dimensions,
+        **_content_type_metadata(file.relative_path),
+    }
     with conn.cursor() as cur:
         if existing:
             cur.execute(

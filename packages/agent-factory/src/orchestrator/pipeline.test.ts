@@ -10,6 +10,7 @@ import { readManifest } from './manifest';
 import {
   collectCoderExistingFiles,
   collectReviewSupportingFiles,
+  projectFileIndex,
   runPipeline,
   validateCodeOutputForTask,
   validateTestOutputForTask,
@@ -129,6 +130,46 @@ test('coder context includes architecture dependencies and blocker files outside
       'src/editor/geometry/affine.ts',
       'src/editor/widgets/definitions.ts',
     ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Simics sources and explicitly allowed Makefile are indexed and available to review', () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-simics-context-'));
+  try {
+    mkdirSync(join(root, 'dml'), { recursive: true });
+    mkdirSync(join(root, 'targets'), { recursive: true });
+    writeFileSync(join(root, 'dml/uart.dml'), 'dml 1.4;');
+    writeFileSync(join(root, 'targets/board.simics'), 'run-command-file setup.simics');
+    writeFileSync(join(root, 'Makefile'), 'all:\n\t@true\n');
+    const target = {
+      root,
+      applyArtifacts: true,
+      profile: 'simics',
+      allowedPaths: ['dml', 'targets', 'Makefile'],
+      commands: {},
+      commandTimeoutMs: 900_000,
+    };
+    assert.deepEqual(projectFileIndex(target), ['Makefile', 'dml/uart.dml', 'targets/board.simics']);
+    const generated = validateCodeOutputForTask({
+      taskId: 'simics-task',
+      patches: [{ path: 'dml/new-device.dml', language: 'dml', mode: 'full', content: 'dml 1.4;' }],
+      notes: [],
+      dependencies: [],
+    }, { ...task, id: 'simics-task', targetFiles: ['dml/new-device.dml'] }, target);
+    assert.equal(generated.patches[0]?.language, 'dml');
+    const simicsRequirement = {
+      ...requirement,
+      rawMarkdown: 'Preserve `dml/uart.dml`, `targets/board.simics`, and `Makefile` behavior.',
+    };
+    const files = collectReviewSupportingFiles(
+      simicsRequirement,
+      { ...architecture, components: [{ ...architecture.components[0]!, path: 'dml/new-device.dml' }] },
+      { ...task, targetFiles: ['dml/new-device.dml'] },
+      target,
+    );
+    assert.deepEqual(files.map((file) => file.path), ['Makefile', 'dml/uart.dml', 'targets/board.simics']);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
