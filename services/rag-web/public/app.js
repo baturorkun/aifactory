@@ -9,6 +9,9 @@ const sendButton = document.querySelector('#send-button');
 const clearButton = document.querySelector('#clear-chat');
 const newChatButton = document.querySelector('#new-chat');
 const sessionList = document.querySelector('#session-list');
+const modelCard = document.querySelector('.model-card');
+const llmModel = document.querySelector('#llm-model');
+const llmProvider = document.querySelector('#llm-provider');
 
 let busy = false;
 const SESSION_STORAGE_KEY = 'aifactory-rag-chat-sessions-v1';
@@ -218,6 +221,24 @@ async function loadSources() {
     message.textContent = 'Sources are unavailable.';
     sourceList.append(message);
     setHealth(false, 'RAG API unavailable');
+  }
+}
+
+async function loadRuntimeInfo() {
+  try {
+    const response = await fetch('/api/runtime-info');
+    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    const info = await response.json();
+    if (!info.llm?.provider || !info.llm?.model) throw new Error('LLM configuration is missing');
+    llmModel.textContent = info.llm.model;
+    llmModel.title = info.llm.model;
+    llmProvider.textContent = `${info.llm.provider} provider`;
+    modelCard.classList.remove('unavailable');
+  } catch {
+    llmModel.textContent = 'Unavailable';
+    llmModel.removeAttribute('title');
+    llmProvider.textContent = 'Runtime information unavailable';
+    modelCard.classList.add('unavailable');
   }
 }
 
@@ -449,3 +470,4 @@ else {
   renderActiveSession();
 }
 void loadSources();
+void loadRuntimeInfo();

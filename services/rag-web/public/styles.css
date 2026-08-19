@@ -105,6 +105,22 @@ button { color: inherit; }
 .source-skeleton.short { width: 76%; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
+.model-card {
+  display: grid;
+  gap: 7px;
+  margin-top: 24px;
+  padding: 13px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(17, 42, 36, 0.68), rgba(9, 22, 19, 0.68));
+}
+.model-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.model-card-heading h2 { margin: 0; color: var(--muted); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; }
+.model-indicator { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-strong); box-shadow: 0 0 0 3px rgba(39, 201, 149, 0.1); }
+.model-card strong { overflow: hidden; color: var(--text); font: 600 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.model-card > span:not(.model-indicator) { color: var(--muted); font-size: 10px; text-transform: capitalize; }
+.model-card.unavailable .model-indicator { background: var(--danger); box-shadow: 0 0 0 3px rgba(255, 143, 134, 0.1); }
+
 .sidebar-footer { display: flex; align-items: center; gap: 9px; margin-top: auto; color: var(--muted); font-size: 12px; }
 .health-dot { width: 8px; height: 8px; border-radius: 50%; background: #d4a84f; box-shadow: 0 0 0 4px rgba(212, 168, 79, 0.1); }
 .health-dot.online { background: var(--accent-strong); box-shadow: 0 0 0 4px rgba(39, 201, 149, 0.1); }
@@ -169,6 +185,7 @@ button { color: inherit; }
   .source-panel { margin-top: 22px; }
   .source-list { display: flex; max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 3px; }
   .source-option { min-width: max-content; }
+  .model-card { max-width: 320px; }
   .sidebar-footer { margin-top: 18px; }
   .chat-panel { height: auto; min-height: calc(100vh - 210px); grid-template-rows: auto minmax(420px, 1fr) auto; }
   .chat-header, .messages, .composer-wrap { padding-left: 18px; padding-right: 18px; }

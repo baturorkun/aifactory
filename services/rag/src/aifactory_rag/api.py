@@ -54,6 +54,15 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 cur.execute("SELECT 1")
         return {"status": "ok"}
 
+    @app.get("/runtime-info")
+    def runtime_info(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, dict[str, str]]:
+        return {
+            "llm": {
+                "provider": factory_config.rag.llm.provider,
+                "model": factory_config.rag.llm.model,
+            }
+        }
+
     @app.post("/query")
     def query(payload: QueryRequest, claims: dict[str, Any] = Depends(auth_claims)) -> dict:
         user_id = user_from_claims(claims)
