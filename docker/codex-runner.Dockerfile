@@ -9,6 +9,7 @@ RUN apt-get update \
       curl \
       git \
       jq \
+      lsb-release \
       openssl \
       python3 \
       python3-pip \
