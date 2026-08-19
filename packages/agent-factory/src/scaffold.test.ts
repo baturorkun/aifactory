@@ -1,10 +1,44 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createTargetProject } from './scaffold';
+
+test('project creation adds the Superpowers policy conditionally and preserves existing guidelines', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'aifactory-superpowers-'));
+  try {
+    const without = createTargetProject('without-superpowers', {
+      dir: parent,
+      template: 'empty',
+      codexHome: join(parent, 'empty-codex-home'),
+    });
+    assert.doesNotMatch(
+      readFileSync(join(without.projectRoot, 'AGENTS.md'), 'utf8'),
+      /superpowers-token-policy:start/,
+    );
+
+    const existingRoot = join(parent, 'with-superpowers');
+    mkdirSync(existingRoot);
+    writeFileSync(join(existingRoot, 'AGENTS.md'), '# Existing project rules\n', 'utf8');
+    const options = {
+      dir: parent,
+      template: 'empty' as const,
+      force: true,
+      availableSkills: ['superpowers:brainstorming'],
+    };
+    const withSuperpowers = createTargetProject('with-superpowers', options);
+    createTargetProject('with-superpowers', options);
+    const guidelines = readFileSync(join(withSuperpowers.projectRoot, 'AGENTS.md'), 'utf8');
+    assert.match(guidelines, /^# Existing project rules/);
+    assert.match(guidelines, /## Superpowers düşük-token çalışma politikası/);
+    assert.equal(guidelines.match(/<!-- superpowers-token-policy:start -->/g)?.length, 1);
+    assert.equal(guidelines.match(/<!-- superpowers-token-policy:end -->/g)?.length, 1);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
 
 test('new projects enable the draft requirement branch workflow', () => {
   const parent = mkdtempSync(join(tmpdir(), 'aifactory-scaffold-'));

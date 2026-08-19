@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
 import { relative, resolve } from 'path';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'simics';
@@ -7,6 +8,9 @@ export type NewProjectOptions = {
   dir?: string;
   force?: boolean;
   template?: string;
+  availableSkills?: readonly string[];
+  availablePlugins?: readonly string[];
+  codexHome?: string;
 };
 
 export type NewProjectResult = {
@@ -19,6 +23,83 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'pyt
 
 const PROJECT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const TYPESCRIPT_CONFIG_PATHS = ['tsconfig.json', 'tsconfig.build.json'];
+const SUPERPOWERS_POLICY_START = '<!-- superpowers-token-policy:start -->';
+const SUPERPOWERS_POLICY_END = '<!-- superpowers-token-policy:end -->';
+
+export const SUPERPOWERS_TOKEN_POLICY = [
+  SUPERPOWERS_POLICY_START,
+  '',
+  '## Superpowers düşük-token çalışma politikası',
+  '',
+  'Superpowers skill’lerini yalnızca görevle doğrudan ilgili olduklarında kullan.',
+  '',
+  'Öncelik sırası:',
+  '',
+  '1. Doğruluk',
+  '2. Düşük token tüketimi',
+  '3. Süre',
+  '',
+  'Görevin daha uzun sürmesi kabul edilebilir. Token tüketimini azaltmak için:',
+  '',
+  '- Yalnızca gerekli Superpowers skill’lerini yükle.',
+  '- Aynı skill’i veya talimat dosyasını tekrar okuma.',
+  '- Kullanıcı açıkça istemedikçe subagent ve paralel agent kullanma.',
+  '- Görevi tek agent ile tamamlamayı tercih et.',
+  '- Uzun brainstorming oturumlarından kaçın; yalnızca sonucu değiştirecek soruları sor.',
+  '- Plan gerekiyorsa kısa, uygulanabilir ve görev kapsamıyla sınırlı tut.',
+  '- Gereksiz alternatifler, uzun açıklamalar ve tekrar eden özetler üretme.',
+  '- Mevcut dosyaları hedefli biçimde ara; tüm projeyi gereksiz yere okuma.',
+  '- Daha önce edinilmiş ve hâlâ geçerli bilgileri yeniden toplama.',
+  '- Değişiklikleri mümkün olan en küçük kapsamda tut.',
+  '- İlgisiz refactor veya iyileştirme yapma.',
+  '- Yalnızca değişiklikle ilgili testleri ve doğrulamaları çalıştır.',
+  '- Aynı testi, aramayı veya incelemeyi yeni kanıt olmadan tekrarlama.',
+  '- Test çıktılarının yalnızca ilgili bölümlerini incele.',
+  '- Kullanıcıya kısa ve seyrek ilerleme güncellemeleri ver.',
+  '- Nihai yanıtta yalnızca sonuç, değişen dosyalar ve önemli doğrulama sonuçlarını bildir.',
+  '',
+  'Bir Superpowers skill’i daha fazla token harcatsa bile hata, tekrar çalışma veya yanlış uygulama riskini belirgin biçimde azaltıyorsa kullanılabilir.',
+  '',
+  SUPERPOWERS_POLICY_END,
+  '',
+].join('\n');
+
+function containsSuperpowersEntry(root: string, depth = 0): boolean {
+  if (!existsSync(root) || depth > 5) return false;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const normalized = entry.name.toLowerCase();
+    if (normalized === 'superpowers' || normalized.startsWith('superpowers:') || normalized.startsWith('superpowers@')) {
+      return true;
+    }
+    if (entry.isFile() && (normalized === 'skill.md' || normalized === 'plugin.json')) {
+      const metadata = readFileSync(resolve(root, entry.name), 'utf8');
+      if (/\bname\s*[:=]\s*["']?superpowers(?::|["'])/i.test(metadata) ||
+          /["'](?:id|plugin_id)["']\s*:\s*["']superpowers(?:@[^"']+)?["']/i.test(metadata)) {
+        return true;
+      }
+    }
+    if (entry.isDirectory() && containsSuperpowersEntry(resolve(root, entry.name), depth + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function hasSuperpowersCapability(options: NewProjectOptions): boolean {
+  if (options.availableSkills?.some((name) => name.toLowerCase().startsWith('superpowers:'))) return true;
+  if (options.availablePlugins?.some((name) => name.toLowerCase() === 'superpowers')) return true;
+  const codexHome = resolve(options.codexHome ?? process.env.CODEX_HOME ?? resolve(homedir(), '.codex'));
+  return containsSuperpowersEntry(resolve(codexHome, 'skills')) ||
+    containsSuperpowersEntry(resolve(codexHome, 'plugins'));
+}
+
+export function ensureSuperpowersTokenPolicy(agentsPath: string): boolean {
+  const current = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '';
+  if (current.includes(SUPERPOWERS_POLICY_START) || current.includes(SUPERPOWERS_POLICY_END)) return false;
+  const separator = current.length === 0 ? '' : current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n';
+  writeFileSync(agentsPath, `${current}${separator}${SUPERPOWERS_TOKEN_POLICY}`, 'utf8');
+  return true;
+}
 
 function assertValidProjectName(projectName: string): void {
   if (!PROJECT_NAME_PATTERN.test(projectName)) {
@@ -1161,9 +1242,8 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   }
 
   writeCommonFiles(projectRoot, projectName);
-  writeFileSync(
-    resolve(projectRoot, 'AGENTS.md'),
-    [
+  const agentsPath = resolve(projectRoot, 'AGENTS.md');
+  const generatedAgentGuidelines = [
       '# Agent Guidelines',
       '',
       '## AI Factory Workflow',
@@ -1212,9 +1292,9 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
             '',
           ]
         : []),
-    ].join('\n'),
-    'utf8',
-  );
+    ].join('\n');
+  if (!existsSync(agentsPath)) writeFileSync(agentsPath, generatedAgentGuidelines, 'utf8');
+  if (hasSuperpowersCapability(options)) ensureSuperpowersTokenPolicy(agentsPath);
   writeReferencesReadme(projectRoot);
   writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts');
   writeGithubActions(projectRoot, projectName);
