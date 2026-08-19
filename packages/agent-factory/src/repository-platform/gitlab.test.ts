@@ -137,3 +137,37 @@ test('GitLab adapter redacts tokens from API errors', async () => {
     },
   );
 });
+
+test('GitLab adapter inspects readiness and merges with the expected SHA', async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  let ready = false;
+  let merged = false;
+  const mrJson = () => ({
+    iid: 9, title: ready ? 'RQ-0007 - Platform' : 'Draft: RQ-0007 - Platform',
+    web_url: 'https://gitlab.example.test/group/project/-/merge_requests/9',
+    state: merged ? 'merged' : 'opened', source_branch: 'factory/RQ-0007', target_branch: 'main',
+    draft: !ready, sha: 'abc123', detailed_merge_status: 'mergeable',
+    head_pipeline: { status: 'success' }, merged_at: merged ? '2026-08-19T12:00:00Z' : null,
+  });
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input); requests.push({ url, init });
+    if (url.endsWith('/approvals')) return Response.json({ approved: true, approvals_left: 0 });
+    if (url.endsWith('/merge_requests/9/merge')) { merged = true; return Response.json(mrJson()); }
+    if (url.endsWith('/merge_requests/9') && init?.method === 'PUT') { ready = true; return Response.json(mrJson()); }
+    if (url.endsWith('/merge_requests/9')) return Response.json(mrJson());
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const adapter = new GitLabRepositoryPlatform(settings, fetchMock);
+  const changeRequest = (await adapter.getChangeRequest(9))!;
+  const readiness = await adapter.inspectChangeRequest(changeRequest);
+  assert.equal(readiness.ciStatus, 'success');
+  assert.equal(readiness.approvalsSatisfied, true);
+  assert.equal(readiness.draft, true);
+  await adapter.markChangeRequestReady(changeRequest);
+  const result = await adapter.mergeChangeRequest(changeRequest, 'abc123');
+  assert.equal(result.state, 'merged');
+  const mergeRequest = requests.find((request) => request.url.endsWith('/merge_requests/9/merge'))!;
+  assert.deepEqual(JSON.parse(String(mergeRequest.init?.body)), {
+    sha: 'abc123', should_remove_source_branch: true,
+  });
+});

@@ -34,6 +34,7 @@ import {
 } from './requirement-branches';
 import {
   cancelRequirement,
+  completeRequirement,
   createDraftRequirement,
   requirementExecutionDecision,
   setRequirementFast,
@@ -153,6 +154,31 @@ requirement
       console.log(chalk.dim(`  MR     : ${result.changeRequest ? `!${result.changeRequest.iid} ${result.changeRequest.state}` : 'not found or platform disabled'}`));
       console.log(chalk.dim(`  Remote : ${result.remoteBranchDeleted ? `${result.branch} deleted` : 'branch not present'}`));
       console.log(chalk.dim(`  Local  : ${result.localBranchDeleted ? `${result.branch} deleted` : 'branch not present'}`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('complete <reqId>')
+  .description('Complete an approved requirement, merge its change request, and close its Issue')
+  .requiredOption('--run <runId>', 'Approved AI Factory run ID')
+  .option('--by <name>', 'Name recorded as the requirement completer')
+  .option('--platform <platform>', 'Repository platform: github or gitlab')
+  .addHelpText('after', [
+    '',
+    'Requires a clean repository, a committed approved run, successful CI,',
+    'required approvals, matching source/target branches, and a mergeable head.',
+    'If completion-commit checks are pending, rerun the same command to resume.',
+  ].join('\n'))
+  .action(async (reqId: string, opts: { run: string; by?: string; platform?: string }) => {
+    try {
+      const result = await completeRequirement(reqId, opts.run, loadConfig(), opts);
+      const symbol = result.provider === 'github' ? '#' : '!';
+      console.log(chalk.green(`✓ ${result.requirementId} completed with ${result.runId}.`));
+      console.log(chalk.dim(`  Merge : ${symbol}${result.changeRequest.iid} ${result.alreadyMerged ? 'already merged' : 'merged'}`));
+      console.log(chalk.dim(`  Issue : #${result.workItem.iid} labelled passed and closed`));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

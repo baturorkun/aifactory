@@ -13,6 +13,7 @@ import test from 'node:test';
 import { FactoryConfigSchema, type FactoryConfig } from './config';
 import {
   cancelRequirement,
+  completeRequirement,
   createDraftRequirement,
   requirementExecutionDecision,
   setRequirementFast,
@@ -23,6 +24,7 @@ import {
 import { resolveRequirementFast } from './requirement-branches';
 import type {
   ChangeRequest,
+  ChangeRequestReadiness,
   RepositoryPlatformAdapter,
   WorkItem,
 } from './repository-platform/types';
@@ -40,6 +42,13 @@ class FakeRepositoryPlatform implements RepositoryPlatformAdapter {
   changeRequest?: ChangeRequest;
   comments: string[] = [];
   closedChangeRequests = 0;
+  headSha = '';
+  resolveHeadSha?: () => string;
+  draft = true;
+  ciStatus: ChangeRequestReadiness['ciStatus'] = 'success';
+  mergeStatus: ChangeRequestReadiness['mergeStatus'] = 'mergeable';
+  approvalsSatisfied = true;
+  onMerge?: (sha: string) => void;
 
   constructor(readonly provider: 'gitlab' | 'github' = 'gitlab') {}
 
@@ -64,6 +73,10 @@ class FakeRepositoryPlatform implements RepositoryPlatformAdapter {
   }
   async setWorkItemLifecycleLabel(workItem: WorkItem, label: string): Promise<WorkItem> {
     workItem.labels = [label];
+    return workItem;
+  }
+  async closeWorkItem(workItem: WorkItem): Promise<WorkItem> {
+    workItem.state = 'closed';
     return workItem;
   }
   async addWorkItemComment(_workItem: WorkItem, body: string, marker: string): Promise<void> {
@@ -103,6 +116,25 @@ class FakeRepositoryPlatform implements RepositoryPlatformAdapter {
       changeRequest.state = 'closed';
       this.closedChangeRequests += 1;
     }
+    return changeRequest;
+  }
+  async inspectChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequestReadiness> {
+    return {
+      changeRequest,
+      headSha: this.resolveHeadSha?.() ?? this.headSha,
+      draft: this.draft,
+      ciStatus: this.ciStatus,
+      mergeStatus: changeRequest.state === 'merged' ? 'merged' : this.mergeStatus,
+      approvalsSatisfied: this.approvalsSatisfied,
+    };
+  }
+  async markChangeRequestReady(changeRequest: ChangeRequest): Promise<ChangeRequest> {
+    this.draft = false;
+    return changeRequest;
+  }
+  async mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest> {
+    this.onMerge?.(expectedHeadSha);
+    changeRequest.state = 'merged';
     return changeRequest;
   }
 }
@@ -477,6 +509,17 @@ test('cancel closes an existing GitLab MR before deleting its branch', async () 
     GITLAB_PROJECT_ID: 'group/project',
     GITLAB_TOKEN: 'secret',
   };
+  repo.config.repositoryPlatforms.gitlab = {
+    baseUrl: environment.GITLAB_URL,
+    projectId: environment.GITLAB_PROJECT_ID,
+    token: environment.GITLAB_TOKEN,
+    targetBranch: 'main',
+    removeSourceBranchOnMerge: true,
+    labels: {
+      draft: 'factory::draft', ready: 'factory::ready', running: 'factory::running',
+      needsFix: 'factory::needs-fix', passed: 'factory::passed',
+    },
+  };
   try {
     const created = await createDraftRequirement('Cancelled GitLab feature', 'handoff', repo.config, {
       environment,
@@ -493,6 +536,80 @@ test('cancel closes an existing GitLab MR before deleting its branch', async () 
     assert.equal(adapter.closedChangeRequests, 1);
     assert.equal(result.remoteBranchDeleted, true);
     assert.equal(result.localBranchDeleted, true);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('complete records an approved run, merges with a SHA guard, and closes the Issue idempotently', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform();
+  const environment = {
+    GITLAB_URL: 'https://gitlab.example.test',
+    GITLAB_PROJECT_ID: 'group/project',
+    GITLAB_TOKEN: 'secret',
+  };
+  repo.config.repositoryPlatforms.gitlab = {
+    baseUrl: environment.GITLAB_URL,
+    projectId: environment.GITLAB_PROJECT_ID,
+    token: environment.GITLAB_TOKEN,
+    targetBranch: 'main',
+    removeSourceBranchOnMerge: true,
+    labels: {
+      draft: 'factory::draft', ready: 'factory::ready', running: 'factory::running',
+      needsFix: 'factory::needs-fix', passed: 'factory::passed',
+    },
+  };
+  try {
+    const created = await createDraftRequirement('Completed GitLab feature', 'handoff', repo.config, {
+      environment,
+      platformAdapter: adapter,
+    });
+    const requirementPath = join(repo.root, created.requirementFile);
+    completeDraft(requirementPath);
+    await submitRequirement(created.requirementId, repo.config, {
+      createHandoff: async () => 'run-approved',
+      platformAdapter: adapter,
+    });
+    const runDir = join(repo.root, 'runs', 'run-approved');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({
+      runId: 'run-approved',
+      requirementId: created.requirementId,
+      executionMode: 'handoff',
+      fast: false,
+      status: 'approved',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      steps: [], artifacts: [], deletedFiles: [], gateResults: {},
+      approvedBy: 'Reviewer Name',
+    }, null, 2));
+    git(repo.root, 'add', created.requirementFile, 'runs/run-approved/manifest.json');
+    git(repo.root, 'commit', '-m', 'implement approved requirement');
+    git(repo.root, 'push', 'origin', created.branch);
+    adapter.resolveHeadSha = () => git(repo.root, 'rev-parse', 'HEAD');
+    adapter.onMerge = (sha) => { git(repo.root, 'push', 'origin', `${sha}:main`); };
+
+    const result = await completeRequirement(created.requirementId, 'run-approved', repo.config, {
+      environment,
+      platformAdapter: adapter,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(result.alreadyMerged, false);
+    assert.equal(adapter.workItem?.state, 'closed');
+    assert.deepEqual(adapter.workItem?.labels, ['factory::passed']);
+    const merged = git(repo.root, `--git-dir=${repo.remote}`, 'show', `main:${created.requirementFile}`);
+    assert.match(merged, /status: completed/);
+    assert.match(merged, /completedBy: "Reviewer Name"/);
+    assert.match(merged, /completedRunId: "run-approved"/);
+    const commentsAfterFirstRun = adapter.comments.length;
+
+    const repeated = await completeRequirement(created.requirementId, 'run-approved', repo.config, {
+      environment,
+      platformAdapter: adapter,
+    });
+    assert.equal(repeated.alreadyMerged, true);
+    assert.equal(adapter.comments.length, commentsAfterFirstRun);
   } finally {
     repo.cleanup();
   }

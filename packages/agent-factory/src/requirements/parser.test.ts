@@ -61,6 +61,17 @@ test('lifecycle frontmatter is parsed and can be updated without changing the bo
   const fastRequirement = parseRequirementMarkdown('RQ-0017', fast);
   assert.equal(fastRequirement.lifecycle?.pipelineFast, true);
   assert.match(fast, /executionMode: pipeline\npipelineFast: true/);
+
+  const completed = updateRequirementMetadata(fast, {
+    status: 'completed',
+    completedAt: '2026-08-19T12:00:00.000Z',
+    completedBy: 'Reviewer',
+    completedRunId: 'run-0017',
+  });
+  const completedRequirement = parseRequirementMarkdown('RQ-0017', completed);
+  assert.equal(completedRequirement.lifecycle?.completedAt, '2026-08-19T12:00:00.000Z');
+  assert.equal(completedRequirement.lifecycle?.completedBy, 'Reviewer');
+  assert.equal(completedRequirement.lifecycle?.completedRunId, 'run-0017');
 });
 
 test('draft and execution-mode mismatches are rejected', () => {

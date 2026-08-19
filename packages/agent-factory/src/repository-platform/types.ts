@@ -18,6 +18,24 @@ export interface ChangeRequest {
   targetBranch: string;
 }
 
+export type ChangeRequestMergeStatus =
+  | 'mergeable'
+  | 'checking'
+  | 'blocked'
+  | 'conflicted'
+  | 'merged';
+
+export type ChangeRequestCiStatus = 'success' | 'pending' | 'failed' | 'unknown';
+
+export interface ChangeRequestReadiness {
+  changeRequest: ChangeRequest;
+  headSha: string;
+  draft: boolean;
+  mergeStatus: ChangeRequestMergeStatus;
+  ciStatus: ChangeRequestCiStatus;
+  approvalsSatisfied: boolean;
+}
+
 export interface RequirementPlatformContext {
   requirementId: string;
   title: string;
@@ -41,6 +59,7 @@ export interface RepositoryPlatformAdapter {
   }): Promise<WorkItem>;
   setWorkItemLifecycleLabel(workItem: WorkItem, label: string): Promise<WorkItem>;
   addWorkItemComment(workItem: WorkItem, body: string, marker: string): Promise<void>;
+  closeWorkItem(workItem: WorkItem): Promise<WorkItem>;
 
   getChangeRequest(iid: number): Promise<ChangeRequest | undefined>;
   findChangeRequest(sourceBranch: string, targetBranch: string): Promise<ChangeRequest | undefined>;
@@ -50,6 +69,9 @@ export interface RepositoryPlatformAdapter {
     sourceBranch: string;
     targetBranch: string;
   }): Promise<ChangeRequest>;
+  inspectChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequestReadiness>;
+  markChangeRequestReady(changeRequest: ChangeRequest): Promise<ChangeRequest>;
+  mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest>;
   closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest>;
 }
 
