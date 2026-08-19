@@ -32,7 +32,7 @@ interface GitHubPullRequest {
   mergeable_state?: string;
 }
 
-interface GitHubCombinedStatus { state: string }
+interface GitHubCombinedStatus { state: string; total_count?: number }
 interface GitHubCheckRuns {
   total_count: number;
   check_runs: Array<{ status: string; conclusion?: string | null }>;
@@ -233,7 +233,7 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
     const pendingCheck = checks.check_runs.some((check) => check.status !== 'completed');
     const ciStatus = status.state === 'failure' || status.state === 'error' || failedCheck
       ? 'failed'
-      : status.state === 'pending' || pendingCheck
+      : (status.state === 'pending' && (status.total_count ?? 0) > 0) || pendingCheck
         ? 'pending'
         : status.state === 'success' || checks.total_count > 0 ? 'success' : 'unknown';
     const mergeState = pr.mergeable_state ?? 'unknown';

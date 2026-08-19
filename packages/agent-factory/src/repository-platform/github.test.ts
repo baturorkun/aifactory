@@ -194,7 +194,9 @@ test('GitHub adapter inspects checks, marks a draft ready, and merges with a SHA
   });
   const fetchMock: typeof fetch = async (input, init) => {
     const url = String(input); requests.push({ url, init });
-    if (url.endsWith('/commits/abc123/status')) return Response.json({ state: 'success' });
+    if (url.endsWith('/commits/abc123/status')) {
+      return Response.json({ state: 'pending', total_count: 0 });
+    }
     if (url.endsWith('/commits/abc123/check-runs')) {
       return Response.json({ total_count: 1, check_runs: [{ status: 'completed', conclusion: 'success' }] });
     }
