@@ -469,6 +469,22 @@ pnpm factory -- --project ../myproject requirement mode RQ-0001 pipeline
 pnpm factory -- --project ../myproject requirement submit RQ-0001
 ```
 
+After implementation and human approval of its run, complete and merge the
+requirement atomically:
+
+```bash
+pnpm factory -- --project ../myproject requirement complete RQ-0001 \
+  --run 20260819123000-RQ-0001 --by "Reviewer Name"
+```
+
+Completion requires a clean worktree, a committed approved run manifest, a
+matching Pull/Merge Request head, successful required CI, satisfied approvals,
+and a mergeable change request. It records completion metadata, pushes that
+commit, marks the draft ready, and merges with a head-SHA guard. It then labels
+the linked Issue `factory::passed`, posts one completion comment, and closes the
+Issue. If checks for the completion commit are pending, rerun the same command
+after they finish; the operation safely resumes.
+
 Cancel a requirement from its requirement branch or the configured base branch:
 
 ```bash

@@ -43,6 +43,7 @@ pnpm factory -- --project ../myproject approve <run-id>
 | `factory requirement new <title> --mode handoff [--platform github\|gitlab\|none]` | Reserve a `[skip ci]` draft, create its branch, and create linked GitHub or GitLab resources when configured |
 | `factory requirement platform-sync <req-id> [--platform github\|gitlab]` | Create or recover the linked Issue and Draft Pull/Merge Request (`gitlab-sync` remains an alias) |
 | `factory requirement cancel <req-id> [--reason <text>] [--platform github\|gitlab\|none]` | Mark the base-branch record cancelled, close its Pull/Merge Request, and delete its requirement branch |
+| `factory requirement complete <req-id> --run <run-id> [--by <name>] [--platform github\|gitlab]` | Validate an approved run and repository gates, record completion, merge with a SHA guard, then label and close the Issue |
 | `factory requirement mode <req-id> <handoff\|pipeline>` | Change execution mode locally |
 | `factory requirement submit <req-id>` | Validate and submit through the configured mode |
 | `factory requirement decision <req-id>` | Print the CI execution decision |
@@ -214,6 +215,13 @@ Metadata-free legacy requirements remain supported. Explicit lifecycle
 requirements must be `ready`; `run` accepts pipeline mode and `handoff` accepts
 handoff mode.
 
+An approved implementation is finalized with `requirement complete`. The run
+manifest must be committed on the requirement branch and have `status:
+approved`. Required CI and approvals must pass. If the completion metadata
+commit starts a new CI run, the command reports the pending state and can be
+rerun unchanged; comments, labels, closure, and an already completed merge are
+reconciled idempotently.
+
 ---
 
 ## Constraints Format — `constraints/<id>.json`
@@ -267,6 +275,12 @@ requirement.md
               └───────┬────────┘
                       │
                    passed ──▶ pnpm factory -- approve <run-id>
+                                      │ approved
+                                      ▼
+                         pnpm factory -- requirement complete
+                                      │ completed + merged
+                                      ▼
+                            Issue passed + closed
 ```
 
 Requirement-branch synchronization checkpoints every reviewed task iteration and

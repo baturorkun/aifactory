@@ -1,5 +1,6 @@
 import type {
   ChangeRequest,
+  ChangeRequestReadiness,
   GitLabPlatformSettings,
   RepositoryPlatformAdapter,
   WorkItem,
@@ -23,6 +24,18 @@ interface GitLabMergeRequest {
   state: string;
   source_branch: string;
   target_branch: string;
+  draft?: boolean;
+  sha?: string;
+  detailed_merge_status?: string;
+  merge_status?: string;
+  head_pipeline?: { status?: string } | null;
+  merged_at?: string | null;
+}
+
+interface GitLabApprovals {
+  approved?: boolean;
+  approvals_required?: number;
+  approvals_left?: number;
 }
 
 interface GitLabNote {
@@ -146,6 +159,14 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
     }));
   }
 
+  async closeWorkItem(workItem: WorkItem): Promise<WorkItem> {
+    if (workItem.state === 'closed') return workItem;
+    return asWorkItem(await this.request<GitLabIssue>(`/issues/${workItem.iid}`, {
+      method: 'PUT',
+      body: { state_event: 'close' },
+    }));
+  }
+
   async addWorkItemComment(workItem: WorkItem, body: string, marker: string): Promise<void> {
     const notes = await this.request<GitLabNote[]>(`/issues/${workItem.iid}/notes?per_page=100`);
     if (notes.some((note) => note.body?.includes(marker))) return;
@@ -197,6 +218,66 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
         body: { state_event: 'close' },
       },
     ));
+  }
+
+  async inspectChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequestReadiness> {
+    const mr = await this.request<GitLabMergeRequest>(`/merge_requests/${changeRequest.iid}`);
+    if (mr.state === 'merged' || mr.merged_at) {
+      return {
+        changeRequest: asChangeRequest(mr),
+        headSha: mr.sha ?? '',
+        draft: false,
+        mergeStatus: 'merged',
+        ciStatus: 'success',
+        approvalsSatisfied: true,
+      };
+    }
+    const approvals = await this.request<GitLabApprovals>(`/merge_requests/${changeRequest.iid}/approvals`);
+    const mergeState = mr.detailed_merge_status ?? mr.merge_status ?? 'checking';
+    const mergeStatus = mergeState === 'mergeable' || mergeState === 'can_be_merged'
+      ? 'mergeable'
+      : ['checking', 'preparing', 'unchecked'].includes(mergeState)
+        ? 'checking'
+        : ['conflict', 'cannot_be_merged', 'need_rebase'].includes(mergeState)
+          ? 'conflicted'
+          : 'blocked';
+    const pipeline = mr.head_pipeline?.status;
+    const ciStatus = pipeline === 'success'
+      ? 'success'
+      : pipeline && ['created', 'pending', 'running', 'preparing', 'waiting_for_resource'].includes(pipeline)
+        ? 'pending'
+        : pipeline ? 'failed' : 'unknown';
+    return {
+      changeRequest: asChangeRequest(mr),
+      headSha: mr.sha ?? '',
+      draft: mr.draft ?? /^(draft:|wip:)/i.test(mr.title),
+      mergeStatus,
+      ciStatus,
+      approvalsSatisfied: approvals.approved === true || approvals.approvals_required === 0 || approvals.approvals_left === 0,
+    };
+  }
+
+  async markChangeRequestReady(changeRequest: ChangeRequest): Promise<ChangeRequest> {
+    const mr = await this.request<GitLabMergeRequest>(`/merge_requests/${changeRequest.iid}`);
+    if (!(mr.draft ?? /^(draft:|wip:)/i.test(mr.title))) return asChangeRequest(mr);
+    return asChangeRequest(await this.request<GitLabMergeRequest>(`/merge_requests/${changeRequest.iid}`, {
+      method: 'PUT',
+      body: { title: mr.title.replace(/^(draft:|wip:)\s*/i, '') },
+    }));
+  }
+
+  async mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest> {
+    const mr = await this.request<GitLabMergeRequest>(`/merge_requests/${changeRequest.iid}/merge`, {
+      method: 'PUT',
+      body: {
+        sha: expectedHeadSha,
+        should_remove_source_branch: this.settings.removeSourceBranchOnMerge,
+      },
+    });
+    if (mr.state !== 'merged' && !mr.merged_at) {
+      throw new Error(`GitLab merge request !${changeRequest.iid} was not merged (state: ${mr.state}).`);
+    }
+    return asChangeRequest(mr);
   }
 
   private async request<T>(

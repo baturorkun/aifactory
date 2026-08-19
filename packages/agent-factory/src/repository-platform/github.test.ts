@@ -181,3 +181,36 @@ test('GitHub adapter redacts tokens from API errors', async () => {
     },
   );
 });
+
+test('GitHub adapter inspects checks, marks a draft ready, and merges with a SHA guard', async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = [];
+  let ready = false;
+  let merged = false;
+  const prJson = () => ({
+    number: 101, node_id: 'PR_node', title: 'RQ-0001 - Inventory',
+    html_url: 'https://github.com/baturorkun/NetForgeSH/pull/101',
+    state: merged ? 'closed' : 'open', head: { ref: 'factory/RQ-0001', sha: 'abc123' },
+    base: { ref: 'main' }, draft: !ready, merged, mergeable: true, mergeable_state: 'clean',
+  });
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input); requests.push({ url, init });
+    if (url.endsWith('/commits/abc123/status')) return Response.json({ state: 'success' });
+    if (url.endsWith('/commits/abc123/check-runs')) {
+      return Response.json({ total_count: 1, check_runs: [{ status: 'completed', conclusion: 'success' }] });
+    }
+    if (url === 'https://api.github.com/graphql') { ready = true; return Response.json({ data: {} }); }
+    if (url.endsWith('/pulls/101/merge')) { merged = true; return Response.json({ merged: true, message: 'merged', sha: 'def456' }); }
+    if (url.endsWith('/pulls/101')) return Response.json(prJson());
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const adapter = new GitHubRepositoryPlatform(settings, fetchMock);
+  const changeRequest = (await adapter.getChangeRequest(101))!;
+  const readiness = await adapter.inspectChangeRequest(changeRequest);
+  assert.equal(readiness.ciStatus, 'success');
+  assert.equal(readiness.mergeStatus, 'mergeable');
+  await adapter.markChangeRequestReady(changeRequest);
+  const result = await adapter.mergeChangeRequest(changeRequest, 'abc123');
+  assert.equal(result.state, 'closed');
+  const mergeRequest = requests.find((request) => request.url.endsWith('/pulls/101/merge'))!;
+  assert.deepEqual(JSON.parse(String(mergeRequest.init?.body)), { sha: 'abc123', merge_method: 'merge' });
+});

@@ -5,7 +5,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type {
   Requirement,
@@ -15,6 +15,7 @@ import type { FactoryConfig } from './config';
 import {
   findRequirementFile,
   parseRequirement,
+  parseRequirementMarkdown,
   updateRequirementMetadata,
 } from './requirements/parser';
 import { requirementBranchName } from './requirement-branches';
@@ -27,6 +28,7 @@ import type {
   WorkItem,
   ChangeRequest,
 } from './repository-platform/types';
+import { readManifest } from './orchestrator/manifest';
 
 const REQUIREMENT_ID_PATTERN = /^RQ-(\d+)$/i;
 const REQUIREMENT_FILE_PATTERN = /^(RQ-(\d+))(?:[-.].*)?\.(?:md|markdown)$/i;
@@ -92,6 +94,23 @@ interface CancelRequirementOptions {
   environment?: Record<string, string | undefined>;
 }
 
+export interface CompleteRequirementResult {
+  requirementId: string;
+  status: 'completed';
+  runId: string;
+  provider: 'gitlab' | 'github';
+  changeRequest: ChangeRequest;
+  workItem: WorkItem;
+  alreadyMerged: boolean;
+}
+
+interface CompleteRequirementOptions {
+  by?: string;
+  platform?: string;
+  platformAdapter?: RepositoryPlatformAdapter;
+  environment?: Record<string, string | undefined>;
+}
+
 function git(
   cwd: string,
   args: string[],
@@ -124,6 +143,32 @@ function assertClean(root: string): void {
   if (git(root, ['status', '--porcelain'])) {
     throw new Error('This operation requires a clean Git worktree.');
   }
+}
+
+function platformAdapter(
+  root: string,
+  resolved: Exclude<ResolvedRepositoryPlatform, { provider: 'none' }>,
+  supplied?: RepositoryPlatformAdapter,
+): RepositoryPlatformAdapter {
+  const adapter = supplied ?? (resolved.provider === 'gitlab'
+    ? new GitLabRepositoryPlatform({
+        ...resolved.settings,
+        gitIdentity: {
+          name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+          email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+        },
+      })
+    : new GitHubRepositoryPlatform({
+        ...resolved.settings,
+        gitIdentity: {
+          name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+          email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+        },
+      }));
+  if (adapter.provider !== resolved.provider) {
+    throw new Error(`Repository provider mismatch: expected ${resolved.provider}, received ${adapter.provider}.`);
+  }
+  return adapter;
 }
 
 function currentBranch(root: string): string {
@@ -434,6 +479,172 @@ export async function syncRequirementPlatform(
     resolved,
     options.platformAdapter,
   );
+}
+
+export async function completeRequirement(
+  requirementId: string,
+  runId: string,
+  config: FactoryConfig,
+  options: CompleteRequirementOptions = {},
+): Promise<CompleteRequirementResult> {
+  const id = assertRequirementId(requirementId);
+  const normalizedRunId = runId.trim();
+  if (!normalizedRunId) throw new Error('A run ID is required.');
+  const root = projectRoot(config);
+  const branch = requirementBranchName(id, config.requirementBranches.branchPrefix);
+  const baseBranch = config.requirementBranches.baseBranch;
+  const remote = config.requirementBranches.remote;
+  const activeBranch = currentBranch(root);
+  if (activeBranch !== branch && activeBranch !== baseBranch) {
+    throw new Error(`Complete ${id} from ${branch} or ${baseBranch}, not ${activeBranch || 'detached HEAD'}.`);
+  }
+  assertClean(root);
+
+  const requirementPath = findRequirementFile(id, resolve(config.paths.requirements));
+  if (!requirementPath) throw new Error(`Requirement file not found: ${id}`);
+  let requirement = parseRequirement(id, config.paths.requirements);
+  if (!requirement.lifecycle) throw new Error(`Requirement ${id} has no lifecycle metadata.`);
+  if (requirement.lifecycle.status === 'draft') throw new Error(`Requirement ${id} must be submitted before completion.`);
+  if (requirement.lifecycle.status === 'cancelled') throw new Error(`Requirement ${id} is cancelled and cannot be completed.`);
+
+  const runsRoot = resolve(config.paths.runs);
+  const runDir = resolve(runsRoot, normalizedRunId);
+  const runRelative = relative(runsRoot, runDir);
+  if (!runRelative || runRelative.startsWith('..') || resolve(runsRoot, runRelative) !== runDir) {
+    throw new Error(`Invalid run ID: ${normalizedRunId}`);
+  }
+  if (!existsSync(join(runDir, 'manifest.json'))) throw new Error(`Run not found: ${normalizedRunId}`);
+  const manifest = readManifest(runDir);
+  if (manifest.runId !== normalizedRunId) {
+    throw new Error(`Run directory ${normalizedRunId} contains manifest for ${manifest.runId}.`);
+  }
+  if (manifest.requirementId.toUpperCase() !== id) {
+    throw new Error(`Run ${normalizedRunId} belongs to ${manifest.requirementId}, not ${id}.`);
+  }
+  if (manifest.status !== 'approved') {
+    throw new Error(`Run ${normalizedRunId} is ${manifest.status}; only an approved run can complete a requirement.`);
+  }
+  if (requirement.lifecycle.completedRunId && requirement.lifecycle.completedRunId !== normalizedRunId) {
+    throw new Error(`${id} was completed with run ${requirement.lifecycle.completedRunId}, not ${normalizedRunId}.`);
+  }
+
+  const resolved = resolveRepositoryPlatform(config, options.platform, options.environment ?? process.env);
+  if (resolved.provider === 'none') {
+    throw new Error('Requirement completion requires a configured GitLab or GitHub repository platform.');
+  }
+  if (requirement.lifecycle.repositoryProvider && requirement.lifecycle.repositoryProvider !== resolved.provider) {
+    throw new Error(`${id} is linked to ${requirement.lifecycle.repositoryProvider}, not ${resolved.provider}.`);
+  }
+  const adapter = platformAdapter(root, resolved, options.platformAdapter);
+  if (adapter.targetBranch !== baseBranch) {
+    throw new Error(`Change request target ${adapter.targetBranch} does not match base branch ${baseBranch}.`);
+  }
+
+  const issueIid = requirement.lifecycle.gitlabIssueIid ?? requirement.lifecycle.githubIssueIid;
+  const changeRequestIid = requirement.lifecycle.gitlabMergeRequestIid ?? requirement.lifecycle.githubPullRequestIid;
+  const marker = `<!-- aifactory:requirement:${id} -->`;
+  let workItem = issueIid ? await adapter.getWorkItem(issueIid) : await adapter.findWorkItem(marker);
+  if (!workItem) throw new Error(`Linked repository Issue for ${id} was not found.`);
+  verifyWorkItem(workItem, id, marker);
+  let changeRequest = changeRequestIid
+    ? await adapter.getChangeRequest(changeRequestIid)
+    : await adapter.findChangeRequest(branch, baseBranch);
+  if (!changeRequest) throw new Error(`Linked change request for ${id} was not found.`);
+  verifyChangeRequest(changeRequest, branch, baseBranch);
+
+  let readiness = await adapter.inspectChangeRequest(changeRequest);
+  const alreadyMerged = readiness.mergeStatus === 'merged' || readiness.changeRequest.state === 'merged';
+  if (!alreadyMerged) {
+    if (activeBranch !== branch) throw new Error(`${id} must be completed from ${branch} before it is merged.`);
+    const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
+    const manifestFile = relative(root, join(runDir, 'manifest.json')).replace(/\\/g, '/');
+    if (manifestFile.startsWith('../') || !git(root, ['ls-tree', '-r', '--name-only', 'HEAD', '--', manifestFile])) {
+      throw new Error(`Approved run manifest must be committed on ${branch}: ${manifestFile}`);
+    }
+    git(root, ['fetch', remote, branch]);
+    const localHead = git(root, ['rev-parse', 'HEAD']);
+    const remoteHead = git(root, ['rev-parse', `${remote}/${branch}`]);
+    if (localHead !== remoteHead) throw new Error(`${branch} must be fully pushed before completion.`);
+    if (readiness.headSha !== localHead) {
+      throw new Error(`Change request head ${readiness.headSha || '(unknown)'} does not match local HEAD ${localHead}.`);
+    }
+    assertChangeRequestReady(readiness, true);
+
+    if (requirement.lifecycle.status !== 'completed') {
+      const completedBy = options.by?.trim() || manifest.approvedBy?.trim() ||
+        git(root, ['config', 'user.name'], { allowFailure: true }) || 'human';
+      writeFileSync(requirementPath, updateRequirementMetadata(requirement.rawMarkdown, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        completedBy,
+        completedRunId: normalizedRunId,
+      }), 'utf8');
+      git(root, ['add', requirementFile]);
+      git(root, ['commit', '-m', `requirement(${id}): complete with ${normalizedRunId}`]);
+      git(root, ['push', remote, `HEAD:${branch}`]);
+      requirement = parseRequirement(id, config.paths.requirements);
+    }
+
+    changeRequest = await adapter.getChangeRequest(changeRequest.iid) ?? changeRequest;
+    readiness = await adapter.inspectChangeRequest(changeRequest);
+    const completedHead = git(root, ['rev-parse', 'HEAD']);
+    if (readiness.headSha !== completedHead) {
+      throw new Error(`Change request has not observed completion commit ${completedHead}; rerun when synchronized.`);
+    }
+    if (readiness.draft) {
+      changeRequest = await adapter.markChangeRequestReady(changeRequest);
+      readiness = await adapter.inspectChangeRequest(changeRequest);
+    }
+    assertChangeRequestReady(readiness);
+    changeRequest = await adapter.mergeChangeRequest(changeRequest, completedHead);
+  } else {
+    changeRequest = readiness.changeRequest;
+  }
+
+  git(root, ['fetch', remote, baseBranch]);
+  const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
+  const mergedMarkdown = git(root, ['show', `${remote}/${baseBranch}:${requirementFile}`]);
+  const mergedRequirement = parseRequirementMarkdown(id, mergedMarkdown);
+  if (mergedRequirement.lifecycle?.status !== 'completed' ||
+      mergedRequirement.lifecycle.completedRunId !== normalizedRunId) {
+    throw new Error(`Merged ${baseBranch} does not contain ${id} completion metadata for ${normalizedRunId}.`);
+  }
+
+  workItem = await adapter.setWorkItemLifecycleLabel(workItem, resolved.settings.labels.passed);
+  const completionMarker = `<!-- aifactory:requirement-complete:${id}:${normalizedRunId} -->`;
+  await adapter.addWorkItemComment(workItem, [
+    `AI Factory completed **${id}** with approved run \`${normalizedRunId}\`.`,
+    '',
+    `Merged change request: ${changeRequest.url}`,
+  ].join('\n'), completionMarker);
+  workItem = await adapter.closeWorkItem(workItem);
+
+  return {
+    requirementId: id,
+    status: 'completed',
+    runId: normalizedRunId,
+    provider: resolved.provider,
+    changeRequest,
+    workItem,
+    alreadyMerged,
+  };
+}
+
+function assertChangeRequestReady(
+  readiness: import('./repository-platform/types').ChangeRequestReadiness,
+  allowDraftBlocked = false,
+): void {
+  if (!readiness.headSha) throw new Error('Change request head SHA is unavailable; rerun after repository synchronization.');
+  if (readiness.ciStatus === 'pending' || readiness.mergeStatus === 'checking') {
+    throw new Error('Change request checks are still pending; rerun completion after they finish.');
+  }
+  if (readiness.ciStatus !== 'success') {
+    throw new Error(`Required CI checks are ${readiness.ciStatus}; completion is blocked.`);
+  }
+  if (!readiness.approvalsSatisfied) throw new Error('Required change request approvals are missing.');
+  if (readiness.mergeStatus !== 'mergeable' && !(allowDraftBlocked && readiness.draft && readiness.mergeStatus === 'blocked')) {
+    throw new Error(`Change request is ${readiness.mergeStatus}; completion is blocked.`);
+  }
 }
 
 export async function cancelRequirement(

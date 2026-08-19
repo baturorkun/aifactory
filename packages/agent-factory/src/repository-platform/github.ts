@@ -1,5 +1,6 @@
 import type {
   ChangeRequest,
+  ChangeRequestReadiness,
   GitHubPlatformSettings,
   RepositoryPlatformAdapter,
   WorkItem,
@@ -22,10 +23,21 @@ interface GitHubPullRequest {
   title: string;
   html_url: string;
   state: string;
-  head: { ref: string };
+  node_id: string;
+  head: { ref: string; sha: string };
   base: { ref: string };
   draft?: boolean;
+  merged?: boolean;
+  mergeable?: boolean | null;
+  mergeable_state?: string;
 }
+
+interface GitHubCombinedStatus { state: string }
+interface GitHubCheckRuns {
+  total_count: number;
+  check_runs: Array<{ status: string; conclusion?: string | null }>;
+}
+interface GitHubMergeResult { merged: boolean; message: string; sha?: string }
 
 interface GitHubComment {
   body?: string;
@@ -67,6 +79,7 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
   readonly targetBranch: string;
   readonly lifecycleLabels: readonly string[];
   private readonly apiRoot: string;
+  private readonly graphqlRoot: string;
 
   constructor(
     private readonly settings: GitHubPlatformSettings,
@@ -76,6 +89,9 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
     this.lifecycleLabels = Object.values(settings.labels);
     const baseUrl = settings.baseUrl.replace(/\/+$/, '');
     this.apiRoot = `${baseUrl}/repos/${settings.repository}`;
+    this.graphqlRoot = baseUrl.endsWith('/api/v3')
+      ? `${baseUrl.slice(0, -'/api/v3'.length)}/api/graphql`
+      : `${baseUrl}/graphql`;
   }
 
   async getWorkItem(iid: number): Promise<WorkItem | undefined> {
@@ -123,6 +139,14 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
       }),
     });
     return asWorkItem(updated);
+  }
+
+  async closeWorkItem(workItem: WorkItem): Promise<WorkItem> {
+    if (workItem.state === 'closed') return workItem;
+    return asWorkItem(await this.request<GitHubIssue>(`/issues/${workItem.iid}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ state: 'closed' }),
+    }));
   }
 
   async addWorkItemComment(workItem: WorkItem, body: string, marker: string): Promise<void> {
@@ -182,6 +206,7 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
   }
 
   async closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest> {
+    if (changeRequest.state !== 'open') return changeRequest;
     const updated = await this.request<GitHubPullRequest>(`/pulls/${changeRequest.iid}`, {
       method: 'PATCH',
       body: JSON.stringify({
@@ -189,6 +214,73 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
       }),
     });
     return asChangeRequest(updated);
+  }
+
+  async inspectChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequestReadiness> {
+    const pr = await this.request<GitHubPullRequest>(`/pulls/${changeRequest.iid}`);
+    if (pr.merged) {
+      return {
+        changeRequest: asChangeRequest(pr), headSha: pr.head.sha, draft: false,
+        mergeStatus: 'merged', ciStatus: 'success', approvalsSatisfied: true,
+      };
+    }
+    const [status, checks] = await Promise.all([
+      this.request<GitHubCombinedStatus>(`/commits/${pr.head.sha}/status`),
+      this.request<GitHubCheckRuns>(`/commits/${pr.head.sha}/check-runs`),
+    ]);
+    const failedCheck = checks.check_runs.some((check) =>
+      check.status === 'completed' && !['success', 'neutral', 'skipped'].includes(check.conclusion ?? ''));
+    const pendingCheck = checks.check_runs.some((check) => check.status !== 'completed');
+    const ciStatus = status.state === 'failure' || status.state === 'error' || failedCheck
+      ? 'failed'
+      : status.state === 'pending' || pendingCheck
+        ? 'pending'
+        : status.state === 'success' || checks.total_count > 0 ? 'success' : 'unknown';
+    const mergeState = pr.mergeable_state ?? 'unknown';
+    const mergeStatus = pr.mergeable === false || mergeState === 'dirty'
+      ? 'conflicted'
+      : pr.mergeable === null || ['unknown', 'unstable'].includes(mergeState)
+        ? 'checking'
+        : mergeState === 'clean' ? 'mergeable' : 'blocked';
+    return {
+      changeRequest: asChangeRequest(pr), headSha: pr.head.sha,
+      draft: pr.draft ?? false, mergeStatus, ciStatus,
+      approvalsSatisfied: mergeState !== 'blocked',
+    };
+  }
+
+  async markChangeRequestReady(changeRequest: ChangeRequest): Promise<ChangeRequest> {
+    const pr = await this.request<GitHubPullRequest>(`/pulls/${changeRequest.iid}`);
+    if (!pr.draft) return asChangeRequest(pr);
+    await this.graphql(
+      'mutation($pullRequestId: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $pullRequestId}) { pullRequest { id } } }',
+      { pullRequestId: pr.node_id },
+    );
+    return asChangeRequest(await this.request<GitHubPullRequest>(`/pulls/${changeRequest.iid}`));
+  }
+
+  async mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest> {
+    const result = await this.request<GitHubMergeResult>(`/pulls/${changeRequest.iid}/merge`, {
+      method: 'PUT',
+      body: JSON.stringify({ sha: expectedHeadSha, merge_method: 'merge' }),
+    });
+    if (!result.merged) throw new Error(`GitHub pull request #${changeRequest.iid} was not merged: ${result.message}`);
+    return asChangeRequest(await this.request<GitHubPullRequest>(`/pulls/${changeRequest.iid}`));
+  }
+
+  private async graphql(query: string, variables: Record<string, unknown>): Promise<void> {
+    const response = await this.fetchFn(this.graphqlRoot, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json', Authorization: `Bearer ${this.settings.token}`,
+        'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    const result = await response.json() as { errors?: Array<{ message: string }> };
+    if (!response.ok || result.errors?.length) {
+      throw new Error(`GitHub GraphQL request failed: ${result.errors?.map((error) => error.message).join('; ') || response.statusText}`);
+    }
   }
 
   private async request<T>(
