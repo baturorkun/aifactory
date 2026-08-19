@@ -151,7 +151,11 @@ test('GitLab adapter inspects readiness and merges with the expected SHA', async
   });
   const fetchMock: typeof fetch = async (input, init) => {
     const url = String(input); requests.push({ url, init });
-    if (url.endsWith('/approvals')) return Response.json({ approved: true, approvals_left: 0 });
+    if (url.endsWith('/approvals')) {
+      return Response.json({
+        approved: false, approvals_required: null, approvals_left: null, approval_rules: [],
+      });
+    }
     if (url.endsWith('/merge_requests/9/merge')) { merged = true; return Response.json(mrJson()); }
     if (url.endsWith('/merge_requests/9') && init?.method === 'PUT') { ready = true; return Response.json(mrJson()); }
     if (url.endsWith('/merge_requests/9')) return Response.json(mrJson());

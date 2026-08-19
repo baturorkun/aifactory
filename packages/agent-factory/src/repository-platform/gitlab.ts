@@ -34,8 +34,9 @@ interface GitLabMergeRequest {
 
 interface GitLabApprovals {
   approved?: boolean;
-  approvals_required?: number;
-  approvals_left?: number;
+  approvals_required?: number | null;
+  approvals_left?: number | null;
+  approval_rules?: Array<{ approvals_required?: number }>;
 }
 
 interface GitLabNote {
@@ -253,7 +254,10 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
       draft: mr.draft ?? /^(draft:|wip:)/i.test(mr.title),
       mergeStatus,
       ciStatus,
-      approvalsSatisfied: approvals.approved === true || approvals.approvals_required === 0 || approvals.approvals_left === 0,
+      approvalsSatisfied: approvals.approved === true ||
+        approvals.approvals_required === 0 || approvals.approvals_left === 0 ||
+        (approvals.approvals_required == null &&
+          (approvals.approval_rules == null || approvals.approval_rules.length === 0)),
     };
   }
 
