@@ -944,6 +944,39 @@ function verifyChangeRequest(
   }
 }
 
+// Completion refuses a dirty repository and requires the approved manifest to be
+// committed on the requirement branch, so approving without committing forces a
+// hand-written commit into a lifecycle that owns every other bookkeeping commit.
+// Only the manifest path is committed, leaving anything else the user has staged
+// untouched.
+export function commitApprovedRun(
+  requirementId: string,
+  runId: string,
+  config: FactoryConfig,
+): { committed: boolean; reason?: string } {
+  if (!config.requirementBranches.enabled) {
+    return { committed: false, reason: 'requirement branches are disabled' };
+  }
+  const root = projectRoot(config);
+  if (!git(root, ['rev-parse', '--is-inside-work-tree'], { allowFailure: true })) {
+    return { committed: false, reason: 'not a Git work tree' };
+  }
+
+  const manifestPath = resolve(config.paths.runs, runId, 'manifest.json');
+  const manifestFile = relative(root, manifestPath).replace(/\\/g, '/');
+  if (manifestFile.startsWith('../')) {
+    return { committed: false, reason: 'run directory is outside the repository' };
+  }
+  if (!git(root, ['status', '--porcelain', '--', manifestFile])) {
+    return { committed: false, reason: 'manifest is already committed' };
+  }
+
+  const id = assertRequirementId(requirementId);
+  git(root, ['add', '--', manifestFile]);
+  git(root, ['commit', '-m', `requirement(${id}): approve ${runId}`, '--', manifestFile]);
+  return { committed: true };
+}
+
 export function setRequirementMode(
   requirementId: string,
   mode: RequirementExecutionMode,

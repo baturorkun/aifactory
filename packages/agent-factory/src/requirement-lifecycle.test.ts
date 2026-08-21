@@ -13,6 +13,7 @@ import test from 'node:test';
 import { FactoryConfigSchema, type FactoryConfig } from './config';
 import {
   cancelRequirement,
+  commitApprovedRun,
   completeRequirement,
   createDraftRequirement,
   requirementExecutionDecision,
@@ -536,6 +537,45 @@ test('cancel closes an existing GitLab MR before deleting its branch', async () 
     assert.equal(adapter.closedChangeRequests, 1);
     assert.equal(result.remoteBranchDeleted, true);
     assert.equal(result.localBranchDeleted, true);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('approving a run commits its manifest so completion is not blocked', async () => {
+  const repo = makeRepository();
+  try {
+    const created = await createDraftRequirement('Approval commit', 'handoff', repo.config, {
+      environment: {},
+      platformAdapter: new FakeRepositoryPlatform(),
+    });
+    const runDir = join(repo.root, 'runs', 'run-approve');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({
+      runId: 'run-approve',
+      requirementId: created.requirementId,
+      status: 'approved',
+      approvedBy: 'Reviewer Name',
+    }, null, 2));
+    // An unrelated staged change must survive: only the manifest is committed.
+    writeFileSync(join(repo.root, 'unrelated.txt'), 'staged by the user\n');
+    git(repo.root, 'add', 'unrelated.txt');
+
+    const first = commitApprovedRun(created.requirementId, 'run-approve', repo.config);
+    assert.equal(first.committed, true);
+    assert.match(
+      git(repo.root, 'log', '-1', '--format=%s'),
+      new RegExp(`^requirement\\(${created.requirementId}\\): approve run-approve$`),
+    );
+    assert.equal(
+      git(repo.root, 'show', '--name-only', '--format=', 'HEAD').trim(),
+      'runs/run-approve/manifest.json',
+    );
+    assert.match(git(repo.root, 'status', '--porcelain'), /unrelated\.txt/);
+
+    // Completion also refuses a dirty repository, so a second call is a no-op.
+    const second = commitApprovedRun(created.requirementId, 'run-approve', repo.config);
+    assert.equal(second.committed, false);
   } finally {
     repo.cleanup();
   }

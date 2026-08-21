@@ -20,6 +20,13 @@ export interface GateReport {
   status: 'passed' | 'failed' | 'skipped';
   output: string;
   durationMs: number;
+  /**
+   * The command this gate ran, and where. A gate that only records its output
+   * leaves no auditable trace of what it actually verified, so a stale command
+   * can keep reporting success for work it never touched.
+   */
+  command?: string;
+  cwd?: string;
 }
 
 export interface TargetGateOptions {
@@ -99,6 +106,8 @@ function commandGate(
     status: success ? 'passed' : 'failed',
     output: output || (success ? `${command} passed` : `${command} failed`),
     durationMs: Date.now() - start,
+    command,
+    cwd,
   };
 }
 

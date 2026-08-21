@@ -24,6 +24,14 @@ test('target build gate runs and target command timeout is configurable', async 
     const reports = JSON.parse(readFileSync(join(runDir, 'gates/report.json'), 'utf8')) as GateReport[];
     assert.equal(reports.find((report) => report.gate === 'build')?.status, 'passed');
     assert.equal(reports.find((report) => report.gate === 'tests')?.status, 'failed');
+    // Without the command in the report there is no auditable trace of what a
+    // gate verified, so a stale command keeps reporting success for work it
+    // never touched.
+    const build = reports.find((report) => report.gate === 'build');
+    assert.equal(build?.command, `${node} -e "process.exit(0)"`);
+    assert.equal(build?.cwd, root);
+    // A gate with nothing configured records no command rather than an empty one.
+    assert.equal(reports.find((report) => report.gate === 'lint')?.command, undefined);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

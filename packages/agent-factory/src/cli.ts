@@ -34,6 +34,7 @@ import {
 } from './requirement-branches';
 import {
   cancelRequirement,
+  commitApprovedRun,
   completeRequirement,
   createDraftRequirement,
   requirementExecutionDecision,
@@ -598,7 +599,15 @@ program
         approvedBy: opts.by,
       }));
 
-      console.log(chalk.green(`\n✓ Approved: ${chalk.bold(runId)} by ${chalk.bold(opts.by)}\n`));
+      console.log(chalk.green(`\n✓ Approved: ${chalk.bold(runId)} by ${chalk.bold(opts.by)}`));
+
+      const recorded = commitApprovedRun(manifest.requirementId, runId, config);
+      if (recorded.committed) {
+        console.log(chalk.dim(`  Recorded approval on the requirement branch.`));
+      } else if (recorded.reason && recorded.reason !== 'manifest is already committed') {
+        console.log(chalk.dim(`  Approval not committed: ${recorded.reason}.`));
+      }
+      console.log('');
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exit(1);
