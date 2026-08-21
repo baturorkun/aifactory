@@ -134,6 +134,19 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.equal(config.repositoryPlatforms.github.removeSourceBranchOnMerge, true);
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
     assert.match(agentGuidelines, /## AI Factory Workflow/);
+    // Calling documentation authoritative without saying it is reachable left
+    // the configured corpus unused while its absence was read as a gap.
+    assert.match(agentGuidelines, /## Configured Documentation/);
+    assert.match(agentGuidelines, /RAG_CHAT_URL/);
+    assert.match(agentGuidelines, /RAG_SOURCE_ID/);
+    assert.match(agentGuidelines, /not its summary/);
+    // A lifecycle commit edits the requirement file it is recording, which
+    // matches the trigger below it and restarts finished work.
+    assert.match(
+      ci,
+      /\$CI_PIPELINE_SOURCE == "push" && \$CI_COMMIT_MESSAGE =~ .*\(approve\|complete\)/,
+    );
+    assert.match(githubActions, /!startsWith\(github\.event\.head_commit\.message, 'requirement\('\)/);
     assert.match(agentGuidelines, /git rev-parse --show-toplevel/);
     assert.match(agentGuidelines, /git branch --show-current/);
     assert.ok(

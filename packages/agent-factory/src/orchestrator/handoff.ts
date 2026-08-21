@@ -82,6 +82,14 @@ function normalizeRelativePath(path: string): string {
   return normalize(path).split(sep).join('/');
 }
 
+// targetProject.allowedPaths bounds where factory agents may write. A handoff
+// is implemented by a person or an external tool that legitimately touches
+// project configuration, environment templates and reference material, so the
+// capture must see the whole project. The path-escape checks in
+// validateTargetPath still apply, because an empty list only removes the
+// allow-list filter.
+const HANDOFF_ALLOWED_PATHS: string[] = [];
+
 function allowedTargetFiles(root: string, allowedPaths: string[]): string[] {
   return listTargetFiles(root).filter((file) => {
     try {
@@ -179,7 +187,7 @@ export async function finishImplementationRun(
       throw new Error('The configured target project does not match the handoff baseline.');
     }
 
-    const current = targetSnapshot(targetRoot, config.targetProject.allowedPaths);
+    const current = targetSnapshot(targetRoot, HANDOFF_ALLOWED_PATHS);
     const changedFiles = Object.keys(current)
       .filter((file) => baseline.files[file] !== current[file])
       .sort();
@@ -188,7 +196,7 @@ export async function finishImplementationRun(
       .sort();
 
     for (const file of changedFiles) {
-      copyArtifact(runDir, file, validateTargetPath(targetRoot, file, config.targetProject.allowedPaths));
+      copyArtifact(runDir, file, validateTargetPath(targetRoot, file, HANDOFF_ALLOWED_PATHS));
       addArtifact(runDir, file);
     }
     updateManifest(runDir, (currentManifest) => ({
@@ -283,7 +291,7 @@ async function createImplementationPackage(
       'utf8',
     );
   }
-  writeBaseline(runDir, targetRoot, config.targetProject.allowedPaths);
+  writeBaseline(runDir, targetRoot, HANDOFF_ALLOWED_PATHS);
   addStep(runDir, {
     agent: executionMode,
     status: 'pending',
@@ -359,7 +367,8 @@ async function createImplementationPackage(
     '',
     '- Root: ' + targetRoot,
     '- Profile: ' + (config.targetProject.profile ?? '(not configured)'),
-    '- Allowed paths: ' + ((config.targetProject.allowedPaths ?? []).join(', ') || '(not configured)'),
+    '- Usual paths: ' + ((config.targetProject.allowedPaths ?? []).join(', ') || '(not configured)') +
+      ' (where the requirement work normally belongs; a handoff capture is not restricted to them)',
     '- Build: ' + (config.targetProject.commands.build ?? '(not configured)'),
     '- Typecheck: ' + (config.targetProject.commands.typeCheck ?? '(not configured)'),
     '- Lint: ' + (config.targetProject.commands.lint ?? '(not configured)'),

@@ -610,6 +610,20 @@ export async function completeRequirement(
     throw new Error(`Merged ${baseBranch} does not contain ${id} completion metadata for ${normalizedRunId}.`);
   }
 
+  // The change request is merged and its remote branch is gone, so leaving the
+  // checkout on the requirement branch strands the next command on a dead ref
+  // and the local branches accumulate one per requirement.
+  // Every step tolerates failure: the change request is already merged, so a
+  // checkout that a dirty tree blocks must not turn a completed requirement
+  // into a failed command. The branch is only deleted once the checkout moved.
+  if (currentBranch(root) === branch) {
+    git(root, ['checkout', baseBranch], { allowFailure: true });
+    if (currentBranch(root) === baseBranch) {
+      git(root, ['merge', '--ff-only', `${remote}/${baseBranch}`], { allowFailure: true });
+      git(root, ['branch', '-D', branch], { allowFailure: true });
+    }
+  }
+
   workItem = await adapter.setWorkItemLifecycleLabel(workItem, resolved.settings.labels.passed);
   const completionMarker = `<!-- aifactory:requirement-complete:${id}:${normalizedRunId} -->`;
   await adapter.addWorkItemComment(workItem, [

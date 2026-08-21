@@ -596,6 +596,11 @@ test('complete records an approved run, merges with a SHA guard, and closes the 
     });
     assert.equal(result.status, 'completed');
     assert.equal(result.alreadyMerged, false);
+    // The change request is merged and its remote branch removed, so leaving
+    // the checkout on that branch strands the next command on a dead ref and
+    // the local branches accumulate one per requirement.
+    assert.equal(git(repo.root, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main');
+    assert.equal(git(repo.root, 'branch', '--list', created.branch).trim(), '');
     assert.equal(adapter.workItem?.state, 'closed');
     assert.deepEqual(adapter.workItem?.labels, ['factory::passed']);
     const merged = git(repo.root, `--git-dir=${repo.remote}`, 'show', `main:${created.requirementFile}`);

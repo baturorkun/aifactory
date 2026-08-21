@@ -184,6 +184,45 @@ test('handoff run captures implementation artifacts and finalizes like an agent 
   }
 });
 
+test('handoff capture is not bounded by targetProject.allowedPaths', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-outside-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0004.md'), '# Outside the allow list\n\nTouch project files.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(target, 'package.json'), '{"name":"target"}\n');
+
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, constraints: join(root, 'constraints'), handoffs, runs },
+    // The allow list bounds where factory agents may write. A person
+    // implementing a handoff legitimately edits project configuration too.
+    targetProject: { root: target, allowedPaths: ['src'] },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0004', config);
+    beginHandoffRun(runId, config);
+
+    writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 2;\n');
+    writeFileSync(join(target, 'package.json'), '{"name":"target","version":"0.1.0"}\n');
+    writeFileSync(join(target, 'AGENTS.md'), '# Rules\n');
+
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.deepEqual(finished.artifacts, ['AGENTS.md', 'package.json', 'src/main.ts']);
+    assert.equal(
+      readFileSync(join(runs, runId, 'artifacts', 'package.json'), 'utf8'),
+      '{"name":"target","version":"0.1.0"}\n',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('handoff finish uses the project directory fallback when target root is omitted', async () => {
   const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-root-fallback-'));
   const requirements = join(root, 'requirements');
