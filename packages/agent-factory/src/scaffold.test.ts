@@ -308,6 +308,51 @@ test('simics template scaffolds a licensed-runner project without proprietary de
       test: 'pnpm simics:test',
     });
     assert.ok(config.targetProject.allowedPaths.includes('dml'));
+
+    // The gate command is recorded in the repository. Leaving it only in an
+    // untracked .env lets it drift as later requirements add their own
+    // validation scripts, with every report still saying passed and nothing
+    // saying what had passed.
+    const simicsConfig = JSON.parse(
+      readFileSync(join(result.projectRoot, 'simics.config.json'), 'utf8'),
+    ) as { gates: Record<string, string[] | string> };
+    assert.deepEqual(simicsConfig.gates.build, ['./scripts/project-build-command', 'arg']);
+    assert.deepEqual(simicsConfig.gates.test, ['./scripts/batch-test-command', 'arg']);
+    assert.match(String(simicsConfig.gates.$override), /SIMICS_TEST_COMMAND_JSON/);
+
+    // The generated wrapper runs the recorded command when nothing overrides
+    // it, reports where the command came from, and preserves the child status.
+    const gateWrapper = join(result.projectRoot, 'scripts/simics-command.mjs');
+    writeFileSync(
+      join(result.projectRoot, 'simics.config.json'),
+      JSON.stringify({ gates: { test: [process.execPath, '-e', 'process.exit(3)'] } }),
+    );
+    const environment = { ...process.env };
+    delete environment.SIMICS_TEST_COMMAND_JSON;
+    const recorded = spawnSync(process.execPath, [gateWrapper, 'test'], {
+      cwd: result.projectRoot,
+      env: environment,
+      encoding: 'utf8',
+    });
+    assert.equal(recorded.status, 3);
+    assert.match(recorded.stdout, /\(gates\.test\)\]/);
+
+    const overridden = spawnSync(process.execPath, [gateWrapper, 'test'], {
+      cwd: result.projectRoot,
+      env: { ...environment, SIMICS_TEST_COMMAND_JSON: JSON.stringify([process.execPath, '-e', 'process.exit(0)']) },
+      encoding: 'utf8',
+    });
+    assert.equal(overridden.status, 0);
+    assert.match(overridden.stdout, /\[SIMICS_TEST_COMMAND_JSON\]/);
+
+    // With neither source the gate must fail rather than report a silent pass.
+    rmSync(join(result.projectRoot, 'simics.config.json'));
+    const withoutConfig = spawnSync(process.execPath, [gateWrapper, 'test'], {
+      cwd: result.projectRoot,
+      env: environment,
+      encoding: 'utf8',
+    });
+    assert.equal(withoutConfig.status, 2);
     assert.ok(config.targetProject.allowedPaths.includes('targets'));
     assert.ok(config.rag.sources[0]?.include.includes('**/*.dml'));
     assert.ok(config.rag.sources[0]?.include.includes('**/*.simics'));
