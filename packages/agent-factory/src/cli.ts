@@ -62,7 +62,7 @@ program
   .version('0.1.0');
 
 program.hook('preAction', (_command, actionCommand) => {
-  if (actionCommand.name() === 'new') return;
+  if (actionCommand.name() === 'new' && actionCommand.parent === program) return;
   const project = actionCommand.optsWithGlobals<{ project?: string }>().project;
   if (!project) return;
   const target = resolveTargetProjectPath(
