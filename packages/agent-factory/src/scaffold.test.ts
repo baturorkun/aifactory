@@ -134,6 +134,11 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.equal(config.repositoryPlatforms.github.removeSourceBranchOnMerge, true);
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
     assert.match(agentGuidelines, /## AI Factory Workflow/);
+    // Work began in a sibling checkout of a similarly named project, and
+    // continued after `requirement new` failed, because nothing barred either.
+    assert.match(agentGuidelines, /## Requirement-First Execution/);
+    assert.match(agentGuidelines, /Workspace changes require an active requirement/);
+    assert.match(agentGuidelines, /A failed lifecycle command is a blocker/);
     // Calling documentation authoritative without saying it is reachable left
     // the configured corpus unused while its absence was read as a gap.
     assert.match(agentGuidelines, /## Configured Documentation/);
