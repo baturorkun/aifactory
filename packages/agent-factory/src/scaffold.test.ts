@@ -152,6 +152,14 @@ test('new projects enable the draft requirement branch workflow', () => {
       /\$CI_PIPELINE_SOURCE == "push" && \$CI_COMMIT_MESSAGE =~ .*\(approve\|complete\)/,
     );
     assert.match(githubActions, /!startsWith\(github\.event\.head_commit\.message, 'requirement\('\)/);
+    // `runner` does not resolve in job-level env; GitHub then refuses to parse
+    // the whole workflow and every run fails in 0s before any step starts.
+    assert.match(githubActions, /^ {10}CODEX_HOME: \$\{\{ runner\.temp \}\}\/aifactory-codex$/m);
+    const jobEnvBlock = githubActions.slice(
+      githubActions.indexOf('\n    env:\n'),
+      githubActions.indexOf('\n    steps:\n'),
+    );
+    assert.ok(!jobEnvBlock.includes('runner.'), 'job-level env must not use the runner context');
     assert.match(agentGuidelines, /git rev-parse --show-toplevel/);
     assert.match(agentGuidelines, /git branch --show-current/);
     assert.ok(
