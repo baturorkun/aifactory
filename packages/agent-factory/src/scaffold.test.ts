@@ -160,6 +160,7 @@ test('new projects enable the draft requirement branch workflow', () => {
       githubActions.indexOf('\n    steps:\n'),
     );
     assert.ok(!jobEnvBlock.includes('runner.'), 'job-level env must not use the runner context');
+    assert.match(githubActions, /git config --global --add safe\.directory "\$GITHUB_WORKSPACE"/);
     assert.match(agentGuidelines, /git rev-parse --show-toplevel/);
     assert.match(agentGuidelines, /git branch --show-current/);
     assert.ok(
