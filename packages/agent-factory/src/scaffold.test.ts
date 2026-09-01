@@ -90,7 +90,7 @@ test('new projects enable the draft requirement branch workflow', () => {
         grounding: {
           enabled: boolean;
           chatUrl: string;
-          sourceIds: string[];
+          sourceIds: string;
         };
       };
     };
@@ -129,7 +129,7 @@ test('new projects enable the draft requirement branch workflow', () => {
       config.rag.grounding.chatUrl,
       '${RAG_CHAT_URL:-http://127.0.0.1:8765/query}',
     );
-    assert.deepEqual(config.rag.grounding.sourceIds, ['${RAG_SOURCE_ID:-fileserver}']);
+    assert.equal(config.rag.grounding.sourceIds, '${RAG_SOURCE_IDS:-fileserver}');
     assert.equal(config.repositoryPlatforms.gitlab.removeSourceBranchOnMerge, true);
     assert.equal(config.repositoryPlatforms.github.removeSourceBranchOnMerge, true);
     const agentGuidelines = readFileSync(join(result.projectRoot, 'AGENTS.md'), 'utf8');
@@ -143,7 +143,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     // the configured corpus unused while its absence was read as a gap.
     assert.match(agentGuidelines, /## Configured Documentation/);
     assert.match(agentGuidelines, /RAG_CHAT_URL/);
-    assert.match(agentGuidelines, /RAG_SOURCE_ID/);
+    assert.match(agentGuidelines, /RAG_SOURCE_IDS/);
     assert.match(agentGuidelines, /not its summary/);
     // A lifecycle commit edits the requirement file it is recording, which
     // matches the trigger below it and restarts finished work.
@@ -294,7 +294,7 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(envExample, /GITHUB_REPOSITORY=/);
     assert.match(envExample, /GITHUB_TOKEN=/);
     assert.match(envExample, /RAG_CHAT_URL=/);
-    assert.match(envExample, /RAG_SOURCE_ID=fileserver/);
+    assert.match(envExample, /RAG_SOURCE_IDS=fileserver/);
     assert.doesNotMatch(envExample, /RAG_SOURCE_\d+_ID/);
   } finally {
     rmSync(parent, { recursive: true, force: true });

@@ -73,6 +73,12 @@
         "type": "filesystem",
         "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}",
         "excludeAdditions": "${RAG_SOURCE_2_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_3_ID:-source-3}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}",
+        "excludeAdditions": "${RAG_SOURCE_3_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "ingest": {

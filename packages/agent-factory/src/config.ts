@@ -188,7 +188,15 @@ const RagGroundingSchema = z.object({
   chatUrl: z.string().url().optional(),
   mode: z.enum(['always', 'explicit']).default('always'),
   marker: z.string().min(1).default('@rag'),
-  sourceIds: z.array(z.string().min(1)).default([]),
+  sourceIds: z
+    .preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value.split(',').map((item) => item.trim()).filter(Boolean)
+          : value,
+      z.array(z.string().min(1)),
+    )
+    .default([]),
   agents: z
     .array(RagGroundingAgentSchema)
     .default(['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard']),

@@ -941,7 +941,7 @@ program
           chatUrl: '${RAG_CHAT_URL:-http://127.0.0.1:8765/query}',
           mode: 'always',
           marker: '@rag',
-          sourceIds: ['${RAG_SOURCE_ID:-fileserver}'],
+          sourceIds: '${RAG_SOURCE_IDS:-fileserver}',
           agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
           timeoutMs: 120000,
           failOpen: true,

@@ -35,6 +35,13 @@ class RagSourceConfig(BaseModel):
             "**/*.pdf",
             "**/*.docx",
             "**/*.pptx",
+            "**/*.jpg",
+            "**/*.jpeg",
+            "**/*.png",
+            "**/*.bmp",
+            "**/*.tif",
+            "**/*.tiff",
+            "**/*.webp",
             "**/*.py",
             "**/*.pyi",
             "**/*.js",
@@ -207,6 +214,14 @@ class RagGroundingConfig(BaseModel):
         ),
         alias="queryPrefix",
     )
+
+    @field_validator("source_ids", mode="before")
+    @classmethod
+    def parse_source_ids(cls, value: Any) -> Any:
+        """Accept one comma-separated environment value as a list of source ids."""
+        if not isinstance(value, str):
+            return value
+        return [item.strip() for item in value.split(",") if item.strip()]
 
 
 class RagConfig(BaseModel):
