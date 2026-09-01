@@ -44,6 +44,7 @@ def retrieve(
     config: RagConfig,
     question: str,
     source_ids: list[str] | None = None,
+    exclude_content_types: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     require_ingest_config(config)
     require_schema(config.database.connection_string)
@@ -53,9 +54,19 @@ def retrieve(
     with connect(config.database.connection_string) as conn:
         with conn.cursor() as cur:
             source_filter = " AND c.source_id = ANY(%s)" if source_ids else ""
+            # A source that mixes code with documentation labels each document by its
+            # top-level directory. Unlabelled sources must survive the filter.
+            content_filter = (
+                " AND (c.metadata->>'contentType' IS NULL"
+                " OR NOT (c.metadata->>'contentType' = ANY(%s)))"
+                if exclude_content_types
+                else ""
+            )
             params: list[Any] = [vector_literal(embedding)]
             if source_ids:
                 params.append(source_ids)
+            if exclude_content_types:
+                params.append(exclude_content_types)
             params.extend([vector_literal(embedding), config.retrieval.top_k])
             cur.execute(
                 f"""
@@ -81,7 +92,7 @@ def retrieve(
                 WHERE c.status = 'active'
                   AND d.status = 'active'
                   AND c.embedding IS NOT NULL
-                  {source_filter}
+                  {source_filter}{content_filter}
                 ORDER BY c.embedding <=> %s::vector
                 LIMIT %s
                 """,

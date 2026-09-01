@@ -16,9 +16,15 @@ def answer_question(
     question: str,
     user_id: str | None = None,
     source_ids: list[str] | None = None,
+    exclude_content_types: list[str] | None = None,
 ) -> dict:
     require_query_config(config)
-    chunks = retrieve(config, question, source_ids=source_ids)
+    chunks = retrieve(
+        config,
+        question,
+        source_ids=source_ids,
+        exclude_content_types=exclude_content_types,
+    )
     answer = _generate_answer(config, question, chunks)
     sources = [
         {

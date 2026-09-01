@@ -194,6 +194,7 @@ class RagGroundingConfig(BaseModel):
     mode: Literal["always", "explicit"] = "always"
     marker: str = "@rag"
     source_ids: list[str] = Field(default_factory=list, alias="sourceIds")
+    exclude_content_types: list[str] = Field(default_factory=list, alias="excludeContentTypes")
     agents: list[str] = Field(
         default_factory=lambda: [
             "planner",
@@ -215,10 +216,10 @@ class RagGroundingConfig(BaseModel):
         alias="queryPrefix",
     )
 
-    @field_validator("source_ids", mode="before")
+    @field_validator("source_ids", "exclude_content_types", mode="before")
     @classmethod
-    def parse_source_ids(cls, value: Any) -> Any:
-        """Accept one comma-separated environment value as a list of source ids."""
+    def parse_comma_separated(cls, value: Any) -> Any:
+        """Accept one comma-separated environment value as a list."""
         if not isinstance(value, str):
             return value
         return [item.strip() for item in value.split(",") if item.strip()]

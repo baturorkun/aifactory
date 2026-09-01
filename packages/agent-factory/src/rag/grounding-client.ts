@@ -49,7 +49,15 @@ export async function queryConfiguredRag(
     const response = await fetchImpl(grounding.chatUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, sourceIds: grounding.sourceIds }),
+      body: JSON.stringify({
+        question,
+        sourceIds: grounding.sourceIds,
+        // A source that mixes code with documentation drowns its manuals in code
+        // chunks. Only send the filter when the project configured one.
+        ...(grounding.excludeContentTypes.length > 0
+          ? { excludeContentTypes: grounding.excludeContentTypes }
+          : {}),
+      }),
       signal: controller.signal,
     });
     const raw = await response.text();

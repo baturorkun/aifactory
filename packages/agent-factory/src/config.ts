@@ -197,6 +197,15 @@ const RagGroundingSchema = z.object({
       z.array(z.string().min(1)),
     )
     .default([]),
+  excludeContentTypes: z
+    .preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value.split(',').map((item) => item.trim()).filter(Boolean)
+          : value,
+      z.array(z.string().min(1)),
+    )
+    .default([]),
   agents: z
     .array(RagGroundingAgentSchema)
     .default(['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard']),

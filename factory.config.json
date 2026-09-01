@@ -109,7 +109,7 @@
       "temperature": 0.1
     },
     "retrieval": {
-      "topK": 6
+      "topK": "${RAG_TOP_K:-12}"
     },
     "auth": {
       "provider": "none",

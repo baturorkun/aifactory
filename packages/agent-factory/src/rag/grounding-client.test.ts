@@ -180,6 +180,33 @@ test('remote query sends the project source filter and parses citations', async 
   assert.equal(response.sources[0]?.relativePath, 'ARINC 661/ARINC661P1-8.pdf');
 });
 
+// A source that indexes a vendor manual next to 10k source files answers register
+// questions with code chunks unless the project excludes that content type.
+test('remote query forwards the configured content-type exclusion', async () => {
+  const bodies: unknown[] = [];
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ answer: 'ok', sources: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  await queryConfiguredRag(config({ excludeContentTypes: ['code'] }), 'Reset value?', fetchImpl);
+  await queryConfiguredRag(config(), 'Reset value?', fetchImpl);
+
+  assert.deepEqual(bodies[0], {
+    question: 'Reset value?',
+    sourceIds: ['source-a'],
+    excludeContentTypes: ['code'],
+  });
+  // Projects that configured no exclusion must keep the previous request shape.
+  assert.deepEqual(bodies[1], {
+    question: 'Reset value?',
+    sourceIds: ['source-a'],
+  });
+});
+
 test('grounding context is bounded and only emitted for selected agents', () => {
   const projectConfig = config({ maxContextChars: 4 });
   const response = {

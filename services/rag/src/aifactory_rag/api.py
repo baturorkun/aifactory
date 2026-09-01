@@ -17,6 +17,7 @@ from aifactory_rag.query.responder import answer_question
 class QueryRequest(BaseModel):
     question: str
     sourceIds: list[str] = Field(default_factory=list)
+    excludeContentTypes: list[str] = Field(default_factory=list)
 
 
 class IngestRunRequest(BaseModel):
@@ -71,6 +72,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             payload.question,
             user_id=user_id,
             source_ids=payload.sourceIds,
+            exclude_content_types=payload.excludeContentTypes,
         )
 
     @app.post("/ingest-runs")
