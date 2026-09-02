@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter, sleep
@@ -35,6 +35,17 @@ class IngestSummary:
     deleted_count: int = 0
     error_count: int = 0
     duration_seconds: float = 0.0
+    errors: list[dict[str, str]] = field(default_factory=list)
+
+
+# A summary that only counts its failures sends the reader to the log to learn
+# which files they were. Carry the first few, the count already carries the rest.
+MAX_REPORTED_ERRORS = 20
+
+
+def _short_error(exc: Exception) -> str:
+    text = str(exc).strip() or exc.__class__.__name__
+    return text if len(text) <= 200 else f"{text[:197]}..."
 
 
 def _format_duration(seconds: float) -> str:
@@ -109,6 +120,10 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                 except Exception as exc:
                     _safe_rollback(conn)
                     summary.error_count += 1
+                    if len(summary.errors) < MAX_REPORTED_ERRORS:
+                        summary.errors.append(
+                            {"relativePath": file.relative_path, "error": _short_error(exc)}
+                        )
                     conn, _ = _run_with_database_retries(
                         conn,
                         config,
