@@ -1,0 +1,45 @@
+{
+  "runId": "20260911104523-RQ-0015",
+  "requirementId": "RQ-0015",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260911104523-RQ-0015/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-09-11T10:45:23.127Z",
+  "updatedAt": "2026-09-11T10:59:22.501Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-11T10:59:07.892Z",
+      "finishedAt": "2026-09-11T10:59:22.500Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/cli.ts",
+    "packages/agent-factory/src/config.ts",
+    "packages/agent-factory/src/orchestrator/handoff.ts",
+    "packages/agent-factory/src/orchestrator/probe.test.ts",
+    "packages/agent-factory/src/orchestrator/probe.ts",
+    "packages/agent-factory/src/requirement-lifecycle.test.ts",
+    "packages/agent-factory/src/requirement-lifecycle.ts",
+    "packages/agent-factory/src/requirements/parser.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/contracts/src/index.ts",
+    "packages/contracts/src/probe-trace.ts",
+    "packages/quality-gates/src/index.ts",
+    "packages/quality-gates/src/probe.ts",
+    "requirements/RQ-0015-add-hardware-twin-workflow-with-probe-firmware-board-trace-and-parity-gate-for-simics-projects.md"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
