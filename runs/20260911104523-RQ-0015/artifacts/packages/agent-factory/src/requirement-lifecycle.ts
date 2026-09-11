@@ -697,11 +697,7 @@ function assertChangeRequestReady(
   if (readiness.ciStatus === 'pending' || readiness.mergeStatus === 'checking') {
     throw new Error('Change request checks are still pending; rerun completion after they finish.');
   }
-  // A repository with no CI reports no status and no check runs. The provider
-  // has still evaluated its required checks: a mergeable change request with
-  // nothing pending or failed is the provider saying nothing is required.
-  const noChecksRequired = readiness.ciStatus === 'unknown' && readiness.mergeStatus === 'mergeable';
-  if (readiness.ciStatus !== 'success' && !noChecksRequired) {
+  if (readiness.ciStatus !== 'success') {
     throw new Error(`Required CI checks are ${readiness.ciStatus}; completion is blocked.`);
   }
   if (!readiness.approvalsSatisfied) throw new Error('Required change request approvals are missing.');
@@ -709,9 +705,6 @@ function assertChangeRequestReady(
     throw new Error(`Change request is ${readiness.mergeStatus}; completion is blocked.`);
   }
 }
-
-/** Test seam for the readiness rule; not part of the CLI surface. */
-export const assertChangeRequestReadyForTest = assertChangeRequestReady;
 
 export async function cancelRequirement(
   requirementId: string,
