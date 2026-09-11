@@ -238,8 +238,11 @@ export async function runProbeOnBoard(twin: TwinRequirement, options: BoardRunOp
     const timeoutMs = Number(optional('BOARD_CAPTURE_TIMEOUT_MS', env) ?? '30000');
     log(`  ▸ capturing: ${capture.join(' ')}`);
     const captured = captureSerial(capture, timeoutMs, log);
-    // Capture starts first so nothing the board prints right after programming is lost.
-    await new Promise((r) => setTimeout(r, 500));
+    // Capture starts first so nothing the board prints right after programming
+    // is lost. A capture that runs on another machine needs time to open the
+    // port, hence the configurable settle.
+    const settleMs = Number(optional('BOARD_CAPTURE_SETTLE_MS', env) ?? '500');
+    await new Promise((r) => setTimeout(r, settleMs));
     runArgv(program, twin.targetRoot, env, timeoutMs, 'programming board');
     const reset = jsonCommand('BOARD_RESET_COMMAND_JSON', env, { elf: twin.probe.elfPath, name: twin.probe.name });
     if (reset) runArgv(reset, twin.targetRoot, env, timeoutMs, 'resetting board');

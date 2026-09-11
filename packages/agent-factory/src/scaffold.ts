@@ -1361,6 +1361,9 @@ const PROBE_ENV_EXAMPLE = [
   'BOARD_CAPTURE_COMMAND_JSON=',
   '# How long to wait for the PROBE_END line after programming, in milliseconds.',
   'BOARD_CAPTURE_TIMEOUT_MS=30000',
+  '# Delay between starting the capture and programming, so a capture that runs',
+  '# on another machine has opened the port first.',
+  'BOARD_CAPTURE_SETTLE_MS=500',
   '',
 ];
 
