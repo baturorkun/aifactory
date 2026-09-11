@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-11T10:25:04.030Z"
 branch: "factory/RQ-0015"
 createdFromCommit: "d5cc544b09e8e5b17b05c4b3b1d8ec7acd7aab2e"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/8"
+githubIssueIid: 8
+repositoryProvider: github
 ---
 # RQ-0015 - add hardware-twin workflow with probe firmware, board trace, and parity gate for Simics projects
 
