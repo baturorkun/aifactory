@@ -13,6 +13,7 @@ import test from 'node:test';
 import { parseRequirement } from './requirements/parser';
 import { FactoryConfigSchema, type FactoryConfig } from './config';
 import {
+  assertChangeRequestReadyForTest,
   cancelRequirement,
   commitApprovedRun,
   completeRequirement,
@@ -739,6 +740,25 @@ test('a hardware-twin draft records its kind, phase and probe and seeds the phas
     const plain = readFileSync(join(repo.root, standard.requirementFile), 'utf8');
     assert.doesNotMatch(plain, /kind:|twinPhase:|probe:|## Probe/);
     assert.equal(parseRequirement(standard.requirementId, repo.config.paths.requirements).lifecycle?.kind, 'standard');
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('a mergeable change request in a repository with no CI is not blocked on unknown checks', async () => {
+  const repo = makeRepository();
+  try {
+    const created = await createDraftRequirement('No CI', 'handoff', repo.config, { environment: {} });
+    completeDraft(join(repo.root, created.requirementFile));
+    // Only the readiness logic is exercised here; it is what refuses or accepts.
+    assert.doesNotThrow(() => assertChangeRequestReadyForTest({
+      changeRequest: { iid: 1, url: 'u', title: 't', sourceBranch: created.branch, targetBranch: 'main', state: 'opened' },
+      headSha: 'abc', draft: false, mergeStatus: 'mergeable', ciStatus: 'unknown', approvalsSatisfied: true,
+    }));
+    assert.throws(() => assertChangeRequestReadyForTest({
+      changeRequest: { iid: 1, url: 'u', title: 't', sourceBranch: created.branch, targetBranch: 'main', state: 'opened' },
+      headSha: 'abc', draft: false, mergeStatus: 'blocked', ciStatus: 'unknown', approvalsSatisfied: true,
+    }), /Required CI checks are unknown/);
   } finally {
     repo.cleanup();
   }
