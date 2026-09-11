@@ -84,6 +84,9 @@ function exec(
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: env ? { ...process.env, ...env } : process.env,
+      // A licensed-simulator suite logs every module build; the default 1 MB
+      // buffer kills the command mid-run and reports a truncated failure.
+      maxBuffer: 256 * 1024 * 1024,
     });
     return { output: (out ?? '').trim(), success: true };
   } catch (err) {
