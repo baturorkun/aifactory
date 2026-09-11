@@ -444,7 +444,7 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
     // The runtime reads first and prints later; the marker the build gate looks for is embedded.
     const runtime = read('probes/_template/probe.c');
     assert.ok(runtime.indexOf('captured[i] = ') < runtime.indexOf('board_uart_init();'));
-    assert.match(runtime, /"PROBE_SOURCE=" PROBE_SOURCE_HASH/);
+    assert.match(runtime, /"PROBE_SOURCE=" PROBE_STRINGIFY\(PROBE_SOURCE_HASH\)/);
     assert.match(runtime, /#error/, 'a build without the hash is refused');
     assert.match(read('probes/_template/board.c'), /#error/, 'the template does not pretend to know the board');
 
