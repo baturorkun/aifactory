@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { relative, resolve } from 'path';
+import { join, relative, resolve } from 'path';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'simics';
 
@@ -122,6 +122,33 @@ function assertValidTemplate(template: string | undefined): asserts template is 
 function toPackageScriptPath(fromDir: string, toFile: string): string {
   const rel = relative(fromDir, toFile).replace(/\\/g, '/');
   return rel.startsWith('.') ? rel : './' + rel;
+}
+
+// Scripts a generated project needs verbatim live under templates/ as real
+// files, next to prompts/. Embedding several hundred lines of PowerShell and
+// Node as string arrays in this module would make them unreadable and
+// unlintable, and they carry nothing this module decides.
+const TEMPLATE_ROOT = resolve(__dirname, '../templates');
+
+export function copyTemplateTree(templateName: string, projectRoot: string): string[] {
+  const source = resolve(TEMPLATE_ROOT, templateName);
+  if (!existsSync(source)) throw new Error('Template directory is missing: ' + source);
+  const copied: string[] = [];
+  const walk = (directory: string, prefix: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const relativePath = prefix ? prefix + '/' + entry.name : entry.name;
+      if (entry.isDirectory()) {
+        mkdirSync(resolve(projectRoot, relativePath), { recursive: true });
+        walk(join(directory, entry.name), relativePath);
+      } else if (entry.isFile()) {
+        mkdirSync(resolve(projectRoot, prefix || '.'), { recursive: true });
+        copyFileSync(join(directory, entry.name), resolve(projectRoot, relativePath));
+        copied.push(relativePath);
+      }
+    }
+  };
+  walk(source, '');
+  return copied;
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -1116,6 +1143,9 @@ function writeSimicsTemplate(projectRoot: string, projectName: string): void {
     mkdirSync(resolve(projectRoot, dir), { recursive: true });
   }
 
+  // The transport and the runner scripts are copied verbatim from templates/.
+  copyTemplateTree('simics', projectRoot);
+
   patchPackageScripts(projectRoot, {
     'simics:build': 'node scripts/simics-command.mjs build',
     'simics:check': 'node scripts/simics-command.mjs check',
@@ -1184,23 +1214,41 @@ function writeSimicsTemplate(projectRoot: string, projectName: string): void {
           'that genuinely needs something different.',
         ],
         gates: {
+          $comment: [
+            'Every entry runs through scripts/sync-run.mjs, which runs the command',
+            'here when SIMICS_REMOTE_HOST is empty and on that host over SSH when',
+            'it is set. The build entry works as generated; replace the check and',
+            'test placeholders with this project\'s own validation.',
+          ],
           $override:
             'SIMICS_BUILD_COMMAND_JSON, SIMICS_CHECK_COMMAND_JSON, SIMICS_TEST_COMMAND_JSON',
-          build: ['./scripts/project-build-command', 'arg'],
+          build: ['node', 'scripts/sync-run.mjs', '--',
+                  'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
+                  'scripts\\windows\\Build-Modules.ps1'],
           check: ['./scripts/static-check-command', 'arg'],
           test: ['./scripts/batch-test-command', 'arg'],
         },
         probe: {
           $comment: [
             'Hardware-twin workflow. Both commands receive PROBE_NAME, PROBE_DIR,',
-            'PROBE_ELF, PROBE_SOURCE_HASH, PROBE_BUILD_DIR and PROBE_TRACE_OUT.',
-            'probe-build must compile probes/<name>/ with -DPROBE_SOURCE_HASH and',
-            'write the ELF to PROBE_ELF; probe-simics-run must run that ELF and',
-            'write the captured UART text to PROBE_TRACE_OUT.',
+            'PROBE_ELF, PROBE_SOURCE_HASH, PROBE_BUILD_DIR and PROBE_TRACE_OUT in',
+            'the environment, and refer to them as ${NAME}. --pull names a file the',
+            'command produces inside the project and where to put it here, which is',
+            'what carries the ELF and the trace back from a remote host.',
+            'target is the Simics target Run-Probe.ps1 launches; see',
+            'targets/probe-run/README.md for the four parameters it receives.',
           ],
           $override: 'SIMICS_PROBE_BUILD_COMMAND_JSON, SIMICS_PROBE_SIMICS_RUN_COMMAND_JSON',
-          'probe-build': ['./scripts/probe-build-command', 'arg'],
-          'probe-simics-run': ['./scripts/probe-simics-run-command', 'arg'],
+          target: 'targets/probe-run/run.simics',
+          'probe-build': ['node', 'scripts/sync-run.mjs',
+                  '--pull', 'build/probes/${PROBE_NAME}/${PROBE_NAME}.elf=${PROBE_ELF}', '--',
+                  'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
+                  'scripts\\windows\\Build-Probe.ps1',
+                  '-ProbeName', '${PROBE_NAME}', '-SourceHash', '${PROBE_SOURCE_HASH}'],
+          'probe-simics-run': ['node', 'scripts/sync-run.mjs',
+                  '--pull', 'build/probes/${PROBE_NAME}/simics-trace.txt=${PROBE_TRACE_OUT}', '--',
+                  'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
+                  'scripts\\windows\\Run-Probe.ps1', '-ProbeName', '${PROBE_NAME}'],
         },
       },
       null,
@@ -1264,6 +1312,19 @@ function writeSimicsTemplate(projectRoot: string, projectName: string): void {
       '  source = `${CONFIG_FILE} (${section}.${mode})`;',
       '  argv = assertArgv(recorded, source);',
       '}',
+      '',
+      '',
+      '// ${NAME} in a recorded argument is an environment variable. An unset one',
+      '// is an error naming it: an empty argument would silently run something',
+      '// else, and a probe command is nothing but those variables.',
+      'argv = argv.map((item) => item.replace(/\\$\\{([A-Z0-9_]+)\\}/g, (_match, name) => {',
+      '  const value = process.env[name];',
+      '  if (value === undefined || value === "") {',
+      '    console.error(`${name} is not set but ${source} refers to it.`);',
+      '    process.exit(2);',
+      '  }',
+      '  return value;',
+      '}));',
       '',
       '// Report the command, so a passing gate leaves a record of what it ran.',
       "console.log(`simics:${mode} -> ${argv.join(' ')}  [${source}]`);",
@@ -1728,6 +1789,21 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
             '- `handoff-finish` gates by phase: `probeBuild`, then `boardTrace`, then the configured gates, then `boardParity`. `approve` refuses a hardware-twin run whose `boardParity` gate has not passed.',
             '- The probe reads every register before it touches the UART. Do not reorder that: bringing up the console changes reset and clock registers.',
             '- The board trace is never regenerated inside the fix loop. If the probe must change, its source hash changes, the trace no longer matches, and `board-run` must be repeated deliberately (`factory probe phase <requirement-id> probe`).',
+            '',
+            '## Modelling Against a Board',
+            '',
+            '- **The board trace is the oracle.** Where it disagrees with a manual, a vendor header, or a design export, the trace wins. Record the disagreement in the profile; do not resolve it silently, and do not model a value no run has observed.',
+            '- **A board-verified profile is derived, never written.** An extraction script reads the probe manifest and the board trace, refuses them when they disagree about which registers were read in which order, and emits the profile carrying the SHA-256 of the trace and of the image that produced it. A host test regenerates the profile from the committed inputs and compares it with the committed one, so a hand-edited profile fails.',
+            '- **An earlier boundary is never re-frozen against a new value.** When the board contradicts a device modelled before the board was consulted, give that device an attribute for its power-on value whose default stays what its own frozen gate validates, and set the board value in the board-verified composition. Both values belong in the profile. Editing the earlier device to the board value instead would silently redefine what an already-approved requirement verified.',
+            '- **Parity is part of the boundary gate.** A board-verified gate validates the model twice from a fresh simulator, checks that the earlier regression firmware still reaches its own output through the new composition, and diffs the probe\'s Simics trace against the board trace, comparing lines marked `volatile` for presence only.',
+            '',
+            '### Recorded pitfalls',
+            '',
+            '- DML 1.4: a `template` must be declared at file scope, not inside a `bank`. An attribute\'s `init()` runs only when it is declared `is (uint64_attr, init)`; `param init_val` on an attribute does nothing, and the attribute silently stays zero.',
+            '- Simics scripts: `%script%` expands in a command argument but not in a bare assignment, so a path needs `$p = (lookup-file "%script%/file")`. A declared string parameter rejects an empty string, so omit the argument instead of passing `param=`.',
+            '- Simics accesses: `SIM_read_phys_memory` and `SIM_write_phys_memory` are inquiry accesses that bypass a register\'s `read()` and `write()`. To exercise what firmware exercises, go through `memory_space.read/write(..., inquiry=0)`.',
+            '- Windows PowerShell 5.1: there is no `[Text.Encoding]::Latin1` (use `GetEncoding(28591)`); an array splat binds positionally where a hashtable splat binds by name; and a quoted `-DNAME="value"` loses its quotes on the way to GCC, so pass a bare token and stringify it in C.',
+            '- A gate script must rebuild the modules before it runs Simics, or a stale .dll answers and the run validates code that is no longer there.',
             '',
           ]
         : []),

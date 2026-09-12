@@ -346,8 +346,13 @@ function draftMarkdown(input: {
     '<!-- Add one acceptance criterion per bullet. -->',
     ...(twin
       ? [
-          `- \`probes/${input.probe}/board-trace.txt\` is committed and the boardTrace gate accepts it.`,
-          '- The boardParity gate reports an empty diff between the board trace and the Simics trace.',
+          `- \`probes/${input.probe}/\` holds the probe sources, its \`probe.json\`, the committed ELF and the board trace; the trace header carries the source hash the build embedded, and the boardTrace gate accepts it.`,
+          '- The board trace contains one line per register in `probe.json`, in the same order.',
+          '- Every register the model holds is present in the board trace with the same power-on value.',
+          '- A register whose board value contradicts an earlier boundary keeps that boundary\'s default in its own device and gate, and is set to the board value in the board-verified composition; the profile records both.',
+          '- The profile regenerates from the committed probe manifest and board trace, and a host test fails when the model and the profile disagree.',
+          '- `factory probe simics-run` followed by `factory probe compare` reports an empty diff, and the boardParity gate passes.',
+          '- The earlier regression firmware still reaches its own output through the new composition.',
         ]
       : []),
     '',

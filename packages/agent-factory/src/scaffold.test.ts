@@ -332,7 +332,9 @@ test('simics template scaffolds a licensed-runner project without proprietary de
     const simicsConfig = JSON.parse(
       readFileSync(join(result.projectRoot, 'simics.config.json'), 'utf8'),
     ) as { gates: Record<string, string[] | string> };
-    assert.deepEqual(simicsConfig.gates.build, ['./scripts/project-build-command', 'arg']);
+    // The build entry works as generated; check and test stay placeholders
+    // until the project has validation of its own to name.
+    assert.deepEqual(simicsConfig.gates.build.slice(0, 3), ['node', 'scripts/sync-run.mjs', '--']);
     assert.deepEqual(simicsConfig.gates.test, ['./scripts/batch-test-command', 'arg']);
     assert.match(String(simicsConfig.gates.$override), /SIMICS_TEST_COMMAND_JSON/);
 
@@ -455,7 +457,7 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
     const scripts = JSON.parse(read('package.json')).scripts;
     assert.equal(scripts['probe:build'], 'node scripts/simics-command.mjs probe-build');
     const simicsConfig = JSON.parse(read('simics.config.json'));
-    assert.deepEqual(Object.keys(simicsConfig.probe).filter((k) => !k.startsWith('$')), ['probe-build', 'probe-simics-run']);
+    assert.deepEqual(Object.keys(simicsConfig.probe).filter((k) => !k.startsWith('$')), ['target', 'probe-build', 'probe-simics-run']);
     assert.match(read('scripts/simics-command.mjs'), /probe-build/);
 
     const envExample = read('.env.example');
@@ -470,6 +472,36 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
     assert.match(agents, /## Hardware-Twin Requirements/);
     assert.match(agents, /--kind hardware-twin/);
     assert.match(agents, /board is the oracle/);
+
+    // The runner and transport scripts are generated, not hand-written per project.
+    for (const file of ['scripts/sync-run.mjs', 'scripts/windows/SimicsTools.ps1', 'scripts/windows/Build-Modules.ps1',
+      'scripts/windows/Build-Probe.ps1', 'scripts/windows/Run-Probe.ps1', 'scripts/board/capture-serial.mjs',
+      'targets/probe-run/README.md']) {
+      assert.ok(existsSync(join(projectRoot, file)), `${file} is generated`);
+    }
+    assert.equal(existsSync(join(projectRoot, 'scripts/sync-run.sh')), false, 'the Bash wrapper is gone');
+
+    // Every gate and probe command goes through the transport, which is what
+    // makes a project work locally and against a remote host without edits.
+    for (const argv of [simicsConfig.gates.build, simicsConfig.probe['probe-build'], simicsConfig.probe['probe-simics-run']]) {
+      assert.deepEqual(argv.slice(0, 2), ['node', 'scripts/sync-run.mjs']);
+    }
+    assert.equal(simicsConfig.probe.target, 'targets/probe-run/run.simics');
+    for (const argv of [simicsConfig.probe['probe-build'], simicsConfig.probe['probe-simics-run']]) {
+      assert.ok(argv.some((a: string) => a.startsWith('--pull')) || argv.includes('--pull'), 'the probe commands carry their output back');
+    }
+    // The module build is the directory listing, not a literal list that drifts.
+    assert.match(read('scripts/windows/Build-Modules.ps1'), /Get-ChildItem -LiteralPath \$source -Directory/);
+    assert.doesNotMatch(read('scripts/windows/Build-Modules.ps1'), /msys64/, 'no compiler path is assumed');
+
+    // The rules a board-verified model has to follow are written down.
+    assert.match(agents, /## Modelling Against a Board/);
+    assert.match(agents, /derived, never written/);
+    assert.match(agents, /never re-frozen against a new value/);
+    assert.match(agents, /Parity is part of the boundary gate/);
+    assert.match(agents, /is \(uint64_attr, init\)/);
+    assert.match(agents, /lookup-file/);
+    assert.match(agents, /inquiry accesses/);
 
     // Nothing generated carries a host, user, remote path or serial port as a value.
     for (const file of ['scripts/simics-command.mjs', 'simics.config.json', 'factory.config.json', 'AGENTS.md', 'README.md']) {
