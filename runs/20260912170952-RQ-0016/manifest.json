@@ -1,0 +1,43 @@
+{
+  "runId": "20260912170952-RQ-0016",
+  "requirementId": "RQ-0016",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260912170952-RQ-0016/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-09-12T17:09:52.772Z",
+  "updatedAt": "2026-09-12T17:35:10.303Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-12T17:24:26.827Z",
+      "finishedAt": "2026-09-12T17:35:01.235Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/requirement-lifecycle.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/simics-transport.test.ts",
+    "packages/agent-factory/templates/simics/scripts/board/capture-serial.mjs",
+    "packages/agent-factory/templates/simics/scripts/sync-run.mjs",
+    "packages/agent-factory/templates/simics/scripts/windows/Build-Modules.ps1",
+    "packages/agent-factory/templates/simics/scripts/windows/Build-Probe.ps1",
+    "packages/agent-factory/templates/simics/scripts/windows/Run-Probe.ps1",
+    "packages/agent-factory/templates/simics/scripts/windows/SimicsTools.ps1",
+    "packages/agent-factory/templates/simics/targets/probe-run/README.md"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-12T17:35:10.304Z",
+  "approvedBy": "Batur Orkun"
+}
