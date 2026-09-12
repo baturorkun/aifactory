@@ -1,0 +1,464 @@
+import { readFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
+import { z } from 'zod';
+
+// ============================================================
+// MODEL CONFIG — discriminated union so TypeScript can narrow
+// ============================================================
+
+const OllamaModelSchema = z.object({
+  provider: z.literal('ollama'),
+  name: z.string(),
+  reviewerName: z.string().optional(),
+  baseUrl: z.string().optional(),
+  timeoutMs: z.number().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+});
+
+const OpenAICompatModelSchema = z.object({
+  provider: z.literal('openai-compat'),
+  name: z.string(),
+  reviewerName: z.string().optional(),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+  timeoutMs: z.number().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+});
+
+const GeminiModelSchema = z.object({
+  provider: z.literal('gemini'),
+  name: z.string(),
+  reviewerName: z.string().optional(),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+  apiKeyEnv: z.string().default('GEMINI_API_KEY'),
+  timeoutMs: z.number().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+});
+
+const MockModelSchema = z.object({
+  provider: z.literal('mock'),
+  name: z.string().default('mock'),
+  reviewerName: z.string().optional(),
+});
+
+const CodexCliModelSchema = z.object({
+  provider: z.literal('codex-cli'),
+  name: z.string().min(1),
+  reviewerName: z.string().min(1).optional(),
+  executable: z.string().min(1).default('codex'),
+  timeoutMs: z.number().int().positive().default(600_000),
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
+});
+
+const ModelConfigSchema = z.discriminatedUnion('provider', [
+  OllamaModelSchema,
+  OpenAICompatModelSchema,
+  GeminiModelSchema,
+  CodexCliModelSchema,
+  MockModelSchema,
+]);
+
+// ============================================================
+// FULL CONFIG SCHEMA
+// ============================================================
+
+const PipelineConfigSchema = z.object({
+  maxRetries: z.number().int().min(0).max(10).default(3),
+  timeboxMs: z.number().default(180_000),
+  maxFixIterations: z.number().int().min(1).max(10).default(3),
+});
+
+const PathsConfigSchema = z.object({
+  requirements: z.string().default('./requirements'),
+  constraints: z.string().default('./constraints'),
+  references: z.string().default('./references'),
+  runs: z.string().default('./runs'),
+  handoffs: z.string().default('./handoffs'),
+  templates: z.string().default('./templates'),
+  prompts: z.string().default('./packages/agent-factory/prompts'),
+});
+
+const DomainRuleSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+  pattern: z.string().optional(),
+  forbidden: z.array(z.string()).optional(),
+});
+
+const DomainConfigSchema = z.object({
+  rules: z.array(DomainRuleSchema).default([]),
+});
+
+const TargetCommandsSchema = z.object({
+  build: z.string().optional(),
+  typeCheck: z.string().optional(),
+  lint: z.string().optional(),
+  test: z.string().optional(),
+  // Hardware-twin workflow. Both run with PROBE_NAME, PROBE_DIR, PROBE_ELF,
+  // PROBE_SOURCE_HASH and PROBE_TRACE_OUT in their environment.
+  probeBuild: z.string().optional(),
+  probeSimicsRun: z.string().optional(),
+});
+
+const TargetProjectSchema = z.object({
+  root: z.string().optional(),
+  applyArtifacts: z.boolean().default(false),
+  profile: z.string().min(1).optional(),
+  allowedPaths: z.array(z.string()).default([]),
+  commands: TargetCommandsSchema.default({}),
+  commandTimeoutMs: z.number().int().positive().optional(),
+});
+
+const ProjectGuidelinesSchema = z.object({
+  files: z.array(z.string().min(1)).default([]),
+  required: z.boolean().default(false),
+  maxContextChars: z.number().int().positive().default(20_000),
+});
+
+const RequirementBranchesSchema = z.object({
+  enabled: z.boolean().default(false),
+  branchPrefix: z.string().min(1).default('factory/'),
+  baseBranch: z.string().min(1).default('main'),
+  remote: z.string().min(1).default('origin'),
+});
+
+const PlatformLabelsSchema = z.object({
+  draft: z.string().optional(),
+  ready: z.string().optional(),
+  running: z.string().optional(),
+  needsFix: z.string().optional(),
+  passed: z.string().optional(),
+});
+
+const RepositoryPlatformsSchema = z.object({
+  gitlab: z
+    .object({
+      baseUrl: z.string().optional(),
+      projectId: z.string().optional(),
+      token: z.string().optional(),
+      targetBranch: z.string().optional(),
+      removeSourceBranchOnMerge: z.boolean().default(true),
+      labels: PlatformLabelsSchema.default({}),
+    })
+    .optional(),
+  github: z
+    .object({
+      baseUrl: z.string().optional(),
+      repository: z.string().optional(),
+      token: z.string().optional(),
+      targetBranch: z.string().optional(),
+      removeSourceBranchOnMerge: z.boolean().default(true),
+      labels: PlatformLabelsSchema.default({}),
+    })
+    .optional(),
+});
+
+const RagSourceSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('filesystem').default('filesystem'),
+  rootPath: z.string().min(1),
+  include: z
+    .array(z.string())
+    .default([
+      '**/*.txt',
+      '**/*.md',
+      '**/*.json',
+      '**/*.csv',
+      '**/*.html',
+      '**/*.htm',
+      '**/*.pdf',
+      '**/*.docx',
+      '**/*.pptx',
+    ]),
+  exclude: z.array(z.string()).default(['**/~$*', '**/.DS_Store']),
+  excludeAdditions: z.array(z.string()).default([]),
+});
+
+const RagGroundingAgentSchema = z.enum([
+  'planner',
+  'architect',
+  'coder',
+  'tester',
+  'reviewer',
+  'domain-guard',
+]);
+
+const RagGroundingSchema = z.object({
+  enabled: z.boolean().default(false),
+  chatUrl: z.string().url().optional(),
+  mode: z.enum(['always', 'explicit']).default('always'),
+  marker: z.string().min(1).default('@rag'),
+  sourceIds: z
+    .preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value.split(',').map((item) => item.trim()).filter(Boolean)
+          : value,
+      z.array(z.string().min(1)),
+    )
+    .default([]),
+  excludeContentTypes: z
+    .preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value.split(',').map((item) => item.trim()).filter(Boolean)
+          : value,
+      z.array(z.string().min(1)),
+    )
+    .default([]),
+  agents: z
+    .array(RagGroundingAgentSchema)
+    .default(['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard']),
+  timeoutMs: z.number().int().positive().default(120_000),
+  failOpen: z.boolean().default(true),
+  maxContextChars: z.number().int().positive().default(12_000),
+  queryPrefix: z
+    .string()
+    .default(
+      'Answer using the configured project documentation. Identify applicable rules, constraints, and source references.',
+    ),
+});
+
+const RagConfigSchema = z.object({
+  database: z
+    .object({
+      connectionString: z
+        .string()
+        .default('postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag'),
+    })
+    .default({}),
+  sources: z.array(RagSourceSchema).default([]),
+  ingest: z
+    .object({
+      chunkSize: z.number().int().positive().default(1200),
+      chunkOverlap: z.number().int().min(0).default(150),
+      batchSize: z.number().int().positive().default(50),
+    })
+    .default({}),
+  embedding: z
+    .object({
+      provider: z.enum(['openai', 'gemini', 'ollama', 'local']).default('openai'),
+      model: z.string().default('text-embedding-3-small'),
+      dimensions: z.number().int().positive().default(1536),
+      apiKey: z.string().optional(),
+      baseUrl: z.string().optional(),
+      cacheDir: z.string().optional(),
+      modelPath: z.string().optional(),
+      localFilesOnly: z.boolean().default(false),
+      threads: z.number().int().positive().optional(),
+      maxRetries: z.number().int().min(0).default(6),
+      retryBaseSeconds: z.number().positive().default(2),
+      retryMaxSeconds: z.number().positive().default(60),
+      minRequestIntervalSeconds: z.number().min(0).default(1),
+    })
+    .default({}),
+  llm: z
+    .object({
+      provider: z.enum(['openai', 'claude', 'gemini', 'ollama']).default('openai'),
+      model: z.string().default('gpt-4o-mini'),
+      apiKey: z.string().optional(),
+      baseUrl: z.string().optional(),
+      temperature: z.number().min(0).max(2).default(0.1),
+    })
+    .default({}),
+  retrieval: z
+    .object({
+      topK: z.number().int().positive().default(6),
+      minScore: z.number().optional(),
+    })
+    .default({}),
+  auth: z
+    .object({
+      provider: z.enum(['none', 'entra']).default('none'),
+      enabled: z.boolean().default(false),
+      tenantId: z.string().optional(),
+      audience: z.string().optional(),
+      issuer: z.string().optional(),
+    })
+    .default({}),
+  grounding: RagGroundingSchema.default({}),
+  api: z
+    .object({
+      host: z.string().default('127.0.0.1'),
+      port: z.number().int().positive().default(8765),
+    })
+    .default({}),
+});
+
+// What a project wants when `requirement new` is called without flags. A
+// project whose every requirement is board-verified should not have to type
+// --kind each time; the flag stays as the way to say otherwise.
+const RequirementDefaultsSchema = z.object({
+  kind: z.enum(['standard', 'hardware-twin']).default('standard'),
+  executionMode: z.enum(['handoff', 'pipeline', 'direct']).default('handoff'),
+  pipelineFast: z.boolean().default(false),
+});
+
+export const FactoryConfigSchema = z.object({
+  model: ModelConfigSchema,
+  pipeline: PipelineConfigSchema.default({}),
+  paths: PathsConfigSchema.default({}),
+  domain: DomainConfigSchema.default({}),
+  targetProject: TargetProjectSchema.default({}),
+  projectGuidelines: ProjectGuidelinesSchema.default({}),
+  requirementBranches: RequirementBranchesSchema.default({}),
+  requirementDefaults: RequirementDefaultsSchema.default({}),
+  repositoryPlatforms: RepositoryPlatformsSchema.default({}),
+  rag: RagConfigSchema.default({}),
+});
+
+export type FactoryConfig = z.infer<typeof FactoryConfigSchema>;
+export type ModelConfig = z.infer<typeof ModelConfigSchema>;
+export type DomainRule = z.infer<typeof DomainRuleSchema>;
+export type TargetProjectConfig = z.infer<typeof TargetProjectSchema>;
+
+// ============================================================
+// ENV
+// ============================================================
+
+function loadEnvFile(cwd: string, overwrite = true): void {
+  const envPath = resolve(cwd, '.env');
+  if (!existsSync(envPath)) return;
+
+  const lines = readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+
+    const key = trimmed.slice(0, eq).trim();
+    const rawValue = trimmed.slice(eq + 1).trim();
+    const value = rawValue.replace(/^['"]|['"]$/g, '');
+
+    if (overwrite || process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+function expandEnvVars(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.replace(/\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/gi, (_match, name: string, defaultValue: string | undefined) => {
+      const envValue = process.env[name];
+      if (envValue !== undefined && envValue !== '') {
+        return envValue;
+      }
+      if (defaultValue !== undefined) {
+        return defaultValue;
+      }
+      throw new Error(`Environment variable not set: ${name}`);
+    });
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(expandEnvVars);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, expandEnvVars(entry)]),
+    );
+  }
+
+  return value;
+}
+
+// ============================================================
+// LOADER
+// ============================================================
+
+const CONFIG_FILENAME = 'factory.config.json';
+
+export function loadConfig(cwd: string = process.cwd()): FactoryConfig {
+  const factoryHome = process.env.AIFACTORY_HOME;
+  if (factoryHome && resolve(factoryHome) !== resolve(cwd)) {
+    loadEnvFile(factoryHome, false);
+  }
+  loadEnvFile(cwd);
+  const configPath = resolve(cwd, CONFIG_FILENAME);
+
+  if (!existsSync(configPath)) {
+    throw new Error(
+      `Config file not found: ${configPath}\n` +
+        `Run: pnpm factory -- init`,
+    );
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(configPath, 'utf8'));
+  } catch (err) {
+    throw new Error(`Failed to parse ${CONFIG_FILENAME}: ${String(err)}`);
+  }
+
+  if (factoryHome) {
+    const globalConfigPath = resolve(factoryHome, CONFIG_FILENAME);
+    if (globalConfigPath !== configPath && existsSync(globalConfigPath)) {
+      let globalRaw: unknown;
+      try {
+        globalRaw = JSON.parse(readFileSync(globalConfigPath, 'utf8'));
+      } catch (err) {
+        throw new Error(`Failed to parse global ${globalConfigPath}: ${String(err)}`);
+      }
+      raw = mergeGlobalGrounding(globalRaw, raw);
+    }
+  }
+
+  const expanded = expandEnvVars(projectRuntimeConfig(raw));
+  const result = FactoryConfigSchema.safeParse(expanded);
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    throw new Error(`Invalid factory.config.json:\n${issues}`);
+  }
+
+  return result.data;
+}
+
+/**
+ * TypeScript requirement and pipeline commands only consume the remote
+ * grounding client settings. RAG service infrastructure is loaded and
+ * validated by the Python RAG CLI when a `factory rag ...` command runs.
+ */
+function projectRuntimeConfig(raw: unknown): unknown {
+  if (!isRecord(raw) || !isRecord(raw.rag)) return raw;
+  const grounding = raw.rag.grounding;
+  return {
+    ...raw,
+    rag: grounding === undefined ? {} : { grounding },
+  };
+}
+
+function mergeGlobalGrounding(globalRaw: unknown, projectRaw: unknown): unknown {
+  if (!isRecord(projectRaw)) return projectRaw;
+  const globalGrounding = nestedRecord(globalRaw, 'rag', 'grounding');
+  if (!globalGrounding) return projectRaw;
+
+  const projectRag = isRecord(projectRaw.rag) ? projectRaw.rag : {};
+  const projectGrounding = isRecord(projectRag.grounding) ? projectRag.grounding : {};
+  return {
+    ...projectRaw,
+    rag: {
+      ...projectRag,
+      grounding: { ...globalGrounding, ...projectGrounding },
+    },
+  };
+}
+
+function nestedRecord(value: unknown, first: string, second: string): Record<string, unknown> | undefined {
+  if (!isRecord(value) || !isRecord(value[first]) || !isRecord(value[first][second])) {
+    return undefined;
+  }
+  return value[first][second];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}

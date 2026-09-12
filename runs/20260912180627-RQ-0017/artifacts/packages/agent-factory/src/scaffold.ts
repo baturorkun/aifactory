@@ -1,0 +1,1871 @@
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
+import { homedir } from 'os';
+import { join, relative, resolve } from 'path';
+
+export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'simics';
+
+export type NewProjectOptions = {
+  dir?: string;
+  force?: boolean;
+  template?: string;
+  availableSkills?: readonly string[];
+  availablePlugins?: readonly string[];
+  codexHome?: string;
+};
+
+export type NewProjectResult = {
+  projectName: string;
+  projectRoot: string;
+  template: ProjectTemplate;
+};
+
+export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python', 'simics'];
+
+const PROJECT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+const TYPESCRIPT_CONFIG_PATHS = ['tsconfig.json', 'tsconfig.build.json'];
+const SUPERPOWERS_POLICY_START = '<!-- superpowers-token-policy:start -->';
+const SUPERPOWERS_POLICY_END = '<!-- superpowers-token-policy:end -->';
+
+export const SUPERPOWERS_TOKEN_POLICY = [
+  SUPERPOWERS_POLICY_START,
+  '',
+  '## Superpowers düşük-token çalışma politikası',
+  '',
+  'Superpowers skill’lerini yalnızca görevle doğrudan ilgili olduklarında kullan.',
+  '',
+  'Öncelik sırası:',
+  '',
+  '1. Doğruluk',
+  '2. Düşük token tüketimi',
+  '3. Süre',
+  '',
+  'Görevin daha uzun sürmesi kabul edilebilir. Token tüketimini azaltmak için:',
+  '',
+  '- Yalnızca gerekli Superpowers skill’lerini yükle.',
+  '- Aynı skill’i veya talimat dosyasını tekrar okuma.',
+  '- Kullanıcı açıkça istemedikçe subagent ve paralel agent kullanma.',
+  '- Görevi tek agent ile tamamlamayı tercih et.',
+  '- Uzun brainstorming oturumlarından kaçın; yalnızca sonucu değiştirecek soruları sor.',
+  '- Plan gerekiyorsa kısa, uygulanabilir ve görev kapsamıyla sınırlı tut.',
+  '- Gereksiz alternatifler, uzun açıklamalar ve tekrar eden özetler üretme.',
+  '- Mevcut dosyaları hedefli biçimde ara; tüm projeyi gereksiz yere okuma.',
+  '- Daha önce edinilmiş ve hâlâ geçerli bilgileri yeniden toplama.',
+  '- Değişiklikleri mümkün olan en küçük kapsamda tut.',
+  '- İlgisiz refactor veya iyileştirme yapma.',
+  '- Yalnızca değişiklikle ilgili testleri ve doğrulamaları çalıştır.',
+  '- Aynı testi, aramayı veya incelemeyi yeni kanıt olmadan tekrarlama.',
+  '- Test çıktılarının yalnızca ilgili bölümlerini incele.',
+  '- Kullanıcıya kısa ve seyrek ilerleme güncellemeleri ver.',
+  '- Nihai yanıtta yalnızca sonuç, değişen dosyalar ve önemli doğrulama sonuçlarını bildir.',
+  '',
+  'Bir Superpowers skill’i daha fazla token harcatsa bile hata, tekrar çalışma veya yanlış uygulama riskini belirgin biçimde azaltıyorsa kullanılabilir.',
+  '',
+  SUPERPOWERS_POLICY_END,
+  '',
+].join('\n');
+
+function containsSuperpowersEntry(root: string, depth = 0): boolean {
+  if (!existsSync(root) || depth > 5) return false;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const normalized = entry.name.toLowerCase();
+    if (normalized === 'superpowers' || normalized.startsWith('superpowers:') || normalized.startsWith('superpowers@')) {
+      return true;
+    }
+    if (entry.isFile() && (normalized === 'skill.md' || normalized === 'plugin.json')) {
+      const metadata = readFileSync(resolve(root, entry.name), 'utf8');
+      if (/\bname\s*[:=]\s*["']?superpowers(?::|["'])/i.test(metadata) ||
+          /["'](?:id|plugin_id)["']\s*:\s*["']superpowers(?:@[^"']+)?["']/i.test(metadata)) {
+        return true;
+      }
+    }
+    if (entry.isDirectory() && containsSuperpowersEntry(resolve(root, entry.name), depth + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function hasSuperpowersCapability(options: NewProjectOptions): boolean {
+  if (options.availableSkills?.some((name) => name.toLowerCase().startsWith('superpowers:'))) return true;
+  if (options.availablePlugins?.some((name) => name.toLowerCase() === 'superpowers')) return true;
+  const codexHome = resolve(options.codexHome ?? process.env.CODEX_HOME ?? resolve(homedir(), '.codex'));
+  return containsSuperpowersEntry(resolve(codexHome, 'skills')) ||
+    containsSuperpowersEntry(resolve(codexHome, 'plugins'));
+}
+
+export function ensureSuperpowersTokenPolicy(agentsPath: string): boolean {
+  const current = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '';
+  if (current.includes(SUPERPOWERS_POLICY_START) || current.includes(SUPERPOWERS_POLICY_END)) return false;
+  const separator = current.length === 0 ? '' : current.endsWith('\n\n') ? '' : current.endsWith('\n') ? '\n' : '\n\n';
+  writeFileSync(agentsPath, `${current}${separator}${SUPERPOWERS_TOKEN_POLICY}`, 'utf8');
+  return true;
+}
+
+function assertValidProjectName(projectName: string): void {
+  if (!PROJECT_NAME_PATTERN.test(projectName)) {
+    throw new Error(
+      'Invalid project name. Use letters, numbers, dot, underscore, or dash; start with a letter or number.',
+    );
+  }
+}
+
+function assertValidTemplate(template: string | undefined): asserts template is ProjectTemplate {
+  if (!template) {
+    throw new Error('Missing --template. Choose one: ' + PROJECT_TEMPLATES.join(', '));
+  }
+
+  if (!PROJECT_TEMPLATES.includes(template as ProjectTemplate)) {
+    throw new Error('Invalid template "' + template + '". Choose one: ' + PROJECT_TEMPLATES.join(', '));
+  }
+}
+
+function toPackageScriptPath(fromDir: string, toFile: string): string {
+  const rel = relative(fromDir, toFile).replace(/\\/g, '/');
+  return rel.startsWith('.') ? rel : './' + rel;
+}
+
+// Scripts a generated project needs verbatim live under templates/ as real
+// files, next to prompts/. Embedding several hundred lines of PowerShell and
+// Node as string arrays in this module would make them unreadable and
+// unlintable, and they carry nothing this module decides.
+const TEMPLATE_ROOT = resolve(__dirname, '../templates');
+
+export function copyTemplateTree(templateName: string, projectRoot: string): string[] {
+  const source = resolve(TEMPLATE_ROOT, templateName);
+  if (!existsSync(source)) throw new Error('Template directory is missing: ' + source);
+  const copied: string[] = [];
+  const walk = (directory: string, prefix: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const relativePath = prefix ? prefix + '/' + entry.name : entry.name;
+      if (entry.isDirectory()) {
+        mkdirSync(resolve(projectRoot, relativePath), { recursive: true });
+        walk(join(directory, entry.name), relativePath);
+      } else if (entry.isFile()) {
+        mkdirSync(resolve(projectRoot, prefix || '.'), { recursive: true });
+        copyFileSync(join(directory, entry.name), resolve(projectRoot, relativePath));
+        copied.push(relativePath);
+      }
+    }
+  };
+  walk(source, '');
+  return copied;
+}
+
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8');
+}
+
+function writeCommonFiles(projectRoot: string, projectName: string): void {
+  writeJson(resolve(projectRoot, 'package.json'), {
+    name: projectName,
+    private: true,
+    version: '0.1.0',
+    scripts: {},
+  });
+
+  writeFileSync(
+    resolve(projectRoot, '.env.example'),
+    [
+      '# Required model settings. Copy this file to .env and provide real values.',
+      'AI_PROVIDER=gemini',
+      'AI_MODEL=gemini-2.5-flash',
+      'AI_REVIEWER_MODEL=gemini-2.5-flash',
+      'AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta',
+      'AI_API_KEY=replace_me',
+      '',
+      '# xAI / Grok via OpenAI-compatible endpoint example:',
+      '# AI_PROVIDER=openai-compat',
+      '# AI_MODEL=grok-4-fast-reasoning',
+      '# AI_REVIEWER_MODEL=grok-4-fast-reasoning',
+      '# AI_BASE_URL=https://api.x.ai/v1',
+      '# AI_API_KEY=replace_me',
+      '',
+      '# Codex CLI provider (pipeline mode only):',
+      '# AI_PROVIDER=codex-cli',
+      '# AI_MODEL=gpt-5.6-sol',
+      '# AI_REVIEWER_MODEL=gpt-5.6-sol',
+      '# AI_CODEX_EXECUTABLE=codex',
+      '# AI_CODEX_REASONING_EFFORT=medium',
+      '',
+      '# RAG settings:',
+      '# RAG_CHAT_URL=http://127.0.0.1:8765/query',
+      '# RAG_SOURCE_IDS=fileserver',
+      '# RAG_DATABASE_URL=postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag',
+      '# RAG_FILESERVER_PATH=/mnt/company-share/docs',
+      '# RAG_EMBEDDING_PROVIDER=gemini',
+      '# RAG_EMBEDDING_MODEL=gemini-embedding-001',
+      '# RAG_LLM_PROVIDER=gemini',
+      '# RAG_LLM_MODEL=gemini-2.5-flash',
+      '# RAG_API_KEY=replace_me',
+      '# ENTRA_TENANT_ID=replace_me',
+      '# ENTRA_AUDIENCE=api://replace_me',
+      '',
+      '# Optional repository-platform integration:',
+      '# GITLAB_URL=https://gitlab.example.com',
+      '# GITLAB_PROJECT_ID=group/project',
+      '# GITLAB_TOKEN=replace_me',
+      '# GITHUB_API_URL=https://api.github.com',
+      '# GITHUB_REPOSITORY=owner/repository',
+      '# GITHUB_TOKEN=replace_me',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, '.gitignore'),
+    [
+      'node_modules/',
+      'dist/',
+      '.env',
+      '# Keep lightweight run history; generated artifacts and logs stay local.',
+      'runs/*',
+      '!runs/.gitkeep',
+      '!runs/*/',
+      'runs/*/*',
+      '!runs/*/manifest.json',
+      '!runs/*/gates/',
+      'runs/*/gates/*',
+      '!runs/*/gates/report.json',
+      '.DS_Store',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeReferencesReadme(projectRoot: string): void {
+  writeFileSync(
+    resolve(projectRoot, 'references/README.md'),
+    [
+      '# References',
+      '',
+      'Put source material for requirements here, such as PDFs, standards, screenshots, notes, and domain research.',
+      '',
+      'Suggested layout for a standard or specification:',
+      '',
+      '```text',
+      'references/',
+      '  arinc-661/',
+      '    ARINC-661.pdf',
+      '    summary.md',
+      '    widget-model.md',
+      '    requirements-notes.md',
+      '```',
+      '',
+      'Requirements should link to concise markdown notes from this folder when possible. Keep large PDFs here as source material, but summarize the implementation-relevant parts in markdown before running the factory pipeline.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean): void {
+  writeFileSync(
+    resolve(projectRoot, '.gitlab-ci.yml'),
+    [
+      'workflow:',
+      '  rules:',
+      "    - if: '$CI_COMMIT_BRANCH =~ /^factory-checkpoint\\//'",
+      '      when: never',
+      '    # Approving or completing a requirement rewrites that requirement own',
+      '    # file, which matches the factory job changes rule and would restart',
+      '    # work that is already finished. Only the redundant branch pipeline is',
+      '    # dropped: completion waits on the merge request pipeline, so that one',
+      '    # must still run.',
+      "    - if: '$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_MESSAGE =~ /^requirement\\(RQ-[0-9]+\\): (approve|complete)/'",
+      '      when: never',
+      '    - when: always',
+      '',
+      'stages:',
+      '  - ai_factory',
+      ...(deployable ? ['  - build', '  - package', '  - image', '  - deploy'] : []),
+      '',
+      'variables:',
+      '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
+      '  AIFACTORY_REPO_URL: "https://github.com/baturorkun/aifactory.git"',
+      '  AIFACTORY_RUNNER_IMAGE: "node:20-bullseye"',
+      '  CODEX_HOME: "/home/gitlab-runner/.codex"',
+      ...(deployable
+        ? [
+            '  APP_PORT: "8282"',
+            '  LOCAL_DOCKER_IMAGE: "' + projectName + ':$CI_COMMIT_SHORT_SHA"',
+            '  CONTAINER_NAME: "' + projectName + '"',
+          ]
+        : []),
+      '',
+      'cache:',
+      '  key: "$CI_COMMIT_REF_SLUG"',
+      '  paths:',
+      '    - .pnpm-store/',
+      '    - .pnpm/',
+      '',
+      'ai_factory_requirement_branch:',
+      '  image: "$AIFACTORY_RUNNER_IMAGE"',
+      '  tags:',
+      '    - linux',
+      '  stage: ai_factory',
+      '  resource_group: "ai-factory-$CI_COMMIT_REF_SLUG"',
+      '  variables:',
+      '    GIT_DEPTH: "0"',
+      '  rules:',
+      '    - if: \'$CI_COMMIT_BRANCH =~ /^factory\\/RQ-[0-9]+$/\'',
+      '      changes:',
+      '        - requirements/**/*.md',
+      '        - requirements/**/*.markdown',
+      '        - factory.config.json',
+      '      when: on_success',
+      '    - when: never',
+      '  before_script:',
+      '    - node --version',
+      '    - npm --version',
+      '    - corepack enable',
+      '    - corepack prepare pnpm@9.15.9 --activate',
+      '    - |',
+      '      if [ ! -f ../aifactory/package.json ]; then',
+      '        git clone "$AIFACTORY_REPO_URL" ../aifactory',
+      '      fi',
+      '      git -C ../aifactory fetch origin main',
+      '      git -C ../aifactory switch --detach FETCH_HEAD',
+      '      echo "AI Factory commit: $(git -C ../aifactory rev-parse --short HEAD)"',
+      '    - cd ../aifactory',
+      '    - pnpm install --frozen-lockfile',
+      '    - pnpm -r run typecheck',
+      '    - cd "$CI_PROJECT_DIR"',
+      '    - if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install --no-frozen-lockfile; fi',
+      '    - git config user.name "AI Factory"',
+      '    - git config user.email "ai-factory@local"',
+      '  script:',
+      '    - |',
+      '      REQUIREMENT_ID="${CI_COMMIT_BRANCH#factory/}"',
+      '      cd ../aifactory',
+      '      DECISION="$(pnpm --silent factory -- --project "$CI_PROJECT_DIR" requirement decision "$REQUIREMENT_ID")"',
+      '      case "$DECISION" in',
+      '        run|legacy)',
+      '          MODEL_PROVIDER="$(pnpm --silent factory -- --project "$CI_PROJECT_DIR" model-provider)"',
+      '          if [ "$MODEL_PROVIDER" = "codex-cli" ]; then',
+      '            command -v codex >/dev/null 2>&1 || { echo "codex-cli provider requires Codex CLI in AIFACTORY_RUNNER_IMAGE"; exit 1; }',
+      '            MOUNTED_CODEX_HOME="${CODEX_HOME:-/home/gitlab-runner/.codex}"',
+      '            if [ -n "${CODEX_AUTH_JSON_FILE:-}" ]; then',
+      '              test -r "$CODEX_AUTH_JSON_FILE" || { echo "CODEX_AUTH_JSON_FILE must point to a readable GitLab File variable"; exit 1; }',
+      '              export CODEX_HOME="$CI_PROJECT_DIR/.codex"',
+      '              install -d -m 700 "$CODEX_HOME"',
+      '              install -m 600 "$CODEX_AUTH_JSON_FILE" "$CODEX_HOME/auth.json"',
+      '            else',
+      '              export CODEX_HOME="$MOUNTED_CODEX_HOME"',
+      '              test -r "$CODEX_HOME/auth.json" || { echo "codex-cli provider requires CODEX_AUTH_JSON_FILE or readable $CODEX_HOME/auth.json from the runner mount"; exit 1; }',
+      '            fi',
+      '            codex login status >/dev/null || { echo "Codex CLI authentication is invalid; refresh CODEX_AUTH_JSON_FILE or $CODEX_HOME/auth.json"; exit 1; }',
+      '          fi',
+      '          fresh_args=()',
+      '          if [ "${AIFACTORY_FRESH:-false}" = "true" ]; then fresh_args+=(--fresh); fi',
+      '          pnpm factory -- --project "$CI_PROJECT_DIR" sync-requirement "$REQUIREMENT_ID" --source-ref "$CI_COMMIT_SHA" --push "${fresh_args[@]}"',
+      '          ;;',
+      '        draft)',
+      '          echo "$REQUIREMENT_ID is still draft; AI Factory execution is skipped."',
+      '          ;;',
+      '        handoff|direct)',
+      '          echo "$REQUIREMENT_ID uses $DECISION mode; GitLab AI Factory pipeline execution is skipped."',
+      '          ;;',
+      '        *)',
+      '          echo "Unknown requirement execution decision: $DECISION"',
+      '          exit 1',
+      '          ;;',
+      '      esac',
+      '  artifacts:',
+      '    name: "' + projectName + '-ai-factory-$CI_COMMIT_SHORT_SHA"',
+      '    when: always',
+      '    expire_in: 7 days',
+      '    paths:',
+      '      - public/',
+      '      - src/',
+      '      - dist/',
+      '      - runs/',
+      '      - handoffs/',
+      '      - requirements/',
+      '      - constraints/',
+      '      - factory.config.json',
+      '      - package.json',
+      '      - tsconfig.json',
+      '      - tsconfig.build.json',
+      '      - pyproject.toml',
+      '      - tests/',
+      ...(deployable
+        ? [
+            '',
+            'build_static:',
+            '  stage: build',
+            '  image: node:20-alpine',
+            '  tags:',
+            '    - linux',
+            '  script:',
+            '    - npm install --global typescript@5.4.5',
+            '    - tsc --project tsconfig.build.json',
+            '    - mkdir -p release/' + projectName + '/public release/' + projectName + '/src release/' + projectName + '/dist',
+            '    - cp -R public/. release/' + projectName + '/public/',
+            '    - cp src/styles.css release/' + projectName + '/src/styles.css',
+            '    - cp -R dist/. release/' + projectName + '/dist/',
+            '  artifacts:',
+            '    name: "' + projectName + '-static-$CI_COMMIT_SHORT_SHA"',
+            '    expire_in: 30 days',
+            '    paths:',
+            '      - release/' + projectName + '/',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH\'',
+            '    - if: \'$CI_COMMIT_TAG\'',
+            '',
+            'package_offline:',
+            '  stage: package',
+            '  image: alpine:3.21',
+            '  tags:',
+            '    - linux',
+            '  needs:',
+            '    - job: build_static',
+            '      artifacts: true',
+            '  script:',
+            '    - tar -czf "' + projectName + '-offline-$CI_COMMIT_SHORT_SHA.tar.gz" -C release ' + projectName,
+            '  artifacts:',
+            '    name: "' + projectName + '-offline-$CI_COMMIT_SHORT_SHA"',
+            '    expire_in: 30 days',
+            '    paths:',
+            '      - ' + projectName + '-offline-*.tar.gz',
+            '      - release/' + projectName + '/',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH\'',
+            '    - if: \'$CI_COMMIT_TAG\'',
+            '',
+            'docker_image:',
+            '  stage: image',
+            '  image: docker:27-cli',
+            '  tags:',
+            '    - linux',
+            '  variables:',
+            '    DOCKER_HOST: "unix:///var/run/docker.sock"',
+            '  needs:',
+            '    - job: build_static',
+            '      artifacts: true',
+            '  before_script:',
+            '    - |',
+            '      if [ ! -S /var/run/docker.sock ]; then',
+            '        echo "Docker image build requires /var/run/docker.sock mounted from the runner host."',
+            '        echo "Add /var/run/docker.sock:/var/run/docker.sock to the runner Docker volumes."',
+            '        exit 1',
+            '      fi',
+            '    - docker info',
+            '  script:',
+            '    - docker build --pull --label "org.opencontainers.image.revision=$CI_COMMIT_SHA" --tag "$LOCAL_DOCKER_IMAGE" .',
+            '    - docker save "$LOCAL_DOCKER_IMAGE" --output ' + projectName + '-image.tar',
+            '    - |',
+            '      if [ -n "$CI_REGISTRY" ] && [ -n "$CI_REGISTRY_IMAGE" ] && [ -n "$CI_REGISTRY_USER" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then',
+            '        echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"',
+            '        docker tag "$LOCAL_DOCKER_IMAGE" "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"',
+            '        docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"',
+            '        if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then',
+            '          docker tag "$LOCAL_DOCKER_IMAGE" "$CI_REGISTRY_IMAGE:latest"',
+            '          docker push "$CI_REGISTRY_IMAGE:latest"',
+            '        fi',
+            '      else',
+            '        echo "GitLab Container Registry is not configured; using the Docker image artifact."',
+            '      fi',
+            '  artifacts:',
+            '    name: "' + projectName + '-docker-image-$CI_COMMIT_SHORT_SHA"',
+            '    expire_in: 7 days',
+            '    paths:',
+            '      - ' + projectName + '-image.tar',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH\'',
+            '    - if: \'$CI_COMMIT_TAG\'',
+            '',
+            'deploy_linux:',
+            '  stage: deploy',
+            '  image: docker:27-cli',
+            '  tags:',
+            '    - linux',
+            '  needs:',
+            '    - job: docker_image',
+            '      artifacts: true',
+            '  resource_group: "' + projectName + '-linux"',
+            '  variables:',
+            '    DOCKER_HOST: "unix:///var/run/docker.sock"',
+            '  before_script:',
+            '    - |',
+            '      if [ ! -S /var/run/docker.sock ]; then',
+            '        echo "Persistent deployment requires /var/run/docker.sock mounted from the runner host."',
+            '        echo "Add /var/run/docker.sock:/var/run/docker.sock to the runner Docker volumes."',
+            '        exit 1',
+            '      fi',
+            '    - docker info',
+            '  script:',
+            '    - docker load --input ' + projectName + '-image.tar',
+            '    - docker rm --force "$CONTAINER_NAME" || true',
+            '    - |',
+            '      PORT_OWNER="$(docker ps --filter "publish=$APP_PORT" --format \'{{.Names}}\' | head -n 1)"',
+            '      if [ -n "$PORT_OWNER" ]; then',
+            '        echo "Port $APP_PORT is already used by container: $PORT_OWNER"',
+            '        echo "Set APP_PORT to a free host port and retry deploy_linux."',
+            '        exit 1',
+            '      fi',
+            '    - docker run --detach --restart unless-stopped --name "$CONTAINER_NAME" --publish "$APP_PORT:8282" "$LOCAL_DOCKER_IMAGE"',
+            '    - |',
+            '      ATTEMPT=0',
+            '      until docker exec "$CONTAINER_NAME" wget --quiet --output-document=/dev/null http://127.0.0.1:8282/healthz; do',
+            '        ATTEMPT=$((ATTEMPT + 1))',
+            '        if [ "$ATTEMPT" -ge 15 ]; then',
+            '          docker logs "$CONTAINER_NAME"',
+            '          echo "Application health check failed."',
+            '          exit 1',
+            '        fi',
+            '        sleep 1',
+            '      done',
+            '    - docker ps --filter "name=$CONTAINER_NAME"',
+            '  environment:',
+            '    name: production',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH\'',
+            '      when: on_success',
+            '    - when: never',
+            '',
+            'deploy_preview_linux:',
+            '  stage: deploy',
+            '  image: docker:27-cli',
+            '  tags:',
+            '    - linux',
+            '  needs:',
+            '    - job: docker_image',
+            '      artifacts: true',
+            '  resource_group: "' + projectName + '-preview-linux"',
+            '  variables:',
+            '    DOCKER_HOST: "unix:///var/run/docker.sock"',
+            '  before_script:',
+            '    - |',
+            '      if [ ! -S /var/run/docker.sock ]; then',
+            '        echo "Persistent preview deployment requires /var/run/docker.sock mounted from the runner host."',
+            '        echo "Add /var/run/docker.sock:/var/run/docker.sock to the runner Docker volumes."',
+            '        exit 1',
+            '      fi',
+            '    - docker info',
+            '  script:',
+            '    - docker load --input ' + projectName + '-image.tar',
+            '    - |',
+            '      PREVIEW_CONTAINER_NAME="$CONTAINER_NAME-preview-$CI_COMMIT_REF_SLUG"',
+            '',
+            '      if [ -n "${APP_PREVIEW_PORT:-}" ]; then',
+            '        PREVIEW_PORT="$APP_PREVIEW_PORT"',
+            '      elif printf \'%s\' "$CI_COMMIT_REF_SLUG" | grep -Eq \'^(factory-)?rq-[0-9]+($|-)\'; then',
+            '        REQUIREMENT_NUMBER="$(printf \'%s\' "$CI_COMMIT_REF_SLUG" | sed -E \'s/^(factory-)?rq-([0-9]+).*/\\2/\')"',
+            '        REQUIREMENT_NUMBER="$(printf \'%s\' "$REQUIREMENT_NUMBER" | sed \'s/^0*//\')"',
+            '        REQUIREMENT_NUMBER="${REQUIREMENT_NUMBER:-0}"',
+            '        DEPLOYMENT_ID="$REQUIREMENT_NUMBER"',
+            '      else',
+            '        case "$CI_PIPELINE_ID" in',
+            '          \'\'|*[!0-9]*) echo "CI_PIPELINE_ID must be a positive integer."; exit 1 ;;',
+            '        esac',
+            '        DEPLOYMENT_ID="$CI_PIPELINE_ID"',
+            '      fi',
+            '',
+            '      if [ -z "${PREVIEW_PORT:-}" ]; then',
+            '        LEGACY_PREVIEW_PORT="81${DEPLOYMENT_ID}"',
+            '        if [ "$LEGACY_PREVIEW_PORT" -ge 1024 ] && [ "$LEGACY_PREVIEW_PORT" -le 65535 ]; then',
+            '          PREVIEW_PORT="$LEGACY_PREVIEW_PORT"',
+            '        else',
+            '          PREVIEW_PORT=$((20000 + DEPLOYMENT_ID % 40000))',
+            '        fi',
+            '      fi',
+            '',
+            '      case "$PREVIEW_PORT" in',
+            '        \'\'|*[!0-9]*) echo "Preview port must be an integer: $PREVIEW_PORT"; exit 1 ;;',
+            '      esac',
+            '      if [ "$PREVIEW_PORT" -lt 1024 ] || [ "$PREVIEW_PORT" -gt 65535 ]; then',
+            '        echo "Preview port must be between 1024 and 65535: $PREVIEW_PORT"',
+            '        exit 1',
+            '      fi',
+            '',
+            '      docker rm --force "$PREVIEW_CONTAINER_NAME" 2>/dev/null || true',
+            '      PORT_OWNER="$(docker ps --filter "publish=$PREVIEW_PORT" --format \'{{.Names}}\' | head -n 1)"',
+            '      if [ -n "$PORT_OWNER" ]; then',
+            '        echo "Preview port $PREVIEW_PORT for $CI_COMMIT_REF_NAME is already used by container: $PORT_OWNER"',
+            '        echo "Set APP_PREVIEW_PORT to a free host port and retry deploy_preview_linux."',
+            '        exit 1',
+            '      fi',
+            '',
+            '      docker run --detach --restart unless-stopped \\',
+            '        --name "$PREVIEW_CONTAINER_NAME" \\',
+            '        --label "com.aifactory.preview=true" \\',
+            '        --label "com.aifactory.branch=$CI_COMMIT_REF_NAME" \\',
+            '        --publish "$PREVIEW_PORT:8282" \\',
+            '        "$LOCAL_DOCKER_IMAGE"',
+            '',
+            '      ATTEMPT=0',
+            '      until docker exec "$PREVIEW_CONTAINER_NAME" wget --quiet --output-document=/dev/null http://127.0.0.1:8282/healthz; do',
+            '        ATTEMPT=$((ATTEMPT + 1))',
+            '        if [ "$ATTEMPT" -ge 15 ]; then',
+            '          docker logs "$PREVIEW_CONTAINER_NAME"',
+            '          echo "Application preview health check failed."',
+            '          exit 1',
+            '        fi',
+            '        sleep 1',
+            '      done',
+            '      docker ps --filter "name=^/${PREVIEW_CONTAINER_NAME}$"',
+            '      echo "Branch preview: http://LINUX_HOST:$PREVIEW_PORT/"',
+            '  environment:',
+            '    name: "preview/$CI_COMMIT_REF_SLUG"',
+            '    on_stop: stop_preview_linux',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH\'',
+            '      when: on_success',
+            '    - when: never',
+            '',
+            'stop_preview_linux:',
+            '  stage: deploy',
+            '  image: docker:27-cli',
+            '  tags:',
+            '    - linux',
+            '  resource_group: "' + projectName + '-preview-linux"',
+            '  variables:',
+            '    DOCKER_HOST: "unix:///var/run/docker.sock"',
+            '    GIT_STRATEGY: none',
+            '  before_script:',
+            '    - |',
+            '      if [ ! -S /var/run/docker.sock ]; then',
+            '        echo "Preview cleanup requires /var/run/docker.sock mounted from the runner host."',
+            '        exit 1',
+            '      fi',
+            '  script:',
+            '    - PREVIEW_CONTAINER_NAME="$CONTAINER_NAME-preview-$CI_COMMIT_REF_SLUG"',
+            '    - docker rm --force "$PREVIEW_CONTAINER_NAME" 2>/dev/null || true',
+            '    - echo "Removed preview container for $CI_COMMIT_REF_NAME."',
+            '  environment:',
+            '    name: "preview/$CI_COMMIT_REF_SLUG"',
+            '    action: stop',
+            '  when: manual',
+            '  allow_failure: true',
+            '  rules:',
+            '    - if: \'$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH\'',
+            '    - when: never',
+          ]
+        : []),
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeGithubActions(projectRoot: string, projectName: string): void {
+  const workflowsDirectory = resolve(projectRoot, '.github/workflows');
+  mkdirSync(workflowsDirectory, { recursive: true });
+  writeFileSync(
+    resolve(workflowsDirectory, 'ai-factory.yml'),
+    [
+      'name: AI Factory',
+      '',
+      'on:',
+      '  push:',
+      '    branches:',
+      "      - 'factory/RQ-*'",
+      '    paths:',
+      "      - 'requirements/**/*.md'",
+      "      - 'requirements/**/*.markdown'",
+      "      - 'factory.config.json'",
+      '  workflow_dispatch:',
+      '',
+      'permissions:',
+      '  contents: write',
+      '  issues: write',
+      '  pull-requests: write',
+      '',
+      'concurrency:',
+      "  group: ai-factory-${{ github.ref }}",
+      '  cancel-in-progress: false',
+      '',
+      'jobs:',
+      '  requirement:',
+      '    # Approving or completing a requirement rewrites that requirement own',
+      '    # file, which matches the paths filter above and would restart work',
+      '    # that is already finished.',
+      "    if: \"!startsWith(github.event.head_commit.message, 'requirement(')\"",
+      '    runs-on: ubuntu-latest',
+      '    container:',
+      "      image: ${{ vars.AIFACTORY_RUNNER_IMAGE || 'ghcr.io/baturorkun/aifactory-codex-runner:codex-0.147.0' }}",
+      '    defaults:',
+      '      run:',
+      '        shell: bash',
+      '    timeout-minutes: 120',
+      '    env:',
+      "      AIFACTORY_REPO_URL: ${{ vars.AIFACTORY_REPO_URL || 'https://github.com/baturorkun/aifactory.git' }}",
+      "      AIFACTORY_REF: ${{ vars.AIFACTORY_REF || 'main' }}",
+      "      AI_PROVIDER: ${{ vars.AI_PROVIDER || 'codex-cli' }}",
+      "      AI_MODEL: ${{ vars.AI_MODEL || 'gpt-5.6-sol' }}",
+      "      AI_REVIEWER_MODEL: ${{ vars.AI_REVIEWER_MODEL || vars.AI_MODEL || 'gpt-5.6-sol' }}",
+      "      AI_BASE_URL: ${{ vars.AI_BASE_URL }}",
+      "      AI_API_KEY: ${{ secrets.AI_API_KEY }}",
+      "      AI_CODEX_EXECUTABLE: ${{ vars.AI_CODEX_EXECUTABLE || 'codex' }}",
+      "      AI_CODEX_REASONING_EFFORT: ${{ vars.AI_CODEX_REASONING_EFFORT || 'medium' }}",
+      "      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}",
+      "      CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}",
+      "      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+      "      GITHUB_API_URL: ${{ github.api_url }}",
+      "      GITHUB_REPOSITORY: ${{ github.repository }}",
+      '    steps:',
+      '      - name: Check out requirement branch',
+      '        uses: actions/checkout@v4',
+      '        with:',
+      '          fetch-depth: 0',
+      '',
+      '      - name: Validate requirement branch',
+      '        id: requirement',
+      '        env:',
+      "          BRANCH_NAME: ${{ github.ref_name }}",
+      '        run: |',
+      "          if [[ ! \"$BRANCH_NAME\" =~ ^factory/(RQ-[0-9]+)$ ]]; then",
+      '            echo "AI Factory must run from factory/RQ-<number>; got: $BRANCH_NAME"',
+      '            exit 1',
+      '          fi',
+      '          echo "id=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"',
+      '',
+      '      - name: Set up Node.js',
+      '        uses: actions/setup-node@v4',
+      '        with:',
+      "          node-version: '20'",
+      '',
+      '      - name: Set up pnpm',
+      '        run: |',
+      '          corepack enable',
+      '          corepack prepare pnpm@9.15.9 --activate',
+      '',
+      '      - name: Install AI Factory and project dependencies',
+      '        run: |',
+      '          # actions/checkout marks the workspace safe under a temporary HOME that',
+      '          # later steps do not see. In a container job the workspace belongs to the',
+      '          # host runner user, so git refuses to discover the repository here.',
+      '          git config --global --add safe.directory "$GITHUB_WORKSPACE"',
+      '          git clone --branch "$AIFACTORY_REF" --single-branch "$AIFACTORY_REPO_URL" ../aifactory',
+      '          pnpm --dir ../aifactory install --frozen-lockfile',
+      '          pnpm --dir ../aifactory -r run typecheck',
+      '          if [ -f pnpm-lock.yaml ]; then',
+      '            pnpm install --frozen-lockfile',
+      '          elif [ -f package.json ]; then',
+      '            pnpm install --no-frozen-lockfile',
+      '          fi',
+      '          git config user.name "AI Factory"',
+      '          git config user.email "ai-factory@users.noreply.github.com"',
+      '',
+      '      - name: Run requirement pipeline',
+      '        env:',
+      "          REQUIREMENT_ID: ${{ steps.requirement.outputs.id }}",
+      "          SOURCE_REF: ${{ github.sha }}",
+      "          CODEX_HOME: ${{ runner.temp }}/aifactory-codex",
+      '        run: |',
+      '          DECISION="$(pnpm --dir ../aifactory --silent factory -- --project "$GITHUB_WORKSPACE" requirement decision "$REQUIREMENT_ID")"',
+      '          case "$DECISION" in',
+      '            run|legacy)',
+      '              MODEL_PROVIDER="$(pnpm --dir ../aifactory --silent factory -- --project "$GITHUB_WORKSPACE" model-provider)"',
+      '              if [ "$MODEL_PROVIDER" = "codex-cli" ]; then',
+      '                command -v codex >/dev/null 2>&1 || { echo "codex-cli provider requires Codex CLI in AIFACTORY_RUNNER_IMAGE"; exit 1; }',
+      '                install -d -m 700 "$CODEX_HOME"',
+      '                if [ -n "$CODEX_AUTH_JSON" ]; then',
+      '                  printf \'%s\' "$CODEX_AUTH_JSON" > "$CODEX_HOME/auth.json"',
+      '                  chmod 600 "$CODEX_HOME/auth.json"',
+      '                elif [ -n "$OPENAI_API_KEY" ]; then',
+      '                  printenv OPENAI_API_KEY | codex login --with-api-key',
+      '                else',
+      '                  echo "codex-cli requires the CODEX_AUTH_JSON or OPENAI_API_KEY repository secret."',
+      '                  exit 1',
+      '                fi',
+      '                codex login status >/dev/null',
+      '              fi',
+      '              fresh_args=()',
+      '              if [ "${AIFACTORY_FRESH:-false}" = "true" ]; then fresh_args+=(--fresh); fi',
+      '              pnpm --dir ../aifactory factory -- --project "$GITHUB_WORKSPACE" sync-requirement "$REQUIREMENT_ID" --source-ref "$SOURCE_REF" --push "${fresh_args[@]}"',
+      '              ;;',
+      '            draft)',
+      '              echo "$REQUIREMENT_ID is still draft; AI Factory execution is skipped."',
+      '              ;;',
+      '            handoff|direct)',
+      '              echo "$REQUIREMENT_ID uses $DECISION mode; GitHub AI Factory pipeline execution is skipped."',
+      '              ;;',
+      '            *)',
+      '              echo "Unknown requirement execution decision: $DECISION"',
+      '              exit 1',
+      '              ;;',
+      '          esac',
+      '',
+      '      - name: Upload AI Factory diagnostics',
+      '        if: always()',
+      '        uses: actions/upload-artifact@v4',
+      '        with:',
+      "          name: " + projectName + "-ai-factory-${{ github.run_id }}-${{ github.run_attempt }}",
+      '          if-no-files-found: ignore',
+      '          retention-days: 7',
+      '          path: |',
+      '            runs/',
+      '            handoffs/',
+      "            requirements/${{ steps.requirement.outputs.id }}.md",
+      "            requirements/${{ steps.requirement.outputs.id }}-*.md",
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeContainerFiles(projectRoot: string, projectName: string): void {
+  writeFileSync(
+    resolve(projectRoot, 'Dockerfile'),
+    [
+      'FROM nginx:1.27-alpine',
+      '',
+      'COPY nginx.conf /etc/nginx/conf.d/default.conf',
+      'COPY release/' + projectName + '/ /usr/share/nginx/html/',
+      '',
+      'EXPOSE 8282',
+      '',
+      'HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD wget --quiet --output-document=- http://127.0.0.1:8282/healthz || exit 1',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'nginx.conf'),
+    [
+      'server {',
+      '    listen 8282;',
+      '    server_name _;',
+      '',
+      '    root /usr/share/nginx/html;',
+      '    index index.html;',
+      '',
+      '    location = /healthz {',
+      '        access_log off;',
+      '        default_type text/plain;',
+      '        return 200 "ok\\n";',
+      '    }',
+      '',
+      '    location = / {',
+      '        try_files /public/index.html =404;',
+      '    }',
+      '',
+      '    location / {',
+      '        try_files $uri $uri/ =404;',
+      '    }',
+      '',
+      '    location ~* \\.(?:css|js|svg|png|jpe?g|webp|woff2?)$ {',
+      '        expires 1h;',
+      '        add_header Cache-Control "public, max-age=3600";',
+      '        try_files $uri =404;',
+      '    }',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, '.dockerignore'),
+    [
+      '.git',
+      '.gitlab',
+      '.env',
+      'node_modules',
+      'dist',
+      'runs',
+      'handoffs',
+      'references',
+      'requirements',
+      'constraints',
+      '*.md',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+function writeFactoryConfig(
+  projectRoot: string,
+  promptsPath: string,
+  profile: string,
+  allowedPaths: string[],
+  commands: { build?: string; typeCheck?: string; lint?: string; test?: string; probeBuild?: string; probeSimicsRun?: string },
+  commandTimeoutMs = 120_000,
+  ragIncludes?: string[],
+): void {
+  writeJson(resolve(projectRoot, 'factory.config.json'), {
+    model: {
+      provider: '${AI_PROVIDER}',
+      name: '${AI_MODEL}',
+      reviewerName: '${AI_REVIEWER_MODEL}',
+      baseUrl: '${AI_BASE_URL:-}',
+      apiKey: '${AI_API_KEY:-}',
+      executable: '${AI_CODEX_EXECUTABLE:-codex}',
+      reasoningEffort: '${AI_CODEX_REASONING_EFFORT:-medium}',
+      maxTokens: 32768,
+    },
+    pipeline: {
+      maxRetries: 3,
+      timeboxMs: 180000,
+      maxFixIterations: 3,
+    },
+    paths: {
+      requirements: './requirements',
+      constraints: './constraints',
+      references: './references',
+      runs: './runs',
+      handoffs: './handoffs',
+      templates: './templates',
+      prompts: promptsPath,
+    },
+    targetProject: {
+      root: '.',
+      applyArtifacts: true,
+      profile,
+      allowedPaths,
+      commands,
+      commandTimeoutMs,
+    },
+    projectGuidelines: {
+      files: ['./AGENTS.md'],
+      required: true,
+      maxContextChars: 20000,
+    },
+    requirementBranches: {
+      enabled: true,
+      branchPrefix: 'factory/',
+      baseBranch: 'main',
+      remote: 'origin',
+    },
+    requirementDefaults: {
+      $comment: profile === 'simics'
+        ? [
+            'What `requirement new` uses when a flag is not given. A project whose',
+            'every requirement is verified against real hardware sets kind to',
+            '"hardware-twin" here and then passes --kind standard for the exceptions,',
+            'instead of typing the flag every time.',
+          ]
+        : ['What `requirement new` uses when a flag is not given.'],
+      kind: 'standard',
+      executionMode: 'handoff',
+      pipelineFast: false,
+    },
+    repositoryPlatforms: {
+      gitlab: {
+        baseUrl: '${GITLAB_URL:-}',
+        projectId: '${GITLAB_PROJECT_ID:-}',
+        token: '${GITLAB_TOKEN:-}',
+        targetBranch: 'main',
+        removeSourceBranchOnMerge: true,
+        labels: {
+          draft: 'factory::draft',
+          ready: 'factory::ready',
+          running: 'factory::running',
+          needsFix: 'factory::needs-fix',
+          passed: 'factory::passed',
+        },
+      },
+      github: {
+        baseUrl: '${GITHUB_API_URL:-https://api.github.com}',
+        repository: '${GITHUB_REPOSITORY:-}',
+        token: '${GITHUB_TOKEN:-}',
+        targetBranch: 'main',
+        removeSourceBranchOnMerge: true,
+        labels: {
+          draft: 'factory::draft',
+          ready: 'factory::ready',
+          running: 'factory::running',
+          needsFix: 'factory::needs-fix',
+          passed: 'factory::passed',
+        },
+      },
+    },
+    domain: {
+      rules: [],
+    },
+    rag: {
+      database: {
+        connectionString:
+          '${RAG_DATABASE_URL:-postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag}',
+      },
+      sources: [
+        {
+          id: 'fileserver',
+          type: 'filesystem',
+          rootPath: '${RAG_FILESERVER_PATH:-./references}',
+          include: ragIncludes ?? ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
+          exclude: ['**/~$*', '**/.DS_Store'],
+        },
+      ],
+      ingest: {
+        chunkSize: 1200,
+        chunkOverlap: 150,
+        batchSize: 50,
+      },
+      embedding: {
+        provider: '${RAG_EMBEDDING_PROVIDER:-gemini}',
+        model: '${RAG_EMBEDDING_MODEL:-gemini-embedding-001}',
+        dimensions: 1536,
+        apiKey: '${RAG_API_KEY:-}',
+        maxRetries: 6,
+        retryBaseSeconds: 2,
+        retryMaxSeconds: 60,
+        minRequestIntervalSeconds: 1,
+      },
+      llm: {
+        provider: '${RAG_LLM_PROVIDER:-gemini}',
+        model: '${RAG_LLM_MODEL:-gemini-2.5-flash}',
+        apiKey: '${RAG_API_KEY:-}',
+        temperature: 0.1,
+      },
+      retrieval: {
+        topK: 6,
+      },
+      auth: {
+        provider: 'none',
+        enabled: false,
+        tenantId: '${ENTRA_TENANT_ID:-}',
+        audience: '${ENTRA_AUDIENCE:-}',
+      },
+      grounding: {
+        enabled: false,
+        chatUrl: '${RAG_CHAT_URL:-http://127.0.0.1:8765/query}',
+        mode: 'always',
+        marker: '@rag',
+        sourceIds: '${RAG_SOURCE_IDS:-fileserver}',
+        agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
+        timeoutMs: 120000,
+        failOpen: true,
+        maxContextChars: 12000,
+      },
+      api: {
+        host: '127.0.0.1',
+        port: 8765,
+      },
+    },
+  });
+}
+
+function patchPackageScripts(projectRoot: string, scripts: Record<string, string>): void {
+  const packageJsonPath = resolve(projectRoot, 'package.json');
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+    scripts?: Record<string, string>;
+  };
+  packageJson.scripts = { ...(packageJson.scripts ?? {}), ...scripts };
+  writeJson(packageJsonPath, packageJson);
+}
+
+function writeVanillaTsTemplate(projectRoot: string, projectName: string, tscScript: string): void {
+  mkdirSync(resolve(projectRoot, 'public'), { recursive: true });
+  mkdirSync(resolve(projectRoot, 'src'), { recursive: true });
+
+  patchPackageScripts(projectRoot, {
+    typecheck: tscScript + ' --noEmit',
+    build: tscScript + ' --project tsconfig.build.json',
+  });
+
+  writeJson(resolve(projectRoot, 'tsconfig.json'), {
+    compilerOptions: {
+      target: 'ES2022',
+      module: 'ES2022',
+      moduleResolution: 'Bundler',
+      lib: ['ES2022', 'DOM'],
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+    },
+    include: ['src/**/*.ts'],
+  });
+
+  writeJson(resolve(projectRoot, 'tsconfig.build.json'), {
+    extends: './tsconfig.json',
+    compilerOptions: {
+      noEmit: false,
+      outDir: './dist',
+      declaration: false,
+      sourceMap: true,
+    },
+  });
+
+  writeFileSync(
+    resolve(projectRoot, 'public/index.html'),
+    [
+      '<!DOCTYPE html>',
+      '<html lang="en">',
+      '<head>',
+      '  <meta charset="UTF-8">',
+      '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+      '  <title>' + projectName + '</title>',
+      '  <link rel="stylesheet" href="../src/styles.css">',
+      '</head>',
+      '<body>',
+      '  <main id="app"></main>',
+      '  <script src="../dist/main.js"></script>',
+      '</body>',
+      '</html>',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'src/main.ts'),
+    [
+      "const app = document.getElementById('app');",
+      '',
+      'if (app) {',
+      "  app.textContent = 'New AI Factory project: " + projectName + "';",
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'src/styles.css'),
+    ['body {', '  margin: 0;', '  font-family: Arial, Helvetica, sans-serif;', '}', ''].join('\n'),
+    'utf8',
+  );
+}
+
+function writePythonTemplate(projectRoot: string): void {
+  mkdirSync(resolve(projectRoot, 'src'), { recursive: true });
+  mkdirSync(resolve(projectRoot, 'tests'), { recursive: true });
+
+  patchPackageScripts(projectRoot, {
+    typecheck: 'python3 -m py_compile src/main.py',
+    test: 'python3 -m unittest discover -s tests',
+  });
+  writeFileSync(
+    resolve(projectRoot, 'pyproject.toml'),
+    ['[project]', 'name = "ai-factory-python-target"', 'version = "0.1.0"', 'requires-python = ">=3.11"', ''].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    resolve(projectRoot, 'src/main.py'),
+    ['def main() -> str:', '    return "New AI Factory Python project"', '', '', 'if __name__ == "__main__":', '    print(main())', ''].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'tests/test_main.py'),
+    ['import unittest', '', 'from src.main import main', '', '', 'class MainTest(unittest.TestCase):', '    def test_main_returns_message(self):', '        self.assertIn("AI Factory", main())', '', '', 'if __name__ == "__main__":', '    unittest.main()', ''].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(resolve(projectRoot, 'src/__init__.py'), '', 'utf8');
+}
+
+function writeSimicsTemplate(projectRoot: string, projectName: string): void {
+  for (const dir of ['dml', 'targets', 'python', 'probes', 'scripts', 'tests']) {
+    mkdirSync(resolve(projectRoot, dir), { recursive: true });
+  }
+
+  // The transport and the runner scripts are copied verbatim from templates/.
+  copyTemplateTree('simics', projectRoot);
+
+  patchPackageScripts(projectRoot, {
+    'simics:build': 'node scripts/simics-command.mjs build',
+    'simics:check': 'node scripts/simics-command.mjs check',
+    'simics:test': 'node scripts/simics-command.mjs test',
+    'probe:build': 'node scripts/simics-command.mjs probe-build',
+    'probe:simics-run': 'node scripts/simics-command.mjs probe-simics-run',
+  });
+  writeProbeTemplate(projectRoot);
+
+  writeFileSync(
+    resolve(projectRoot, 'README.md'),
+    [
+      `# ${projectName}`,
+      '',
+      'AI Factory workspace for a Wind River/Intel Simics board or device model.',
+      '',
+      '## Layout',
+      '',
+      '- `dml/`: DML device models.',
+      '- `targets/`: Simics target and command scripts.',
+      '- `python/`: project-owned Python helpers and extensions.',
+      '- `probes/`: probe firmware the real board runs first, its committed trace, and the ELF it ran (hardware-twin requirements).',
+      '- `scripts/`: portable validation wrappers.',
+      '- `tests/`: deterministic, non-interactive model tests.',
+      '- `references/`: authorized documentation and concise implementation notes.',
+      '',
+      '## Licensed validation',
+      '',
+      'AI Factory does not install or redistribute Simics. Which validation each gate runs is recorded in `simics.config.json`, which is committed: the entries name project scripts, while installation paths and license values resolve on the licensed host. Replace the placeholders with the real invocations:',
+      '',
+      '```json',
+      '"gates": {',
+      '  "build": ["./scripts/project-build-command", "arg"],',
+      '  "check": ["./scripts/static-check-command", "arg"],',
+      '  "test":  ["./scripts/batch-test-command", "arg"]',
+      '}',
+      '```',
+      '',
+      'Point the test gate at every verified boundary rather than at one of them. A gate left pointing at the first requirement reports success for work it never touched, and nothing in the run history contradicts it.',
+      '',
+      'Override an entry with `SIMICS_BUILD_COMMAND_JSON`, `SIMICS_CHECK_COMMAND_JSON` or `SIMICS_TEST_COMMAND_JSON` when a host genuinely needs a different invocation. Keeping the command only in an untracked file leaves a checkout unable to say what a passing gate verified.',
+      '',
+      'The wrappers execute without a shell and preserve the child exit code. A missing command is a failed, unverified gate—not a successful simulation.',
+      '',
+      'Keep installation paths and license values in runner environment configuration. Do not commit proprietary packages, documentation, firmware, checkpoints, build output, or credentials.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  // Which validation each gate runs is recorded in the repository. Keeping it
+  // only in an untracked .env leaves a checkout unable to say what a passing
+  // gate verified, and the command then drifts as later requirements add their
+  // own validation scripts without anything pointing the gate at them.
+  writeFileSync(
+    resolve(projectRoot, 'simics.config.json'),
+    JSON.stringify(
+      {
+        $comment: [
+          'Which licensed validation each quality gate runs. This is committed',
+          'because none of it describes a machine: the entries name project',
+          'scripts, while installation paths and license values resolve on the',
+          'licensed host, and secrets stay in .env.',
+          'Replace each placeholder with the real invocation. Any entry can be',
+          'overridden by the environment variable named beside it, for a host',
+          'that genuinely needs something different.',
+        ],
+        gates: {
+          $comment: [
+            'Every entry runs through scripts/sync-run.mjs, which runs the command',
+            'here when SIMICS_REMOTE_HOST is empty and on that host over SSH when',
+            'it is set. The build entry works as generated; replace the check and',
+            'test placeholders with this project\'s own validation.',
+          ],
+          $override:
+            'SIMICS_BUILD_COMMAND_JSON, SIMICS_CHECK_COMMAND_JSON, SIMICS_TEST_COMMAND_JSON',
+          build: ['node', 'scripts/sync-run.mjs', '--',
+                  'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
+                  'scripts\\windows\\Build-Modules.ps1'],
+          check: ['./scripts/static-check-command', 'arg'],
+          test: ['./scripts/batch-test-command', 'arg'],
+        },
+        probe: {
+          $comment: [
+            'Hardware-twin workflow. Both commands receive PROBE_NAME, PROBE_DIR,',
+            'PROBE_ELF, PROBE_SOURCE_HASH, PROBE_BUILD_DIR and PROBE_TRACE_OUT in',
+            'the environment, and refer to them as ${NAME}. --pull names a file the',
+            'command produces inside the project and where to put it here, which is',
+            'what carries the ELF and the trace back from a remote host.',
+            'target is the Simics target Run-Probe.ps1 launches; see',
+            'targets/probe-run/README.md for the four parameters it receives.',
+          ],
+          $override: 'SIMICS_PROBE_BUILD_COMMAND_JSON, SIMICS_PROBE_SIMICS_RUN_COMMAND_JSON',
+          target: 'targets/probe-run/run.simics',
+          'probe-build': ['node', 'scripts/sync-run.mjs',
+                  '--pull', 'build/probes/${PROBE_NAME}/${PROBE_NAME}.elf=${PROBE_ELF}', '--',
+                  'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
+                  'scripts\\windows\\Build-Probe.ps1',
+                  '-ProbeName', '${PROBE_NAME}', '-SourceHash', '${PROBE_SOURCE_HASH}'],
+          'probe-simics-run': ['node', 'scripts/sync-run.mjs',
+                  '--pull', 'build/probes/${PROBE_NAME}/simics-trace.txt=${PROBE_TRACE_OUT}', '--',
+                  'powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-File',
+                  'scripts\\windows\\Run-Probe.ps1', '-ProbeName', '${PROBE_NAME}'],
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(projectRoot, 'scripts/simics-command.mjs'),
+    [
+      "import { spawnSync } from 'node:child_process';",
+      "import { existsSync, readFileSync } from 'node:fs';",
+      "import { dirname, resolve } from 'node:path';",
+      "import { fileURLToPath } from 'node:url';",
+      '',
+      "const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');",
+      "const CONFIG_FILE = resolve(PROJECT_ROOT, process.env.SIMICS_CONFIG_FILE ?? 'simics.config.json');",
+      '',
+      "const modes = new Map([['build', 'SIMICS_BUILD_COMMAND_JSON'], ['check', 'SIMICS_CHECK_COMMAND_JSON'], ['test', 'SIMICS_TEST_COMMAND_JSON'],",
+      "  ['probe-build', 'SIMICS_PROBE_BUILD_COMMAND_JSON'], ['probe-simics-run', 'SIMICS_PROBE_SIMICS_RUN_COMMAND_JSON']]);",
+      'const mode = process.argv[2];',
+      'const variable = modes.get(mode);',
+      'if (!variable) {',
+      "  console.error('Usage: node scripts/simics-command.mjs <build|check|test|probe-build|probe-simics-run>');",
+      '  process.exit(2);',
+      '}',
+      "const section = mode.startsWith('probe-') ? 'probe' : 'gates';",
+      '',
+      'function assertArgv(argv, source) {',
+      "  if (!Array.isArray(argv) || argv.length === 0 || argv.some((item) => typeof item !== 'string' || item.length === 0)) {",
+      '    console.error(`${source} must be a non-empty array of non-empty strings.`);',
+      '    process.exit(2);',
+      '  }',
+      '  return argv;',
+      '}',
+      '',
+      '// The recorded command is what the gate runs; the environment variable',
+      '// stays as an override for a host that needs a different invocation.',
+      'let argv;',
+      'let source;',
+      'const override = process.env[variable];',
+      'if (override) {',
+      '  try { argv = JSON.parse(override); }',
+      '  catch { console.error(`${variable} must be a JSON array of command arguments.`); process.exit(2); }',
+      '  source = variable;',
+      '  assertArgv(argv, variable);',
+      '} else {',
+      '  if (!existsSync(CONFIG_FILE)) {',
+      '    console.error(`Neither ${variable} nor ${CONFIG_FILE} is configured; licensed Simics validation was not run.`);',
+      '    process.exit(2);',
+      '  }',
+      '  let config;',
+      "  try { config = JSON.parse(readFileSync(CONFIG_FILE, 'utf8')); }",
+      '  catch (error) { console.error(`${CONFIG_FILE} is not valid JSON: ${error.message}`); process.exit(2); }',
+      '  const recorded = config[section]?.[mode];',
+      '  if (!recorded) {',
+      '    console.error(`No "${section}.${mode}" entry in ${CONFIG_FILE} and no ${variable}; licensed Simics validation was not run.`);',
+      '    process.exit(2);',
+      '  }',
+      '  source = `${CONFIG_FILE} (${section}.${mode})`;',
+      '  argv = assertArgv(recorded, source);',
+      '}',
+      '',
+      '',
+      '// ${NAME} in a recorded argument is an environment variable. An unset one',
+      '// is an error naming it: an empty argument would silently run something',
+      '// else, and a probe command is nothing but those variables.',
+      'argv = argv.map((item) => item.replace(/\\$\\{([A-Z0-9_]+)\\}/g, (_match, name) => {',
+      '  const value = process.env[name];',
+      '  if (value === undefined || value === "") {',
+      '    console.error(`${name} is not set but ${source} refers to it.`);',
+      '    process.exit(2);',
+      '  }',
+      '  return value;',
+      '}));',
+      '',
+      '// Report the command, so a passing gate leaves a record of what it ran.',
+      "console.log(`simics:${mode} -> ${argv.join(' ')}  [${source}]`);",
+      '',
+      "const result = spawnSync(argv[0], argv.slice(1), { cwd: process.cwd(), env: process.env, stdio: 'inherit', shell: false });",
+      'if (result.error) {',
+      '  console.error(result.error.message);',
+      '  process.exit(2);',
+      '}',
+      'process.exit(result.status ?? 2);',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  for (const [path, title] of [
+    ['dml/README.md', 'DML device models'],
+    ['targets/README.md', 'Simics targets and command scripts'],
+    ['python/README.md', 'Python helpers and extensions'],
+    ['tests/README.md', 'Non-interactive Simics tests'],
+  ]) {
+    writeFileSync(resolve(projectRoot, path), `# ${title}\n\nAdd project-owned sources here.\n`, 'utf8');
+  }
+
+  writeFileSync(
+    resolve(projectRoot, '.gitattributes'),
+    ['*.dml text eol=lf', '*.simics text eol=lf', '*.py text eol=lf', '*.mjs text eol=lf', 'Makefile text eol=lf', ''].join('\n'),
+    'utf8',
+  );
+  const gitignorePath = resolve(projectRoot, '.gitignore');
+  writeFileSync(
+    gitignorePath,
+    readFileSync(gitignorePath, 'utf8') + [
+      '# Simics generated, licensed, or project-local material',
+      'build/',
+      'checkpoints/',
+      'firmware/',
+      '*.ckpt',
+      '*.log',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const envExamplePath = resolve(projectRoot, '.env.example');
+  writeFileSync(
+    envExamplePath,
+    readFileSync(envExamplePath, 'utf8') + [
+      '# Licensed Simics runner commands live in simics.config.json, which is',
+      '# committed: none of it describes a machine, and keeping it untracked only',
+      '# hides what a passing gate verified. These remain as a per-host override.',
+      '# SIMICS_BUILD_COMMAND_JSON=["/path/to/project-build-command","arg"]',
+      '# SIMICS_CHECK_COMMAND_JSON=["/path/to/static-check-command","arg"]',
+      '# SIMICS_TEST_COMMAND_JSON=["/path/to/batch-test-command","arg"]',
+      '# Keep installation paths and license values in runner secrets/environment.',
+      '',
+      ...PROBE_ENV_EXAMPLE,
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+// Every value below names a machine. None of them may appear as a default in
+// a committed script: a script that falls back to a host name keeps working
+// on one desk and silently does the wrong thing on every other.
+const PROBE_ENV_EXAMPLE = [
+  '',
+  '# Licensed Simics host that scripts/ reach over SSH. Required by the remote',
+  '# wrappers; a missing value is an error naming it, never a default.',
+  'SIMICS_REMOTE_HOST=',
+  'SIMICS_REMOTE_USER=',
+  'SIMICS_REMOTE_PORT=22',
+  'SIMICS_REMOTE_BASE_PATH=',
+  'SIMICS_REMOTE_PROJECT_NAME=',
+  '# SSH private key for the host. Empty means the default ssh-agent / ~/.ssh key.',
+  'SIMICS_REMOTE_IDENTITY_FILE=',
+  '# arm-none-eabi bin directory on the remote host, used to build probe firmware.',
+  'SIMICS_REMOTE_TOOLCHAIN_BIN=',
+  '',
+  '# Real board (hardware-twin requirements). When BOARD_PROGRAM_COMMAND_JSON or',
+  '# BOARD_SERIAL_PORT is empty, "factory probe board-run" runs in manual mode:',
+  '# it prints what to load and waits for probes/<name>/board-trace.txt.',
+  '# Command that programs one ELF into the board. JSON array; {elf} is replaced',
+  '# by the absolute ELF path, {name} by the probe name. Examples:',
+  '#   ["FlashPro.exe","-script","scripts/board/program.tcl","-elf","{elf}"]',
+  '#   ["openocd","-f","board/target.cfg","-c","program {elf} verify reset exit"]',
+  'BOARD_PROGRAM_COMMAND_JSON=',
+  '# Optional command run after programming when the board does not reset itself.',
+  'BOARD_RESET_COMMAND_JSON=',
+  '# Serial port the probe prints on, e.g. /dev/tty.usbserial-A1 or COM5.',
+  'BOARD_SERIAL_PORT=',
+  'BOARD_SERIAL_BAUD=115200',
+  '# Optional: a command whose stdout is the serial stream, instead of the',
+  '# built-in stty+cat reader (required on Windows).',
+  '# BOARD_CAPTURE_COMMAND_JSON=["python","-m","serial.tools.miniterm","--raw","COM5","115200"]',
+  'BOARD_CAPTURE_COMMAND_JSON=',
+  '# How long to wait for the PROBE_END line after programming, in milliseconds.',
+  'BOARD_CAPTURE_TIMEOUT_MS=30000',
+  '# Delay between starting the capture and programming, so a capture that runs',
+  '# on another machine has opened the port first.',
+  'BOARD_CAPTURE_SETTLE_MS=500',
+  '',
+];
+
+function writeProbeTemplate(projectRoot: string): void {
+  const template = resolve(projectRoot, 'probes/_template');
+  mkdirSync(template, { recursive: true });
+
+  writeFileSync(
+    resolve(projectRoot, 'probes/README.md'),
+    [
+      '# Probes',
+      '',
+      'Probe firmware for hardware-twin requirements. A probe reads registers and prints what it saw; the real board runs it first, its output is committed as `board-trace.txt`, and the Simics model is done when the same ELF prints the same text.',
+      '',
+      '```text',
+      'probes/<name>/',
+      '  probe.json        name and the registers read, in print order',
+      '  main.c            the register list (copied from _template)',
+      '  board.c           UART bring-up for this board (copied from _template, then completed)',
+      '  probe.h  probe.c  read-then-print runtime (copied from _template, do not edit)',
+      '  linker.ld         memory layout for the probe (copied from _template, then adjusted)',
+      '  <name>.elf        the image the board ran; committed, never rebuilt silently',
+      '  board-trace.txt   what the board printed; committed, authoritative',
+      '```',
+      '',
+      'Start a probe by copying `_template/` to `probes/<name>/`. `factory probe build` hashes every file in the directory except the ELF and the trace, passes the hash as `PROBE_SOURCE_HASH`, and checks that the ELF embeds it. A probe changed after the board ran it no longer matches its trace, and the board must run it again.',
+      '',
+      'The runtime reads every register into memory **before** it touches the UART, because bringing up the UART changes reset and clock registers that a probe is likely to be asked about. Keep that order.',
+      '',
+      'Trace format, the whole contract:',
+      '',
+      '```text',
+      'PROBE v1 name=<name> source=<first 16 hex of the source hash>',
+      '<GROUP>.<REGISTER> @0x<8 hex> = 0x<8 hex>[ volatile]',
+      'PROBE_END lines=<count>',
+      '```',
+      '',
+      'Mark a register `volatile` in `main.c` when its value legitimately differs between runs (a counter, a temperature); the parity gate then checks only that it is present.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(template, 'probe.json'),
+    JSON.stringify({
+      name: '_template',
+      description: 'Replace with what this probe observes and why.',
+      registers: [
+        { group: 'EXAMPLE', register: 'ID', address: '0x40000000', volatile: false },
+      ],
+    }, null, 2) + '\n',
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(template, 'probe.h'),
+    [
+      '#ifndef PROBE_H',
+      '#define PROBE_H',
+      '',
+      '#include <stdint.h>',
+      '',
+      '/* One register the probe reads. Values are captured first, printed later. */',
+      'typedef struct {',
+      '    const char *group;',
+      '    const char *name;',
+      '    uint32_t address;',
+      '    int is_volatile;',
+      '} probe_register_t;',
+      '',
+      '/* Supplied by board.c: bring up the console, then emit one byte. Neither is',
+      ' * called until every register has been read. */',
+      'void board_uart_init(void);',
+      'void board_uart_putc(char value);',
+      '',
+      '/* Supplied by main.c. */',
+      'extern const char probe_name[];',
+      'extern const probe_register_t probe_registers[];',
+      'extern const unsigned probe_register_count;',
+      '',
+      '/* Reads every register, then brings up the console and prints the trace. */',
+      'void probe_run(void);',
+      '',
+      '#endif',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(template, 'probe.c'),
+    [
+      '#include "probe.h"',
+      '',
+      '#ifndef PROBE_SOURCE_HASH',
+      '#error "Build with -DPROBE_SOURCE_HASH=<hash>; factory probe build supplies it."',
+      '#endif',
+      '',
+      '#define PROBE_MAX_REGISTERS 256',
+      '',
+      '/* The build gate finds this string in the ELF bytes and compares it with the',
+      ' * hash of the committed sources, so an image built from other sources is',
+      ' * refused without reproducing the build. The hash arrives as a bare token',
+      ' * (-DPROBE_SOURCE_HASH=<hex>), because a quoted define does not survive',
+      ' * every shell on every host; stringifying it here works everywhere. */',
+      '#define PROBE_STRINGIFY_(x) #x',
+      '#define PROBE_STRINGIFY(x) PROBE_STRINGIFY_(x)',
+      'static const char probe_source_marker[] __attribute__((used)) = "PROBE_SOURCE=" PROBE_STRINGIFY(PROBE_SOURCE_HASH);',
+      '',
+      'static uint32_t captured[PROBE_MAX_REGISTERS];',
+      '',
+      'static void put_string(const char *text)',
+      '{',
+      '    while (*text != \'\\0\') board_uart_putc(*text++);',
+      '}',
+      '',
+      'static void put_hex32(uint32_t value)',
+      '{',
+      '    static const char digits[] = "0123456789abcdef";',
+      '    for (int shift = 28; shift >= 0; shift -= 4) board_uart_putc(digits[(value >> shift) & 0xfu]);',
+      '}',
+      '',
+      'static void put_decimal(unsigned value)',
+      '{',
+      '    char text[11];',
+      '    int length = 0;',
+      '    do { text[length++] = (char)(\'0\' + value % 10u); value /= 10u; } while (value != 0u);',
+      '    while (length > 0) board_uart_putc(text[--length]);',
+      '}',
+      '',
+      'void probe_run(void)',
+      '{',
+      '    /* 1. Read everything first. Nothing below may have run yet. */',
+      '    for (unsigned i = 0; i < probe_register_count && i < PROBE_MAX_REGISTERS; i++) {',
+      '        captured[i] = *(volatile uint32_t *)(uintptr_t)probe_registers[i].address;',
+      '    }',
+      '',
+      '    /* 2. Only now touch the console. */',
+      '    board_uart_init();',
+      '',
+      '    put_string("PROBE v1 name="); put_string(probe_name);',
+      '    put_string(" source="); put_string(probe_source_marker + sizeof("PROBE_SOURCE=") - 1);',
+      '    put_string("\\r\\n");',
+      '    for (unsigned i = 0; i < probe_register_count && i < PROBE_MAX_REGISTERS; i++) {',
+      '        put_string(probe_registers[i].group); board_uart_putc(\'.\'); put_string(probe_registers[i].name);',
+      '        put_string(" @0x"); put_hex32(probe_registers[i].address);',
+      '        put_string(" = 0x"); put_hex32(captured[i]);',
+      '        if (probe_registers[i].is_volatile) put_string(" volatile");',
+      '        put_string("\\r\\n");',
+      '    }',
+      '    put_string("PROBE_END lines="); put_decimal(probe_register_count); put_string("\\r\\n");',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(template, 'main.c'),
+    [
+      '#include "probe.h"',
+      '',
+      '/* Must equal the directory name and probe.json "name". */',
+      'const char probe_name[] = "_template";',
+      '',
+      '/* Print order is compare order: keep probe.json and this list identical. */',
+      'const probe_register_t probe_registers[] = {',
+      '    { "EXAMPLE", "ID", 0x40000000u, 0 },',
+      '};',
+      'const unsigned probe_register_count = sizeof(probe_registers) / sizeof(probe_registers[0]);',
+      '',
+      'extern uint32_t __stack_top__;',
+      'extern uint32_t __bss_start__, __bss_end__;',
+      'extern uint32_t __data_load__, __data_start__, __data_end__;',
+      'void reset_handler(void);',
+      '',
+      '__attribute__((section(".isr_vector"), used))',
+      'const uintptr_t vector_table[] = {',
+      '    (uintptr_t)&__stack_top__,',
+      '    (uintptr_t)reset_handler,',
+      '};',
+      '',
+      'void reset_handler(void)',
+      '{',
+      '    /* Nothing below reads a peripheral; the C runtime is set up first. */',
+      '    for (uint32_t *src = &__data_load__, *dst = &__data_start__; dst < &__data_end__; ) *dst++ = *src++;',
+      '    for (uint32_t *dst = &__bss_start__; dst < &__bss_end__; ) *dst++ = 0u;',
+      '',
+      '    probe_run();',
+      '    for (;;) {',
+      '    }',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(template, 'board.c'),
+    [
+      '#include "probe.h"',
+      '',
+      '/* Console bring-up for this board. Everything here runs AFTER the registers',
+      ' * were read, so it may freely change clocks, resets and pin muxing. */',
+      '',
+      '#error "Implement board_uart_init and board_uart_putc for this board, then delete this line."',
+      '',
+      'void board_uart_init(void)',
+      '{',
+      '}',
+      '',
+      'void board_uart_putc(char value)',
+      '{',
+      '    (void)value;',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(
+    resolve(template, 'linker.ld'),
+    [
+      '/* Adjust ORIGIN and LENGTH to where this board boots the probe from. */',
+      'MEMORY',
+      '{',
+      '    FLASH (rx)  : ORIGIN = 0x00000000, LENGTH = 64K',
+      '    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 16K',
+      '}',
+      '',
+      'ENTRY(reset_handler)',
+      '',
+      'SECTIONS',
+      '{',
+      '    .text : {',
+      '        KEEP(*(.isr_vector))',
+      '        *(.text*)',
+      '        *(.rodata*)',
+      '    } > FLASH',
+      '',
+      '    .data : {',
+      '        . = ALIGN(4);',
+      '        __data_start__ = .;',
+      '        *(.data*)',
+      '        . = ALIGN(4);',
+      '        __data_end__ = .;',
+      '    } > RAM AT > FLASH',
+      '    __data_load__ = LOADADDR(.data);',
+      '',
+      '    .bss : {',
+      '        . = ALIGN(4);',
+      '        __bss_start__ = .;',
+      '        *(.bss*)',
+      '        *(COMMON)',
+      '        . = ALIGN(4);',
+      '        __bss_end__ = .;',
+      '    } > RAM',
+      '',
+      '    __stack_top__ = ORIGIN(RAM) + LENGTH(RAM);',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+export function createTargetProject(projectName: string, options: NewProjectOptions): NewProjectResult {
+  assertValidProjectName(projectName);
+  assertValidTemplate(options.template);
+
+  const parentDir = resolve(process.cwd(), options.dir ?? '..');
+  const projectRoot = resolve(parentDir, projectName);
+
+  if (existsSync(projectRoot) && !options.force && readdirSync(projectRoot).length > 0) {
+    throw new Error('Target directory already exists and is not empty: ' + projectRoot);
+  }
+
+  const factoryRoot = resolve(__dirname, '../../..');
+  const tscScript = toPackageScriptPath(projectRoot, resolve(factoryRoot, 'node_modules/.bin/tsc'));
+  const promptsPath = toPackageScriptPath(projectRoot, resolve(factoryRoot, 'packages/agent-factory/prompts'));
+
+  mkdirSync(projectRoot, { recursive: true });
+  for (const dir of ['requirements', 'constraints', 'handoffs', 'runs', 'templates', 'references']) {
+    mkdirSync(resolve(projectRoot, dir), { recursive: true });
+  }
+
+  writeCommonFiles(projectRoot, projectName);
+  const agentsPath = resolve(projectRoot, 'AGENTS.md');
+  const generatedAgentGuidelines = [
+      '# Agent Guidelines',
+      '',
+      '## Requirement-First Execution',
+      '',
+      '- Confirm the target project before doing anything else. Resolve `git rev-parse --show-toplevel` and check that it is the project the user named; when several checkouts share a similar name, or the working directory belongs to a different project, stop and ask which one is meant. Never infer the project from the file an editor happens to have open.',
+      '- Workspace changes require an active requirement. Do not add, edit, or delete source, schema, migration, configuration, test, or documentation files, and do not run ingest, migration, or deployment commands, until `requirement new` has succeeded and `git branch --show-current` reports its requirement branch.',
+      '- Read-only investigation needs no requirement and is the right thing to do while one is still being decided: read files, search, query a source or API, and report the findings.',
+      '- A failed lifecycle command is a blocker, not an obstacle to route around. Stop, report the exact error, and wait. Do not continue with the underlying task, do not create the requirement file, branch, Issue or Draft Pull/Merge Request by hand, and do not defer the requirement to "later" while the work proceeds.',
+      '- When the user says the work will be done under a new requirement, opening that requirement is the first step of the task, not paperwork to be completed afterwards.',
+      '',
+      '## AI Factory Workflow',
+      '',
+      '- Run every local AI Factory lifecycle command from this generated project root. Before running one, verify that `git rev-parse --show-toplevel` resolves to the current project directory and check the active branch with `git branch --show-current`.',
+      '- Because `factory.config.json` uses `targetProject.root: "."`, do **not** use `pnpm --dir ../aifactory factory -- --project <project> ...` locally. `pnpm --dir` changes the process working directory to the AI Factory repository, causing `"."` and Git branch/worktree checks to target the wrong repository.',
+      '- Invoke the local lifecycle CLI from the generated project root with `../aifactory/node_modules/.bin/tsx --tsconfig ../aifactory/tsconfig.json ../aifactory/packages/agent-factory/src/cli.ts --project . <command>`.',
+      '- Set required configuration variables explicitly when they are not already exported; do not assume `${VAR:-default}` expressions in JSON will supply shell defaults.',
+      '- Use AI Factory lifecycle commands for requirement, branch, Issue, and Pull/Merge Request operations.',
+      '- Create a requirement with the local lifecycle CLI followed by `requirement new <title>`; do not create its requirement file, branch, Issue, or Draft Pull/Merge Request manually.',
+      '- Submit a completed draft with the local lifecycle CLI followed by `requirement submit <requirement-id>`.',
+      '- Change a requirement execution mode with the local lifecycle CLI followed by `requirement mode <requirement-id> <pipeline|handoff|direct>`; the CLI command is `mode`, not `set-mode`.',
+      '- Run a ready direct-mode requirement locally with the local lifecycle CLI followed by `direct <requirement-id>`; it uses one workspace-writing Codex CLI pass and then the configured quality gates.',
+      '- Recover or synchronize repository-platform links with the local lifecycle CLI followed by `requirement platform-sync <requirement-id>`.',
+      '- Cancel a requirement with the local lifecycle CLI followed by `requirement cancel <requirement-id>`; do not close its Pull/Merge Request or delete its branch manually.',
+      '- Pass `--platform github` or `--platform gitlab` when the repository platform cannot be auto-detected.',
+      '- Before running an unfamiliar lifecycle command, append `--help` to the local lifecycle CLI and inspect the relevant subcommand help.',
+      '',
+      '## Draft Requirement Push Policy',
+      '',
+      '- An explicit request to create or start a new requirement authorizes only the initial `requirement new` lifecycle writes: the `[skip ci]` draft reservation on the base branch, requirement branch creation, and initial Issue/Draft Pull or Merge Request linkage.',
+      '- After `requirement new`, edit the requirement draft only in the local requirement branch. Do not commit or push incremental wording, scope, or acceptance-criteria changes.',
+      '- Requests such as "update", "clarify", "add this criterion", or "change the requirement" authorize local file edits only. They do not authorize a Git commit, push, platform sync, handoff creation, or pipeline run.',
+      '- Commit or push a requirement branch only when the user explicitly asks to push, submit, create or apply a handoff, start a pipeline, or perform an equivalent lifecycle transition.',
+      '- Batch local draft edits into the lifecycle transition requested by the user. Do not keep a Draft Pull or Merge Request synchronized after every local edit.',
+      '- Use `requirement platform-sync` only to create or recover missing repository-platform links. Do not use it as a general draft-save operation.',
+      '- Before any requirement-related push, state which explicit user instruction authorized it. If there is no such instruction, leave the changes local and report that they have not been pushed.',
+      '',
+      '## Project Guidelines',
+      '',
+      '- Preserve the existing project architecture and conventions.',
+      '- Follow the active requirement and its acceptance criteria.',
+      '- Do not make unrelated changes.',
+      '- Verify implementation changes with the configured quality gates.',
+      '',
+      '## Configured Documentation',
+      '',
+      '- This project may be backed by a RAG service holding its reference material. Query it before concluding that something is undocumented. `RAG_CHAT_URL` and `RAG_SOURCE_IDS` (comma-separated) are set in `.env`, and retrieval is configured under `rag` in `factory.config.json`.',
+      '',
+      '  ```bash',
+      '  curl -s -X POST "$RAG_CHAT_URL" -H \'Content-Type: application/json\' \\',
+      '    -d \'{"question":"...","sourceIds":["fileserver"]}\'',
+      '  ```',
+      '',
+      '- Trust the passages a RAG response quotes and the source it cites, not its summary. Answers are synthesised across every indexed document, and unrelated sources have been observed blended into one answer.',
+      '- Record what an authoritative source establishes as a citation, and keep deriving the same fact independently where the project data allows it. Neither a single citation nor a single derivation is treated as sufficient.',
+      '',
+      ...(options.template === 'simics'
+        ? [
+            '## Simics Model Development',
+            '',
+            '- Treat the configured Simics version, installed packages, official documentation, and reproducible simulator behavior as authoritative.',
+            '- Do not invent registers, memory maps, interfaces, commands, or device behavior when the available evidence is incomplete.',
+            '- Keep DML model logic, target composition, helper extensions, and tests in their generated project directories.',
+            '- Prefer deterministic non-interactive tests for reset state, register access, interrupts, connections, checkpoints, and firmware boot behavior that is within scope.',
+            '- A model is not behaviorally verified unless the configured licensed-runner command completed successfully; static review is not a substitute for simulator execution.',
+            '- Keep Simics installation paths, license values, proprietary packages, documentation, firmware, checkpoints, and generated build output out of source control and AI Factory run artifacts.',
+            '- Never write a host name, user name, remote path, port, or serial port as a default in a script or source file. Every such value is read from `.env` (`SIMICS_REMOTE_*`, `BOARD_*`), and a missing value is an error that names the variable.',
+            '',
+            '## Hardware-Twin Requirements',
+            '',
+            '- A requirement created with `requirement new --kind hardware-twin --probe <name>` is verified against the real board, and the board is the oracle: where the board trace disagrees with a manual or a design export, the board wins and the disagreement is recorded in the profile.',
+            '- Phases, recorded as `twinPhase` in the requirement metadata: `probe` (write `probes/<name>/` from `probes/_template/`, then `factory probe build <requirement-id>`), `board` (`factory probe board-run <requirement-id>`, manual mode when `BOARD_*` is unset; commit the ELF and `board-trace.txt`), `model` (write the DML devices, targets and profiles as usual), `parity` (`factory probe simics-run <requirement-id>` then `factory probe compare <requirement-id>`).',
+            '- `handoff-finish` gates by phase: `probeBuild`, then `boardTrace`, then the configured gates, then `boardParity`. `approve` refuses a hardware-twin run whose `boardParity` gate has not passed.',
+            '- The probe reads every register before it touches the UART. Do not reorder that: bringing up the console changes reset and clock registers.',
+            '- The board trace is never regenerated inside the fix loop. If the probe must change, its source hash changes, the trace no longer matches, and `board-run` must be repeated deliberately (`factory probe phase <requirement-id> probe`).',
+            '',
+            '## Modelling Against a Board',
+            '',
+            '- **The board trace is the oracle.** Where it disagrees with a manual, a vendor header, or a design export, the trace wins. Record the disagreement in the profile; do not resolve it silently, and do not model a value no run has observed.',
+            '- **A board-verified profile is derived, never written.** An extraction script reads the probe manifest and the board trace, refuses them when they disagree about which registers were read in which order, and emits the profile carrying the SHA-256 of the trace and of the image that produced it. A host test regenerates the profile from the committed inputs and compares it with the committed one, so a hand-edited profile fails.',
+            '- **An earlier boundary is never re-frozen against a new value.** When the board contradicts a device modelled before the board was consulted, give that device an attribute for its power-on value whose default stays what its own frozen gate validates, and set the board value in the board-verified composition. Both values belong in the profile. Editing the earlier device to the board value instead would silently redefine what an already-approved requirement verified.',
+            '- **Parity is part of the boundary gate.** A board-verified gate validates the model twice from a fresh simulator, checks that the earlier regression firmware still reaches its own output through the new composition, and diffs the probe\'s Simics trace against the board trace, comparing lines marked `volatile` for presence only.',
+            '',
+            '### Recorded pitfalls',
+            '',
+            '- DML 1.4: a `template` must be declared at file scope, not inside a `bank`. An attribute\'s `init()` runs only when it is declared `is (uint64_attr, init)`; `param init_val` on an attribute does nothing, and the attribute silently stays zero.',
+            '- Simics scripts: `%script%` expands in a command argument but not in a bare assignment, so a path needs `$p = (lookup-file "%script%/file")`. A declared string parameter rejects an empty string, so omit the argument instead of passing `param=`.',
+            '- Simics accesses: `SIM_read_phys_memory` and `SIM_write_phys_memory` are inquiry accesses that bypass a register\'s `read()` and `write()`. To exercise what firmware exercises, go through `memory_space.read/write(..., inquiry=0)`.',
+            '- Windows PowerShell 5.1: there is no `[Text.Encoding]::Latin1` (use `GetEncoding(28591)`); an array splat binds positionally where a hashtable splat binds by name; and a quoted `-DNAME="value"` loses its quotes on the way to GCC, so pass a bare token and stringify it in C.',
+            '- A gate script must rebuild the modules before it runs Simics, or a stale .dll answers and the run validates code that is no longer there.',
+            '',
+          ]
+        : []),
+    ].join('\n');
+  if (!existsSync(agentsPath)) writeFileSync(agentsPath, generatedAgentGuidelines, 'utf8');
+  if (hasSuperpowersCapability(options)) ensureSuperpowersTokenPolicy(agentsPath);
+  writeReferencesReadme(projectRoot);
+  writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts');
+  writeGithubActions(projectRoot, projectName);
+
+  if (options.template === 'vanilla-ts') {
+    writeFactoryConfig(projectRoot, promptsPath, 'vanilla-typescript', ['public', 'src', 'tests', 'Dockerfile', 'nginx.conf', '.dockerignore', '.gitlab-ci.yml', '.github/workflows', ...TYPESCRIPT_CONFIG_PATHS], {
+      typeCheck: 'pnpm typecheck',
+      test: undefined,
+    });
+    writeVanillaTsTemplate(projectRoot, projectName, tscScript);
+    writeContainerFiles(projectRoot, projectName);
+  } else if (options.template === 'python') {
+    writeFactoryConfig(projectRoot, promptsPath, 'python', ['src', 'tests'], {
+      typeCheck: 'pnpm typecheck',
+      test: 'pnpm test',
+    });
+    writePythonTemplate(projectRoot);
+  } else if (options.template === 'simics') {
+    writeFactoryConfig(
+      projectRoot,
+      promptsPath,
+      'simics',
+      ['dml', 'targets', 'python', 'probes', 'scripts', 'tests', 'Makefile', 'README.md', '.gitattributes', '.gitignore'],
+      {
+        build: 'pnpm simics:build',
+        typeCheck: 'pnpm simics:check',
+        test: 'pnpm simics:test',
+        probeBuild: 'pnpm probe:build',
+        probeSimicsRun: 'pnpm probe:simics-run',
+      },
+      900_000,
+      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile'],
+    );
+    writeSimicsTemplate(projectRoot, projectName);
+  } else {
+    writeFactoryConfig(projectRoot, promptsPath, 'generic', [], {});
+  }
+
+  writeFileSync(resolve(projectRoot, 'requirements/.gitkeep'), '', 'utf8');
+  writeFileSync(resolve(projectRoot, 'constraints/.gitkeep'), '', 'utf8');
+  writeFileSync(resolve(projectRoot, 'handoffs/.gitkeep'), '', 'utf8');
+  writeFileSync(resolve(projectRoot, 'runs/.gitkeep'), '', 'utf8');
+  writeFileSync(resolve(projectRoot, 'templates/.gitkeep'), '', 'utf8');
+
+  return { projectName, projectRoot, template: options.template };
+}
