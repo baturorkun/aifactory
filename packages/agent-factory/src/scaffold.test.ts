@@ -453,6 +453,11 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
     const config = JSON.parse(read('factory.config.json'));
     assert.ok(config.targetProject.allowedPaths.includes('probes'));
     assert.equal(config.targetProject.commands.probeBuild, 'pnpm probe:build');
+    // The defaults section is generated so a project can flip its kind in one
+    // place instead of typing --kind on every requirement.
+    assert.equal(config.requirementDefaults.kind, 'standard');
+    assert.equal(config.requirementDefaults.executionMode, 'handoff');
+    assert.match(config.requirementDefaults.$comment.join(' '), /hardware-twin/);
     assert.equal(config.targetProject.commands.probeSimicsRun, 'pnpm probe:simics-run');
     const scripts = JSON.parse(read('package.json')).scripts;
     assert.equal(scripts['probe:build'], 'node scripts/simics-command.mjs probe-build');

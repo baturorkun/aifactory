@@ -932,6 +932,19 @@ function writeFactoryConfig(
       baseBranch: 'main',
       remote: 'origin',
     },
+    requirementDefaults: {
+      $comment: profile === 'simics'
+        ? [
+            'What `requirement new` uses when a flag is not given. A project whose',
+            'every requirement is verified against real hardware sets kind to',
+            '"hardware-twin" here and then passes --kind standard for the exceptions,',
+            'instead of typing the flag every time.',
+          ]
+        : ['What `requirement new` uses when a flag is not given.'],
+      kind: 'standard',
+      executionMode: 'handoff',
+      pipelineFast: false,
+    },
     repositoryPlatforms: {
       gitlab: {
         baseUrl: '${GITLAB_URL:-}',

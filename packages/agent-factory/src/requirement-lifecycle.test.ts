@@ -763,3 +763,49 @@ test('a mergeable change request in a repository with no CI is not blocked on un
     repo.cleanup();
   }
 });
+
+test('the project config supplies the kind, mode and fast defaults, and a flag overrides them', async () => {
+  const repo = makeRepository();
+  try {
+    const boardFirst = FactoryConfigSchema.parse({
+      ...repo.config,
+      targetProject: { ...repo.config.targetProject, profile: 'simics' },
+      requirementDefaults: { kind: 'hardware-twin', executionMode: 'direct', pipelineFast: true },
+    });
+
+    // No flags: the config decides, and the probe name comes from the title.
+    const defaulted = await createDraftRequirement('Board verified clock tree', undefined, boardFirst, { environment: {} });
+    assert.equal(defaulted.kind, 'hardware-twin');
+    assert.equal(defaulted.mode, 'direct');
+    assert.equal(defaulted.pipelineFast, true);
+    assert.equal(defaulted.probe, 'board-verified-clock-tree');
+    const markdown = readFileSync(join(repo.root, defaulted.requirementFile), 'utf8');
+    assert.match(markdown, /^kind: hardware-twin$/m);
+    assert.match(markdown, /^executionMode: direct$/m);
+
+    // A flag is how a project says "not this one".
+    git(repo.root, 'switch', 'main');
+    const exception = await createDraftRequirement('Plain report tweak', 'handoff', boardFirst, {
+      environment: {}, kind: 'standard',
+    });
+    assert.equal(exception.kind, 'standard');
+    assert.equal(exception.mode, 'handoff');
+    const plain = readFileSync(join(repo.root, exception.requirementFile), 'utf8');
+    assert.doesNotMatch(plain, /^kind:|^twinPhase:|^probe:/m);
+    // A Simics project still seeds what a boundary requirement is made of.
+    for (const section of ['## Boundary', '## Evidence', '## Validation']) {
+      assert.ok(plain.includes(section), `${section} is seeded for a simics profile`);
+    }
+
+    // Without the config section the old behaviour stands.
+    git(repo.root, 'switch', 'main');
+    const untouched = await createDraftRequirement('No defaults configured', undefined, repo.config, { environment: {} });
+    assert.equal(untouched.kind, 'standard');
+    assert.equal(untouched.mode, 'handoff');
+    assert.equal(untouched.pipelineFast, false);
+    const generic = readFileSync(join(repo.root, untouched.requirementFile), 'utf8');
+    assert.doesNotMatch(generic, /## Boundary/, 'a non-simics profile seeds nothing extra');
+  } finally {
+    repo.cleanup();
+  }
+});

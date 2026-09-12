@@ -1,0 +1,28 @@
+{
+  "runId": "20260912180627-RQ-0017",
+  "requirementId": "RQ-0017",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260912180627-RQ-0017/handoff.md",
+  "status": "running",
+  "createdAt": "2026-09-12T18:06:27.813Z",
+  "updatedAt": "2026-09-12T18:06:28.369Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "running",
+      "retries": 0,
+      "startedAt": "2026-09-12T18:06:28.368Z"
+    }
+  ],
+  "artifacts": [],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "pending",
+    "build": "pending",
+    "typeCheck": "pending",
+    "lint": "pending",
+    "tests": "pending",
+    "security": "pending"
+  }
+}

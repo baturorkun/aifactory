@@ -289,6 +289,15 @@ const RagConfigSchema = z.object({
     .default({}),
 });
 
+// What a project wants when `requirement new` is called without flags. A
+// project whose every requirement is board-verified should not have to type
+// --kind each time; the flag stays as the way to say otherwise.
+const RequirementDefaultsSchema = z.object({
+  kind: z.enum(['standard', 'hardware-twin']).default('standard'),
+  executionMode: z.enum(['handoff', 'pipeline', 'direct']).default('handoff'),
+  pipelineFast: z.boolean().default(false),
+});
+
 export const FactoryConfigSchema = z.object({
   model: ModelConfigSchema,
   pipeline: PipelineConfigSchema.default({}),
@@ -297,6 +306,7 @@ export const FactoryConfigSchema = z.object({
   targetProject: TargetProjectSchema.default({}),
   projectGuidelines: ProjectGuidelinesSchema.default({}),
   requirementBranches: RequirementBranchesSchema.default({}),
+  requirementDefaults: RequirementDefaultsSchema.default({}),
   repositoryPlatforms: RepositoryPlatformsSchema.default({}),
   rag: RagConfigSchema.default({}),
 });

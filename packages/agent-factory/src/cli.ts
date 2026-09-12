@@ -97,30 +97,32 @@ const requirement = program
 requirement
   .command('new <title>')
   .description('Reserve the next requirement ID on main and switch to its draft branch')
-  .option('--mode <mode>', 'Execution mode: handoff, pipeline, or direct', 'handoff')
+  // No commander default: an unset flag has to stay undefined, or it would
+  // always shadow the project's requirementDefaults.
+  .option('--mode <mode>', 'Execution mode: handoff, pipeline, or direct (default: requirementDefaults.executionMode)')
   .option('--platform <platform>', 'Repository platform: github, gitlab, or none')
-  .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline', false)
-  .option('--kind <kind>', 'Requirement kind: standard, or hardware-twin for a board-verified model', 'standard')
+  .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline')
+  .option('--kind <kind>', 'Requirement kind: standard, or hardware-twin for a board-verified model (default: requirementDefaults.kind)')
   .option('--probe <name>', 'hardware-twin only: probe directory name under probes/ (default: the title slug)')
-  .action(async (title: string, opts: { mode: string; fast: boolean; platform?: string; kind: string; probe?: string }) => {
+  .action(async (title: string, opts: { mode?: string; fast?: boolean; platform?: string; kind?: string; probe?: string }) => {
     try {
-      if (!['handoff', 'pipeline', 'direct'].includes(opts.mode)) {
+      if (opts.mode !== undefined && !['handoff', 'pipeline', 'direct'].includes(opts.mode)) {
         throw new Error('Invalid mode. Choose handoff, pipeline, or direct.');
       }
-      if (!['standard', 'hardware-twin'].includes(opts.kind)) {
+      if (opts.kind !== undefined && !['standard', 'hardware-twin'].includes(opts.kind)) {
         throw new Error('Invalid kind. Choose standard or hardware-twin.');
       }
       const result = await createDraftRequirement(
         title,
-        opts.mode as RequirementExecutionMode,
+        opts.mode as RequirementExecutionMode | undefined,
         loadConfig(),
-        { pipelineFast: opts.fast, platform: opts.platform, kind: opts.kind as RequirementKind, probe: opts.probe },
+        { pipelineFast: opts.fast, platform: opts.platform, kind: opts.kind as RequirementKind | undefined, probe: opts.probe },
       );
       console.log(chalk.green(`\n✓ Draft requirement created: ${chalk.bold(result.requirementId)}`));
       console.log(chalk.dim(`  File   : ${result.requirementFile}`));
       console.log(chalk.dim(`  Branch : ${result.branch}`));
       console.log(chalk.dim(`  Mode   : ${result.mode}`));
-      if (opts.kind === 'hardware-twin') {
+      if (result.kind === 'hardware-twin') {
         console.log(chalk.dim(`  Kind   : hardware-twin (probe: ${result.probe})`));
       }
       console.log(chalk.dim(`  Fast   : ${result.pipelineFast ? 'enabled' : 'disabled'}`));

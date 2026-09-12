@@ -306,8 +306,12 @@ function draftMarkdown(input: {
   createdFromCommit: string;
   kind: RequirementKind;
   probe?: string;
+  profile?: string;
 }): string {
   const twin = input.kind === 'hardware-twin';
+  // A draft that starts empty is rewritten from memory every time. Where the
+  // project profile says what a requirement is made of, the draft says so.
+  const simics = input.profile === 'simics';
   return [
     '---',
     `id: ${input.id}`,
@@ -325,6 +329,22 @@ function draftMarkdown(input: {
     '',
     '<!-- Describe the requirement here. -->',
     '',
+    ...(simics && !twin
+      ? [
+          '## Boundary',
+          '',
+          '<!-- Which registers or behaviour this requirement models, and the addresses they live at. -->',
+          '',
+          '## Evidence',
+          '',
+          '<!-- Where each modelled value comes from, and how the profile derives it. -->',
+          '',
+          '## Validation',
+          '',
+          '<!-- The target that proves the boundary and the frozen gate that runs it. -->',
+          '',
+        ]
+      : []),
     ...(twin
       ? [
           '## Probe',
@@ -344,6 +364,13 @@ function draftMarkdown(input: {
     '## Acceptance Criteria',
     '',
     '<!-- Add one acceptance criterion per bullet. -->',
+    ...(simics && !twin
+      ? [
+          '- The modelled device builds on the licensed host and its validation target passes twice from a fresh simulator.',
+          '- The profile records where every modelled value comes from, and a host test fails when the model and the profile disagree.',
+          '- The frozen gate for this boundary is added to the suite, and every earlier boundary still passes.',
+        ]
+      : []),
     ...(twin
       ? [
           `- \`probes/${input.probe}/\` holds the probe sources, its \`probe.json\`, the committed ELF and the board trace; the trace header carries the source hash the build embedded, and the boardTrace gate accepts it.`,
@@ -376,13 +403,18 @@ function validateReady(requirement: Requirement): void {
 
 export async function createDraftRequirement(
   title: string,
-  mode: RequirementExecutionMode,
+  mode: RequirementExecutionMode | undefined,
   config: FactoryConfig,
   options: NewRequirementOptions = {},
 ): Promise<NewRequirementResult> {
   const normalizedTitle = title.trim();
   if (!normalizedTitle) throw new Error('Requirement title cannot be empty.');
-  const kind: RequirementKind = options.kind ?? 'standard';
+  // A flag says what this requirement is; the config says what the project's
+  // requirements usually are. Neither is a hard-coded literal, so a project
+  // whose every requirement is board-verified stops repeating itself.
+  const defaults = config.requirementDefaults;
+  const resolvedMode: RequirementExecutionMode = mode ?? defaults.executionMode;
+  const kind: RequirementKind = options.kind ?? defaults.kind;
   // A hardware-twin requirement is named after its probe directory, so the
   // probe commands can find the sources without further configuration.
   const probe = kind === 'hardware-twin' ? (options.probe ?? slugify(normalizedTitle)) : undefined;
@@ -431,8 +463,8 @@ export async function createDraftRequirement(
       draftMarkdown({
         id: requirementId,
         title: normalizedTitle,
-        mode,
-        pipelineFast: options.pipelineFast ?? false,
+        mode: resolvedMode,
+        pipelineFast: options.pipelineFast ?? defaults.pipelineFast,
         name: authorName,
         email: authorEmail,
         createdAt: new Date().toISOString(),
@@ -440,6 +472,7 @@ export async function createDraftRequirement(
         createdFromCommit,
         kind,
         probe,
+        profile: config.targetProject.profile,
       }),
       'utf8',
     );
@@ -460,8 +493,8 @@ export async function createDraftRequirement(
         requirementId,
         requirementFile,
         branch,
-        mode,
-        pipelineFast: options.pipelineFast ?? false,
+        mode: resolvedMode,
+        pipelineFast: options.pipelineFast ?? defaults.pipelineFast,
         kind,
         probe,
       };
