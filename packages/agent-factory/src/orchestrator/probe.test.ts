@@ -454,3 +454,22 @@ test('a wait may expect any masked bit rather than a value', () => {
   assert.equal(compareProbeTraces(trace, parseProbeTrace(text.replace('spins=1842', 'spins=9'))).equal, true);
   assert.equal(compareProbeTraces(trace, parseProbeTrace(TRACE_V2)).differences[0]!.kind, 'line');
 });
+
+test('a failed programming command is reported, not an unhandled rejection from the capture', async () => {
+  const { root, config } = twinProject();
+  try {
+    const twin = loadTwinRequirement('RQ-0009', config);
+    buildProbe(twin, config);
+    const env = {
+      PATH: process.env.PATH,
+      BOARD_PROGRAM_COMMAND_JSON: JSON.stringify(['sh', '-c', 'exit 7']),
+      // A capture that ends at once without a trace, as a dead port does.
+      BOARD_CAPTURE_COMMAND_JSON: JSON.stringify(['sh', '-c', 'exit 1']),
+      BOARD_CAPTURE_TIMEOUT_MS: '5000',
+      BOARD_CAPTURE_SETTLE_MS: '50',
+    };
+    await assert.rejects(runProbeOnBoard(twin, { env, log: () => {} }), /programming board exited with 7/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
