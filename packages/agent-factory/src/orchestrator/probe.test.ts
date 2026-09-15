@@ -102,7 +102,7 @@ function traceFor(hash: string, value = '0x00000000'): string {
   return `PROBE v1 name=mddr-config source=${hash}\nSYSREG.ESRAM_CR @0x40038000 = ${value}\nPROBE_END lines=1\n`;
 }
 
-test('the source hash ignores the ELF, the trace and build output', () => {
+test('the source hash ignores the ELF, the trace, the run budget and build output', () => {
   const { root, probeDir } = probeProject();
   try {
     const location = locateProbe(root, 'mddr-config');
@@ -114,6 +114,7 @@ test('the source hash ignores the ELF, the trace and build output', () => {
     writeFileSync(location.boardTracePath, traceFor(before.short));
     mkdirSync(join(probeDir, 'build'));
     writeFileSync(join(probeDir, 'build', 'x.o'), 'obj');
+    writeFileSync(join(probeDir, 'run.json'), '{ "simulatedCycles": 400000000 }\n');
     assert.equal(computeProbeSourceHash(location).full, before.full);
 
     writeFileSync(join(probeDir, 'main.c'), 'int main(void) { return 1; }\n');

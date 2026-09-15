@@ -30,6 +30,18 @@ $root = Resolve-ProjectRoot $ProjectRoot
 $elf = Join-Path $root "probes\$ProbeName\$ProbeName.elf"
 if (-not (Test-Path -LiteralPath $elf -PathType Leaf)) { throw "Committed probe image is missing: $elf" }
 
+# A probe that waits for something the model never provides spins to its own
+# limit before it prints the footer, and needs a budget the default cannot
+# cover. probes\<name>\run.json declares it; the file is outside the source
+# hash, so changing the budget does not invalidate the board trace. Explicit
+# parameters still win.
+$runConfigPath = Join-Path $root "probes\$ProbeName\run.json"
+if (Test-Path -LiteralPath $runConfigPath -PathType Leaf) {
+    $runConfig = Get-Content -LiteralPath $runConfigPath -Raw | ConvertFrom-Json
+    if (-not $PSBoundParameters.ContainsKey('SimulatedCycles') -and $runConfig.simulatedCycles) { $SimulatedCycles = [long]$runConfig.simulatedCycles }
+    if (-not $PSBoundParameters.ContainsKey('TimeoutSeconds') -and $runConfig.timeoutSeconds) { $TimeoutSeconds = [int]$runConfig.timeoutSeconds }
+}
+
 if ([string]::IsNullOrWhiteSpace($Target)) {
     $configPath = Join-Path $root 'simics.config.json'
     if (Test-Path -LiteralPath $configPath -PathType Leaf) {

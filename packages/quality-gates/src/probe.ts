@@ -21,6 +21,11 @@ import type { GateReport } from './index';
 export const PROBES_DIR = 'probes';
 export const PROBE_BUILD_DIR = join('build', 'probes');
 export const BOARD_TRACE_FILE = 'board-trace.txt';
+// How long the simulator is allowed to run the probe. Not part of what ran on
+// the board, so not part of the source hash: a probe that spins to a timeout
+// needs a bigger budget than one that prints and stops, and raising it must
+// not invalidate the trace.
+export const PROBE_RUN_FILE = 'run.json';
 export const SIMICS_TRACE_FILE = 'simics-trace.txt';
 
 /**
@@ -72,6 +77,7 @@ function isProbeSource(location: ProbeLocation, relativePath: string): boolean {
   const normalized = relativePath.split(sep).join('/');
   if (normalized === `${location.name}.elf`) return false;
   if (normalized === BOARD_TRACE_FILE) return false;
+  if (normalized === PROBE_RUN_FILE) return false;
   if (normalized.startsWith('build/')) return false;
   return true;
 }
