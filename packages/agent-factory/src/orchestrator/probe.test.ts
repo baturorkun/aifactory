@@ -474,3 +474,23 @@ test('a failed programming command is reported, not an unhandled rejection from 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a memory test may report that the bus refused the access', () => {
+  const text = TRACE_V2.replace('pattern=a5 -> ok', 'pattern=a5 -> fault at=0xa0000000');
+  const trace = parseProbeTrace(text);
+  const mem = trace.lines[4];
+  assert.equal(mem.kind, 'mem');
+  if (mem.kind === 'mem') { assert.equal(mem.outcome, 'fault'); assert.equal(mem.mismatchAt, 0xa0000000); }
+  assert.equal(compareProbeTraces(trace, parseProbeTrace(text)).equal, true);
+  assert.equal(compareProbeTraces(trace, parseProbeTrace(TRACE_V2)).differences[0]!.kind, 'outcome');
+});
+
+test('a memory test after a timed-out wait is recorded as skipped, and compares as such', () => {
+  const text = TRACE_V2.replace('-> ok spins=1842', '-> timeout spins=2000000').replace('pattern=a5 -> ok', 'pattern=a5 -> skipped');
+  const trace = parseProbeTrace(text);
+  const mem = trace.lines[4];
+  if (mem.kind === 'mem') assert.equal(mem.outcome, 'skipped');
+  assert.equal(compareProbeTraces(trace, parseProbeTrace(text)).equal, true);
+  const diff = compareProbeTraces(parseProbeTrace(TRACE_V2), trace);
+  assert.deepEqual(diff.differences.map((d) => d.kind), ['outcome', 'outcome']);
+});

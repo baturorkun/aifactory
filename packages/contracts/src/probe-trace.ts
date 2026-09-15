@@ -60,7 +60,11 @@ export const ProbeTraceLineSchema = z.discriminatedUnion('kind', [
     address: hex32,
     length: hex32,
     pattern: z.number().int().min(0).max(255),
-    outcome: z.enum(['ok', 'mismatch']),
+    // fault: the bus refused the access, which a memory that is not there
+    // does; the model has to refuse it the same way.
+    // skipped: not attempted, because the wait before it timed out; an access
+    // to memory whose controller never came up can hang the bus outright.
+    outcome: z.enum(['ok', 'mismatch', 'fault', 'skipped']),
     mismatchAt: hex32.optional(),
     got: hex32.optional(),
     volatile: z.boolean(),
@@ -88,7 +92,7 @@ const REG = '([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)\\s+@0x([0-9a-fA-F]{8})';
 const READ = new RegExp(`^(?:READ\\s+)?${REG}\\s+=\\s+0x([0-9a-fA-F]{8})(\\s+volatile)?$`);
 const WRITE = new RegExp(`^WRITE\\s+${REG}\\s+<=\\s+0x([0-9a-fA-F]{8})(\\s+volatile)?$`);
 const WAIT = new RegExp(`^WAIT\\s+${REG}\\s+mask=0x([0-9a-fA-F]{8})\\s+expect=(0x[0-9a-fA-F]{8}|nonzero)\\s+->\\s+(ok|timeout)\\s+spins=(\\d+)(\\s+volatile)?$`);
-const MEM = /^MEM\s+@0x([0-9a-fA-F]{8})\s+len=0x([0-9a-fA-F]{1,8})\s+pattern=([0-9a-fA-F]{2})\s+->\s+(ok|mismatch(?:\s+at=0x([0-9a-fA-F]{8})\s+got=0x([0-9a-fA-F]{8}))?)(\s+volatile)?$/;
+const MEM = /^MEM\s+@0x([0-9a-fA-F]{8})\s+len=0x([0-9a-fA-F]{1,8})\s+pattern=([0-9a-fA-F]{2})\s+->\s+(ok|mismatch(?:\s+at=0x([0-9a-fA-F]{8})\s+got=0x([0-9a-fA-F]{8}))?|fault(?:\s+at=0x([0-9a-fA-F]{8}))?|skipped)(\s+volatile)?$/;
 
 export class ProbeTraceError extends Error {
   constructor(message: string, readonly line?: number) {
@@ -113,13 +117,13 @@ function parseLine(line: string, lineNumber: number): ProbeTraceLine {
   }
   m = line.match(MEM);
   if (m) {
-    const mismatch = m[4]!.startsWith('mismatch');
+    const outcome = m[4]!.startsWith('mismatch') ? 'mismatch' : m[4]!.startsWith('fault') ? 'fault' : m[4] === 'skipped' ? 'skipped' : 'ok';
     return {
       kind: 'mem', address: h(m[1]!), length: h(m[2]!), pattern: h(m[3]!),
-      outcome: mismatch ? 'mismatch' : 'ok',
-      mismatchAt: m[5] !== undefined ? h(m[5]) : undefined,
+      outcome,
+      mismatchAt: m[5] !== undefined ? h(m[5]) : m[7] !== undefined ? h(m[7]) : undefined,
       got: m[6] !== undefined ? h(m[6]) : undefined,
-      volatile: m[7] !== undefined, raw: line,
+      volatile: m[8] !== undefined, raw: line,
     };
   }
   throw new ProbeTraceError(`not a READ, WRITE, WAIT or MEM line: ${JSON.stringify(line)}`, lineNumber);
