@@ -212,7 +212,10 @@ function captureSerial(argv: string[], timeoutMs: number, log: (line: string) =>
     });
     child.stderr.on('data', (chunk: Buffer) => log(chunk.toString('utf8').trimEnd()));
     child.on('error', (error) => finish(error));
-    child.on('exit', (code) => {
+    // 'close', not 'exit': a capture that hands over its whole text at once
+    // can exit before that text has been read, and 'exit' would then report
+    // a missing footer that is in fact on its way.
+    child.on('close', (code) => {
       if (!settled) finish(new Error(`The capture command exited with ${code} before PROBE_END was seen.`));
     });
   });

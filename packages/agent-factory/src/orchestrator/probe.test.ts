@@ -494,3 +494,27 @@ test('a memory test after a timed-out wait is recorded as skipped, and compares 
   const diff = compareProbeTraces(parseProbeTrace(TRACE_V2), trace);
   assert.deepEqual(diff.differences.map((d) => d.kind), ['outcome', 'outcome']);
 });
+
+test('a capture that delivers a large trace in one burst is read to its footer', async () => {
+  const { root, config, hash } = twinProject();
+  try {
+    const twin = loadTwinRequirement('RQ-0009', config);
+    buildProbe(twin, config);
+    // 300 lines handed over at once at exit, the way a wrapper that returns a
+    // finished job's text does.
+    const lines = Array.from({ length: 300 }, (_, i) => `SYSREG.R${i} @0x${(0x40038000 + 4 * i).toString(16).padStart(8, '0')} = 0x00000000`);
+    const big = [`PROBE v1 name=mddr-config source=${hash}`, ...lines, `PROBE_END lines=${lines.length}`].join('\r\n') + '\r\n';
+    writeFileSync(join(root, 'big.txt'), big);
+    const env = {
+      PATH: process.env.PATH,
+      BOARD_PROGRAM_COMMAND_JSON: JSON.stringify(['sh', '-c', 'true']),
+      BOARD_CAPTURE_COMMAND_JSON: JSON.stringify(['sh', '-c', `sleep 0.3; cat "${join(root, 'big.txt')}"`]),
+      BOARD_CAPTURE_TIMEOUT_MS: '5000',
+      BOARD_CAPTURE_SETTLE_MS: '50',
+    };
+    const result = await runProbeOnBoard(twin, { env, log: () => {} });
+    assert.equal(result.trace.lines.length, 300);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
