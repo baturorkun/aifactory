@@ -310,12 +310,13 @@ test('automated board-run programs the board after capture starts and records th
     const env = {
       PATH: process.env.PATH,
       BOARD_PROGRAM_COMMAND_JSON: JSON.stringify(['sh', '-c', `test -f "$0" && echo "{elf}" > "${marker}"`, twin.probe.elfPath]),
-      BOARD_CAPTURE_COMMAND_JSON: JSON.stringify(['sh', '-c', `while [ ! -f "${marker}" ]; do sleep 0.05; done; printf '${traceFor(hash).replace(/\n/g, '\\r\\n')}'`]),
+      BOARD_CAPTURE_COMMAND_JSON: JSON.stringify(['sh', '-c', `printf '%s' "$PROBE_BUILD_DIR" > "${join(root, 'seen-env')}"; while [ ! -f "${marker}" ]; do sleep 0.05; done; printf '${traceFor(hash).replace(/\n/g, '\\r\\n')}'`]),
       BOARD_CAPTURE_TIMEOUT_MS: '5000',
     };
     const result = await runProbeOnBoard(twin, { env, log: () => {} });
     assert.equal(result.mode, 'automated');
     assert.equal(readFileSync(marker, 'utf8').trim(), twin.probe.elfPath, '{elf} was substituted');
+    assert.equal(readFileSync(join(root, 'seen-env')).toString().trim(), twin.probe.buildDir, 'the capture command sees PROBE_BUILD_DIR');
     assert.equal(readFileSync(twin.probe.boardTracePath, 'utf8'), traceFor(hash));
   } finally {
     rmSync(root, { recursive: true, force: true });

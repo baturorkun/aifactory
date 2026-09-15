@@ -193,9 +193,9 @@ function captureCommand(env: NodeJS.ProcessEnv): string[] | undefined {
   return ['sh', '-c', `stty ${flag} "$0" ${baud} raw -echo && exec cat "$0"`, port];
 }
 
-function captureSerial(argv: string[], timeoutMs: number, log: (line: string) => void): Promise<string> {
+function captureSerial(argv: string[], timeoutMs: number, log: (line: string) => void, env: NodeJS.ProcessEnv = process.env): Promise<string> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(argv[0]!, argv.slice(1), { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(argv[0]!, argv.slice(1), { stdio: ['ignore', 'pipe', 'pipe'], env });
     let buffer = '';
     let settled = false;
     const finish = (error?: Error) => {
@@ -232,12 +232,16 @@ export async function runProbeOnBoard(twin: TwinRequirement, options: BoardRunOp
 
   const program = jsonCommand('BOARD_PROGRAM_COMMAND_JSON', env, { elf: twin.probe.elfPath, name: twin.probe.name });
   const capture = captureCommand(env);
+  // The programming and capture commands see the same PROBE_* variables the
+  // build and Simics commands do, so a capture wrapper can keep its raw text
+  // beside the probe's build output.
+  const commandEnv = probeEnvironment(twin, sources.short, env);
   const rel = relative(twin.targetRoot, twin.probe.boardTracePath);
 
   if (program && capture) {
     const timeoutMs = Number(optional('BOARD_CAPTURE_TIMEOUT_MS', env) ?? '30000');
     log(`  ▸ capturing: ${capture.join(' ')}`);
-    const captured = captureSerial(capture, timeoutMs, log);
+    const captured = captureSerial(capture, timeoutMs, log, commandEnv);
     // The capture may fail while programming is still running; until it is
     // awaited below its rejection must not be an unhandled one that kills the
     // process before the programming error can be reported.
@@ -248,9 +252,9 @@ export async function runProbeOnBoard(twin: TwinRequirement, options: BoardRunOp
     const settleMs = Number(optional('BOARD_CAPTURE_SETTLE_MS', env) ?? '500');
     await new Promise((r) => setTimeout(r, settleMs));
     try {
-      runArgv(program, twin.targetRoot, env, timeoutMs, 'programming board');
+      runArgv(program, twin.targetRoot, commandEnv, timeoutMs, 'programming board');
       const reset = jsonCommand('BOARD_RESET_COMMAND_JSON', env, { elf: twin.probe.elfPath, name: twin.probe.name });
-      if (reset) runArgv(reset, twin.targetRoot, env, timeoutMs, 'resetting board');
+      if (reset) runArgv(reset, twin.targetRoot, commandEnv, timeoutMs, 'resetting board');
     } catch (error) {
       // Programming failed: the capture is pointless now and must not be left
       // holding the port until its own timeout.
