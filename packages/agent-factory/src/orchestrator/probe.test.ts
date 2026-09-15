@@ -40,9 +40,10 @@ test('parseProbeTrace ignores noise around the trace and keeps the register orde
   const trace = parseProbeTrace(TRACE);
   assert.equal(trace.name, 'mddr-config');
   assert.equal(trace.source, '0123456789abcdef');
-  assert.deepEqual(trace.lines.map((line) => line.register), ['ESRAM_CR', 'DEVICE_VERSION', 'TEMP']);
-  assert.equal(trace.lines[1]!.value, 0xf807);
-  assert.equal(trace.lines[2]!.volatile, true);
+  const reads = trace.lines.map((line) => (line.kind === 'read' ? line : undefined));
+  assert.deepEqual(reads.map((line) => line?.register), ['ESRAM_CR', 'DEVICE_VERSION', 'TEMP']);
+  assert.equal(reads[1]?.value, 0xf807);
+  assert.equal(reads[2]?.volatile, true);
 });
 
 test('parseProbeTrace rejects what a truncated or malformed capture looks like', () => {
@@ -351,6 +352,93 @@ test('a missing machine value is an error naming it, never a default', () => {
     const source = readFileSync(join(__dirname, 'probe.ts'), 'utf8');
     assert.doesNotMatch(source, /\d+\.\d+\.\d+\.\d+|Administrator|C:\\\\|\/dev\/tty\.usb/);
     execSync('true');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ------------------------------------------------------------
+// trace contract v2: actions and observations
+// ------------------------------------------------------------
+
+const TRACE_V2 = [
+  'PROBE v1 name=ddr-init source=0123456789abcdef',
+  'READ  MDDR.DDRC_SR @0x400208e4 = 0x00000000',
+  'MDDR.MODE_CR @0x40020818 = 0x00000000',
+  'WRITE MDDR.DYN_SOFT_RESET_CR @0x40020800 <= 0x00000001',
+  'WAIT  MDDR.DDRC_SR @0x400208e4 mask=0x00000001 expect=0x00000001 -> ok spins=1842 volatile',
+  'MEM   @0xa0000000 len=0x1000 pattern=a5 -> ok',
+  'PROBE_END lines=5',
+].join('\n');
+
+test('a version-2 trace parses every step kind and a keyword-less line is a read', () => {
+  const trace = parseProbeTrace(TRACE_V2);
+  assert.deepEqual(trace.lines.map((l) => l.kind), ['read', 'read', 'write', 'wait', 'mem']);
+  assert.equal(trace.scope, 'behaviour');
+  const wait = trace.lines[3];
+  assert.equal(wait.kind, 'wait');
+  if (wait.kind === 'wait') {
+    assert.equal(wait.outcome, 'ok');
+    assert.equal(wait.spins, 1842);
+    assert.equal(wait.volatile, true);
+    assert.equal(wait.mask, 1);
+  }
+  const mem = trace.lines[4];
+  if (mem.kind === 'mem') {
+    assert.equal(mem.length, 0x1000);
+    assert.equal(mem.pattern, 0xa5);
+    assert.equal(mem.outcome, 'ok');
+  }
+  // Version 1 traces are unchanged: reads only, reset-state scope.
+  assert.equal(parseProbeTrace(TRACE).scope, 'reset-state');
+  assert.throws(() => parseProbeTrace(TRACE_V2.replace('-> ok spins=1842', '-> maybe spins=1842')),
+    (e: unknown) => e instanceof ProbeTraceError && /line 5/.test(e.message));
+});
+
+test('parity compares outcomes for waits and memory tests, ignores volatile spin counts, and reports the scope', () => {
+  const board = parseProbeTrace(TRACE_V2);
+  const sameOutcome = parseProbeTrace(TRACE_V2.replace('spins=1842', 'spins=3'));
+  assert.equal(compareProbeTraces(board, sameOutcome).equal, true, 'spin count is volatile');
+
+  const timedOut = parseProbeTrace(TRACE_V2.replace('-> ok spins=1842', '-> timeout spins=100000'));
+  const diff = compareProbeTraces(board, timedOut);
+  assert.equal(diff.equal, false);
+  assert.equal(diff.differences[0]!.kind, 'outcome');
+  assert.equal(diff.scope, 'behaviour');
+  assert.match(formatProbeTraceDiff(diff), /^scope: behaviour/);
+  assert.match(formatProbeTraceDiff(diff), /#4 outcome/);
+
+  const mismatch = parseProbeTrace(TRACE_V2.replace('pattern=a5 -> ok', 'pattern=a5 -> mismatch at=0xa0000010 got=0xffffffff'));
+  assert.equal(compareProbeTraces(board, mismatch).differences[0]!.kind, 'outcome');
+
+  const otherWrite = parseProbeTrace(TRACE_V2.replace('<= 0x00000001', '<= 0x00000003'));
+  assert.equal(compareProbeTraces(board, otherWrite).differences[0]!.kind, 'value', 'a different action is a different probe');
+
+  assert.match(formatProbeTraceDiff(compareProbeTraces(parseProbeTrace(TRACE), parseProbeTrace(TRACE))), /reset state only/);
+});
+
+test('the boardTrace gate refuses a manifest whose scope the trace does not bear out, and reports what was exercised', () => {
+  const { root } = probeProject();
+  try {
+    const location = locateProbe(root, 'mddr-config');
+    // The manifest is a probe source: it goes into the hash, so it is written
+    // before the image and the trace that carry that hash.
+    const claim = (scope: string) => {
+      writeFileSync(join(location.dir, 'probe.json'), JSON.stringify({ name: 'mddr-config', scope }));
+      const hash = computeProbeSourceHash(location).short;
+      fakeElf(location.elfPath, hash);
+      writeFileSync(location.boardTracePath, traceFor(hash));
+    };
+    // A reads-only trace with a manifest that claims behaviour.
+    claim('behaviour');
+    const refused = boardTraceGate(locateProbe(root, 'mddr-config'));
+    assert.equal(refused.status, 'failed');
+    assert.match(refused.output, /says scope "behaviour" but the trace shows "reset-state"/);
+
+    claim('reset-state');
+    const honest = boardTraceGate(locateProbe(root, 'mddr-config'));
+    assert.equal(honest.status, 'passed');
+    assert.match(honest.output, /scope reset-state \(1 read; no behaviour exercised\)/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

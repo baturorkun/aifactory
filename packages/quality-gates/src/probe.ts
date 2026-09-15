@@ -5,6 +5,7 @@ import {
   compareProbeTraces,
   formatProbeTraceDiff,
   parseProbeTrace,
+  type ProbeScope,
   type ProbeTrace,
 } from '@aifactory/contracts';
 import type { GateReport } from './index';
@@ -183,7 +184,36 @@ export function boardTraceGate(location: ProbeLocation): GateReport {
     return report('boardTrace', start, false,
       `${rel} was recorded from sources hashing to ${trace.source}; the committed sources hash to ${sources.short}. The probe changed after the board ran it, so the board must run it again.`);
   }
-  return report('boardTrace', start, true, `${rel}: ${trace.lines.length} register line(s) from source ${trace.source}`);
+  // The manifest may say what the probe exercises; the trace is what it did.
+  // A claim the trace does not bear out is refused, in either direction, so
+  // "behaviour" in a profile always means a WAIT or MEM the board answered.
+  const claimed = readManifestScope(location);
+  if (claimed && claimed !== trace.scope) {
+    return report('boardTrace', start, false,
+      `probe.json says scope "${claimed}" but the trace shows "${trace.scope}": ${describeScope(trace)}.`);
+  }
+  return report('boardTrace', start, true,
+    `${rel}: ${trace.lines.length} line(s) from source ${trace.source}; scope ${trace.scope} (${describeScope(trace)})`);
+}
+
+export function readManifestScope(location: ProbeLocation): ProbeScope | undefined {
+  const path = join(location.dir, 'probe.json');
+  if (!existsSync(path)) return undefined;
+  try {
+    const manifest = JSON.parse(readFileSync(path, 'utf8')) as { scope?: unknown };
+    return manifest.scope === 'behaviour' || manifest.scope === 'reset-state' ? manifest.scope : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function describeScope(trace: ProbeTrace): string {
+  const count = (kind: string) => trace.lines.filter((line) => line.kind === kind).length;
+  const parts = [`${count('read')} read`];
+  if (count('write')) parts.push(`${count('write')} write`);
+  if (count('wait')) parts.push(`${count('wait')} wait`);
+  if (count('mem')) parts.push(`${count('mem')} mem`);
+  return trace.scope === 'reset-state' ? `${parts.join(', ')}; no behaviour exercised` : parts.join(', ');
 }
 
 /** The simulator's trace must equal the board's, line for line. */

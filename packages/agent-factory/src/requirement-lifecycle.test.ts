@@ -721,7 +721,8 @@ test('a hardware-twin draft records its kind, phase and probe and seeds the phas
     assert.match(markdown, /^kind: hardware-twin$/m);
     assert.match(markdown, /^twinPhase: probe$/m);
     assert.match(markdown, /^probe: mddr-config$/m);
-    for (const section of ['## Probe', '## Board', '## Model', '## Acceptance Criteria']) {
+    assert.match(markdown, /at least one WAIT or MEM step whose outcome the board reports as ok/);
+    for (const section of ['## Probe', '## Behaviour', '## Board', '## Model', '## Acceptance Criteria']) {
       assert.ok(markdown.includes(section), `${section} is seeded`);
     }
     const parsed = parseRequirement(result.requirementId, repo.config.paths.requirements);

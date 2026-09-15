@@ -449,6 +449,19 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
     assert.match(runtime, /"PROBE_SOURCE=" PROBE_STRINGIFY\(PROBE_SOURCE_HASH\)/);
     assert.match(runtime, /#error/, 'a build without the hash is refused');
     assert.match(read('probes/_template/board.c'), /#error/, 'the template does not pretend to know the board');
+    // The runtime is a step list: a probe can act and observe, not only read.
+    const header = read('probes/_template/probe.h');
+    for (const macro of ['PROBE_READ_STEP', 'PROBE_WRITE_STEP', 'PROBE_WAIT_STEP', 'PROBE_MEM_STEP']) {
+      assert.match(header, new RegExp(`#define ${macro}\\(`), macro);
+    }
+    for (const line of ['put_string("WRITE ")', 'put_string("WAIT ")', 'put_string("MEM @0x")', '" -> timeout spins="']) {
+      assert.ok(runtime.includes(line), `runtime prints ${line}`);
+    }
+    const main = read('probes/_template/main.c');
+    assert.match(main, /PROBE_WAIT_STEP\(/);
+    const manifest = JSON.parse(read('probes/_template/probe.json'));
+    assert.equal(manifest.scope, 'reset-state');
+    assert.deepEqual(manifest.steps.map((step: { kind: string }) => step.kind), ['read']);
 
     const config = JSON.parse(read('factory.config.json'));
     assert.ok(config.targetProject.allowedPaths.includes('probes'));
