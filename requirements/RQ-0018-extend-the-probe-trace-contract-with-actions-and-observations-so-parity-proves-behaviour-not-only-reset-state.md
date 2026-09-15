@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-15T07:34:34.398Z"
 branch: "factory/RQ-0018"
 createdFromCommit: "3f3eb8f1e0700dc2b7cac0a0adf315eb2c92ef9a"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/14"
+githubIssueIid: 14
+repositoryProvider: github
 ---
 # RQ-0018 - extend the probe trace contract with actions and observations so parity proves behaviour, not only reset state
 
