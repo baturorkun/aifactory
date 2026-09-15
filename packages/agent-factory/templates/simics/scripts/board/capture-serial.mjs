@@ -91,5 +91,8 @@ for (const r of results) {
 if (withTrace && ports.length > 1) {
   console.error(`  probe output arrived on ${withTrace.port}; set BOARD_SERIAL_PORT=${withTrace.port}`);
 }
+// Not process.exit(): on a pipe the write is asynchronous, and exiting at
+// once drops whatever has not been flushed yet, which for a long trace is
+// its footer. Setting the exit code lets stdout drain first.
 process.stdout.write(chosen.stdout);
-process.exit(withTrace ? 0 : 1);
+process.exitCode = withTrace ? 0 : 1;
