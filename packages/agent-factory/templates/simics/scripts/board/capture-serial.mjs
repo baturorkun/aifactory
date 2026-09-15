@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 // Serial capture through the lab agent service: the board's UART is wired
 // to a COM port on the board PC, so the reading has to happen there. One
 // blocking job per port opens it, reads until the probe footer or the
@@ -72,6 +74,16 @@ async function runJob(port) {
 const results = await Promise.all(ports.map((port) => runJob(port).catch((error) => ({ port, status: 'error', stdout: '', stderr: String(error) }))));
 const withTrace = results.find((r) => /PROBE v\d+ name=/.test(r.stdout));
 const chosen = withTrace ?? results.find((r) => r.stdout.trim()) ?? results[0];
+
+// Whatever came off the port is kept beside the probe's build output, so a
+// capture the validator refuses (a board that hung mid-way, a wrong baud) can
+// still be read.
+if (process.env.PROBE_BUILD_DIR) {
+  try {
+    mkdirSync(process.env.PROBE_BUILD_DIR, { recursive: true });
+    writeFileSync(join(process.env.PROBE_BUILD_DIR, 'board-capture.raw.txt'), chosen.stdout);
+  } catch { /* the capture itself is what matters */ }
+}
 
 for (const r of results) {
   console.error(`  ${r.port}: ${r.status}, ${r.stdout.length} byte(s)${r.stderr ? `, ${r.stderr.trim().split('\n')[0]}` : ''}`);

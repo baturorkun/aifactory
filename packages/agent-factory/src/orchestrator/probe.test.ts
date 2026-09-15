@@ -443,3 +443,14 @@ test('the boardTrace gate refuses a manifest whose scope the trace does not bear
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a wait may expect any masked bit rather than a value', () => {
+  const text = TRACE_V2.replace('expect=0x00000001 -> ok', 'expect=nonzero -> ok');
+  const trace = parseProbeTrace(text);
+  const wait = trace.lines[3];
+  assert.equal(wait.kind, 'wait');
+  if (wait.kind === 'wait') assert.equal(wait.expect, 'nonzero');
+  // Same step on both sides agrees; a value expectation is a different step.
+  assert.equal(compareProbeTraces(trace, parseProbeTrace(text.replace('spins=1842', 'spins=9'))).equal, true);
+  assert.equal(compareProbeTraces(trace, parseProbeTrace(TRACE_V2)).differences[0]!.kind, 'line');
+});

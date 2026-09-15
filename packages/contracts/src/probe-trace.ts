@@ -46,7 +46,10 @@ export const ProbeTraceLineSchema = z.discriminatedUnion('kind', [
     register: z.string().min(1),
     address: hex32,
     mask: hex32,
-    expect: hex32,
+    // A number: the masked value must equal it. 'nonzero': any masked bit set
+    // satisfies the wait, which is how a "ready" word with undocumented bits
+    // is waited for.
+    expect: z.union([hex32, z.literal('nonzero')]),
     outcome: z.enum(['ok', 'timeout']),
     spins: z.number().int().nonnegative(),
     volatile: z.boolean(),
@@ -84,7 +87,7 @@ const FOOTER = /^PROBE_END lines=(\d+)$/;
 const REG = '([A-Za-z0-9_]+)\\.([A-Za-z0-9_]+)\\s+@0x([0-9a-fA-F]{8})';
 const READ = new RegExp(`^(?:READ\\s+)?${REG}\\s+=\\s+0x([0-9a-fA-F]{8})(\\s+volatile)?$`);
 const WRITE = new RegExp(`^WRITE\\s+${REG}\\s+<=\\s+0x([0-9a-fA-F]{8})(\\s+volatile)?$`);
-const WAIT = new RegExp(`^WAIT\\s+${REG}\\s+mask=0x([0-9a-fA-F]{8})\\s+expect=0x([0-9a-fA-F]{8})\\s+->\\s+(ok|timeout)\\s+spins=(\\d+)(\\s+volatile)?$`);
+const WAIT = new RegExp(`^WAIT\\s+${REG}\\s+mask=0x([0-9a-fA-F]{8})\\s+expect=(0x[0-9a-fA-F]{8}|nonzero)\\s+->\\s+(ok|timeout)\\s+spins=(\\d+)(\\s+volatile)?$`);
 const MEM = /^MEM\s+@0x([0-9a-fA-F]{8})\s+len=0x([0-9a-fA-F]{1,8})\s+pattern=([0-9a-fA-F]{2})\s+->\s+(ok|mismatch(?:\s+at=0x([0-9a-fA-F]{8})\s+got=0x([0-9a-fA-F]{8}))?)(\s+volatile)?$/;
 
 export class ProbeTraceError extends Error {
@@ -103,7 +106,8 @@ function parseLine(line: string, lineNumber: number): ProbeTraceLine {
   m = line.match(WAIT);
   if (m) {
     return {
-      kind: 'wait', group: m[1]!, register: m[2]!, address: h(m[3]!), mask: h(m[4]!), expect: h(m[5]!),
+      kind: 'wait', group: m[1]!, register: m[2]!, address: h(m[3]!), mask: h(m[4]!),
+      expect: m[5] === 'nonzero' ? 'nonzero' : h(m[5]!.slice(2)),
       outcome: m[6] as 'ok' | 'timeout', spins: Number(m[7]), volatile: m[8] !== undefined, raw: line,
     };
   }
