@@ -1,0 +1,26 @@
+# Renode script: load the probe ELF on this project's platform, capture the
+# console UART to $PROBE_UART_LOG, run, and quit. Fill in the platform and the
+# console UART for your board; the rest is the same for every probe.
+#
+# Parameters (from the environment, set by scripts/renode-run.mjs):
+#   $PROBE_ELF        the committed probe image
+#   $PROBE_UART_LOG   the file the console text must be written to
+#
+# The probe prints and then spins, so the run is bounded by the sleep below
+# rather than by the firmware stopping.
+
+mach create
+# TODO: describe the board. Replace with your platform:
+machine LoadPlatformDescription @platforms/board.repl
+
+# TODO: name the UART the probe prints on (see the .repl), then mirror it to a
+# file so renode-run.mjs can hand it to the parity gate.
+# showAnalyzer sysbus.mmuart1
+# sysbus.mmuart1 CreateFileBackend $ORIGIN/../$PROBE_UART_LOG true
+
+sysbus LoadELF $PROBE_ELF
+start
+# Give the probe time to print its whole trace, then stop.
+sleep 5
+pause
+quit
