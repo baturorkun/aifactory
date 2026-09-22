@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-22T16:43:43.481Z"
 branch: "factory/RQ-0019"
 createdFromCommit: "0d876030e279c0e267cd881d560f4c7c4005def5"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/16"
+githubIssueIid: 16
+repositoryProvider: github
 ---
 # RQ-0019 - Neutralize simulator parameter names and add a Renode simulator template
 
