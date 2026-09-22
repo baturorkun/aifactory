@@ -1,0 +1,48 @@
+{
+  "runId": "20260922165837-RQ-0019",
+  "requirementId": "RQ-0019",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260922165837-RQ-0019/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-09-22T16:58:37.839Z",
+  "updatedAt": "2026-09-22T17:29:54.198Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-22T17:29:38.100Z",
+      "finishedAt": "2026-09-22T17:29:54.198Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/cli.ts",
+    "packages/agent-factory/src/config.ts",
+    "packages/agent-factory/src/orchestrator/probe.test.ts",
+    "packages/agent-factory/src/orchestrator/probe.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/simics-transport.test.ts",
+    "packages/agent-factory/templates/renode/peripherals/README.md",
+    "packages/agent-factory/templates/renode/platforms/board.repl",
+    "packages/agent-factory/templates/renode/scripts/board/capture-serial.mjs",
+    "packages/agent-factory/templates/renode/scripts/build-model.mjs",
+    "packages/agent-factory/templates/renode/scripts/build-probe.mjs",
+    "packages/agent-factory/templates/renode/scripts/renode-run.mjs",
+    "packages/agent-factory/templates/renode/scripts/run-probe.resc",
+    "packages/agent-factory/templates/simics/scripts/sync-run.mjs",
+    "packages/agent-factory/templates/simics/scripts/windows/Run-Probe.ps1",
+    "packages/agent-factory/templates/simics/scripts/windows/SimicsTools.ps1",
+    "packages/quality-gates/src/probe.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "gate": "schemaCheck",
+    "status": "passed",
+    "output": "0 step file(s) valid",
+    "durationMs": 0
+  },
+  {
+    "gate": "build",
+    "status": "skipped",
+    "output": "No targetProject.commands.build configured.",
+    "durationMs": 0
+  },
+  {
+    "gate": "typeCheck",
+    "status": "passed",
+    "output": "pnpm typecheck passed",
+    "durationMs": 1796,
+    "command": "pnpm typecheck",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/aifactory"
+  },
+  {
+    "gate": "lint",
+    "status": "passed",
+    "output": "pnpm lint passed",
+    "durationMs": 1869,
+    "command": "pnpm lint",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/aifactory"
+  },
+  {
+    "gate": "tests",
+    "status": "passed",
+    "output": "pnpm test passed",
+    "durationMs": 12332,
+    "command": "pnpm test",
+    "cwd": "/Users/batur/Documents/Projects/bytecraft/agentic/aifactory"
+  },
+  {
+    "gate": "security",
+    "status": "passed",
+    "output": "8 applied file(s) scanned — no issues",
+    "durationMs": 2
+  }
+]

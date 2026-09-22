@@ -1,0 +1,19 @@
+// Renode platform description (.repl) for this board's MSS as the probe sees
+// it. Start from the CPU and the console UART the probe prints on, then add
+// each peripheral a probe touches. A device that only needs registers can be
+// a `Memory` region or a tag; one that needs behaviour is a C# peripheral
+// under peripherals/ referenced here.
+//
+// This is a starter: replace with the real board. Example shape:
+//
+// cpu: CPU.CortexM @ sysbus
+//     cpuType: "cortex-m3"
+//     nvic: nvic
+//
+// nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+//     -> cpu@0
+//
+// mmuart1: UART.NS16550 @ sysbus 0x40010000
+//
+// envm: Memory.MappedMemory @ sysbus 0x60000000
+//     size: 0x80000
