@@ -4,6 +4,7 @@ import { existsSync, readdirSync, writeFileSync } from 'fs';
 import { resolve, join } from 'path';
 import chalk from 'chalk';
 import { loadConfig } from './config';
+import { checkProjectEnv, formatEnvCheck } from './env-check';
 import { runPipeline } from './orchestrator/pipeline';
 import {
   beginHandoffRun,
@@ -295,6 +296,24 @@ program
   .action(() => {
     try {
       console.log(loadConfig().model.provider);
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('env-check')
+  .description('Report which .env values are set, defaulted, or empty, grouped by purpose')
+  .action(() => {
+    try {
+      const config = loadConfig();
+      const projectRoot = resolve(config.targetProject.root ?? '.');
+      const report = checkProjectEnv(projectRoot);
+      console.log(formatEnvCheck(report, projectRoot));
+      // A report of empties is not itself a failure: many are legitimately
+      // optional. Only a project with no .env at all is flagged for scripts.
+      if (!report.envFileExists) process.exitCode = 1;
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
