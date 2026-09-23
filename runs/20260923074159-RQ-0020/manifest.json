@@ -4,9 +4,9 @@
   "executionMode": "handoff",
   "fast": false,
   "handoffPath": "handoffs/20260923074159-RQ-0020/handoff.md",
-  "status": "passed",
+  "status": "approved",
   "createdAt": "2026-09-23T07:41:59.097Z",
-  "updatedAt": "2026-09-23T07:42:41.628Z",
+  "updatedAt": "2026-09-23T07:48:25.274Z",
   "steps": [
     {
       "agent": "handoff",
@@ -25,5 +25,7 @@
     "lint": "passed",
     "tests": "passed",
     "security": "skipped"
-  }
+  },
+  "approvedAt": "2026-09-23T07:48:25.278Z",
+  "approvedBy": "human"
 }
