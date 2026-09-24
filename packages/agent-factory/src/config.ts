@@ -54,11 +54,22 @@ const CodexCliModelSchema = z.object({
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
 });
 
+const ClaudeCliModelSchema = z.object({
+  provider: z.literal('claude-cli'),
+  name: z.string().min(1),
+  reviewerName: z.string().min(1).optional(),
+  executable: z.string().min(1).default('claude'),
+  timeoutMs: z.number().int().positive().default(600_000),
+  effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  maxBudgetUsd: z.number().positive().optional(),
+});
+
 const ModelConfigSchema = z.discriminatedUnion('provider', [
   OllamaModelSchema,
   OpenAICompatModelSchema,
   GeminiModelSchema,
   CodexCliModelSchema,
+  ClaudeCliModelSchema,
   MockModelSchema,
 ]);
 

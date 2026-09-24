@@ -5,6 +5,7 @@ import { OpenAICompatAdapter } from './openai-compat';
 import { MockAdapter } from './mock';
 import { GeminiAdapter } from './gemini';
 import { CodexCliAdapter } from './codex-cli';
+import { ClaudeCliAdapter } from './claude-cli';
 
 export type { ModelAdapter } from './adapter';
 export type { ModelRequest, ModelResponse, ModelUsage } from './adapter';
@@ -13,6 +14,7 @@ export { OpenAICompatAdapter } from './openai-compat';
 export { MockAdapter } from './mock';
 export { GeminiAdapter } from './gemini';
 export { CodexCliAdapter } from './codex-cli';
+export { ClaudeCliAdapter } from './claude-cli';
 
 export function createModelAdapter(config: ModelConfig): ModelAdapter {
   switch (config.provider) {
@@ -51,6 +53,14 @@ export function createModelAdapter(config: ModelConfig): ModelAdapter {
         timeoutMs: config.timeoutMs,
         reasoningEffort: config.reasoningEffort,
       });
+    case 'claude-cli':
+      return new ClaudeCliAdapter({
+        model: config.name,
+        executable: config.executable,
+        timeoutMs: config.timeoutMs,
+        effort: config.effort,
+        maxBudgetUsd: config.maxBudgetUsd,
+      });
   }
 }
 
@@ -87,6 +97,16 @@ export function createReviewerAdapter(config: ModelConfig): ModelAdapter {
       executable: config.executable,
       timeoutMs: config.timeoutMs,
       reasoningEffort: config.reasoningEffort,
+    });
+  }
+
+  if (config.provider === 'claude-cli') {
+    return new ClaudeCliAdapter({
+      model: reviewerName,
+      executable: config.executable,
+      timeoutMs: config.timeoutMs,
+      effort: config.effort,
+      maxBudgetUsd: config.maxBudgetUsd,
     });
   }
 
