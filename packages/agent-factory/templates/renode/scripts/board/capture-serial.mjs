@@ -8,10 +8,16 @@ import { join } from 'node:path';
 // is printed to stdout, which is what `factory probe board-run` consumes.
 //
 // Everything that names a machine comes from the environment:
-//   BOARD_AGENT_URL, BOARD_AGENT_TOKEN, BOARD_AGENT_NAME   the agent service
-//   BOARD_SERIAL_PORT      one COM port, or a comma list to try several
+//   BOT_API_URL, BOT_API_TOKEN, BOT_API_AGENT   the agent service
+//   BOARD_SERIAL_PORT      one COM port, or a comma list to try several, or
+//                          tcp://host:port when the lab's port map (hub4com)
+//                          already bridges the console to a TCP port: then the
+//                          capture reads that socket directly and the agent is
+//                          not involved
 //   BOARD_SERIAL_BAUD      default 115200
-//   BOARD_CAPTURE_TIMEOUT_MS   how long each listener waits for PROBE_END
+//   BOARD_CAPTURE_TIMEOUT_MS   how long each listener waits for the end pattern
+//   BOARD_CAPTURE_END_PATTERN  regex that ends the capture; default the probe
+//                              footer, so a product image can name its own marker
 
 function required(name) {
   const value = process.env[name];
@@ -22,15 +28,43 @@ function required(name) {
   return value.trim();
 }
 
-const url = required('BOARD_AGENT_URL').replace(/\/+$/, '');
-const token = required('BOARD_AGENT_TOKEN');
-const agent = required('BOARD_AGENT_NAME');
-const ports = required('BOARD_SERIAL_PORT').split(',').map((p) => p.trim()).filter(Boolean);
-const baud = Number(process.env.BOARD_SERIAL_BAUD || '115200');
+const portSetting = required('BOARD_SERIAL_PORT');
 const timeoutMs = Number(process.env.BOARD_CAPTURE_TIMEOUT_MS || '30000');
+const endPatternEarly = process.env.BOARD_CAPTURE_END_PATTERN || 'PROBE_END lines=\\d+';
+
+if (/^tcp:\/\//.test(portSetting)) {
+  const { connect } = await import('node:net');
+  const [host, port] = portSetting.slice(6).split(':');
+  let text = '';
+  const sock = connect(Number(port), host);
+  const done = () => { sock.destroy(); };
+  sock.on('data', (chunk) => { text += chunk.toString('latin1'); if (new RegExp(endPatternEarly).test(text)) done(); });
+  sock.on('error', (error) => { console.error(`  ${portSetting}: ${error.message}`); });
+  const timer = setTimeout(done, Math.max(1000, timeoutMs - 2000));
+  await new Promise((resolveClose) => sock.on('close', resolveClose));
+  clearTimeout(timer);
+  if (process.env.PROBE_BUILD_DIR) {
+    try { mkdirSync(process.env.PROBE_BUILD_DIR, { recursive: true }); writeFileSync(join(process.env.PROBE_BUILD_DIR, 'board-capture.raw.txt'), text); } catch { /* the capture itself is what matters */ }
+  }
+  const ok = new RegExp(endPatternEarly).test(text);
+  console.error(`  ${portSetting}: ${ok ? 'succeeded' : 'no end pattern'}, ${text.length} byte(s)`);
+  process.stdout.write(text);
+  process.exitCode = ok ? 0 : 1;
+} else {
+
+const url = required('BOT_API_URL').replace(/\/+$/, '');
+const token = required('BOT_API_TOKEN');
+const agent = required('BOT_API_AGENT');
+const ports = portSetting.split(',').map((p) => p.trim()).filter(Boolean);
+const baud = Number(process.env.BOARD_SERIAL_BAUD || '115200');
 // The caller kills this process at BOARD_CAPTURE_TIMEOUT_MS; the listeners
 // must have returned before that, or their result is never seen.
 const seconds = Math.max(5, Math.ceil(timeoutMs / 1000) - 10);
+const endPattern = process.env.BOARD_CAPTURE_END_PATTERN || 'PROBE_END lines=\\d+';
+if (endPattern.includes("'")) {
+  console.error('BOARD_CAPTURE_END_PATTERN must not contain a single quote; it is embedded in a PowerShell string.');
+  process.exit(2);
+}
 
 for (const port of ports) {
   if (!/^(COM\d+|CNC[AB]\d+)$/.test(port)) {
@@ -48,7 +82,7 @@ function listener(port) {
     `$end = (Get-Date).AddSeconds(${seconds});`,
     'while ((Get-Date) -lt $end) {',
     '  try { $sb.Append($p.ReadExisting()) | Out-Null } catch {}',
-    "  if ($sb.ToString() -match 'PROBE_END lines=\\d+') { break }",
+    `  if ($sb.ToString() -match '${endPattern}') { break }`,
     '  Start-Sleep -Milliseconds 100',
     '}',
     '$p.Close(); $sb.ToString()',
@@ -72,7 +106,7 @@ async function runJob(port) {
 }
 
 const results = await Promise.all(ports.map((port) => runJob(port).catch((error) => ({ port, status: 'error', stdout: '', stderr: String(error) }))));
-const withTrace = results.find((r) => /PROBE v\d+ name=/.test(r.stdout));
+const withTrace = results.find((r) => new RegExp(endPattern).test(r.stdout));
 const chosen = withTrace ?? results.find((r) => r.stdout.trim()) ?? results[0];
 
 // Whatever came off the port is kept beside the probe's build output, so a
@@ -96,3 +130,5 @@ if (withTrace && ports.length > 1) {
 // its footer. Setting the exit code lets stdout drain first.
 process.stdout.write(chosen.stdout);
 process.exitCode = withTrace ? 0 : 1;
+
+}

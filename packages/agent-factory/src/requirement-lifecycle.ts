@@ -383,7 +383,7 @@ function draftMarkdown(input: {
           '- A register whose board value contradicts an earlier boundary keeps that boundary\'s default in its own device and gate, and is set to the board value in the board-verified composition; the profile records both.',
           '- The profile regenerates from the committed probe manifest and board trace, and a host test fails when the model and the profile disagree.',
           '- The probe exercises the behaviour this requirement models: at least one WAIT or MEM step whose outcome the board reports as ok, so a model that only returns reset values cannot pass parity.',
-          '- `factory probe simics-run` followed by `factory probe compare` reports an empty diff, and the boardParity gate passes.',
+          '- `factory probe sim-run` followed by `factory probe compare` reports an empty diff, and the boardParity gate passes.',
           '- The earlier regression firmware still reaches its own output through the new composition.',
         ]
       : []),

@@ -100,8 +100,9 @@ test('new projects enable the draft requirement branch workflow', () => {
       reviewerName: '${AI_REVIEWER_MODEL}',
       baseUrl: '${AI_BASE_URL:-}',
       apiKey: '${AI_API_KEY:-}',
-      executable: '${AI_CODEX_EXECUTABLE:-codex}',
+      executable: '${AI_CLI_EXECUTABLE:-codex}',
       reasoningEffort: '${AI_CODEX_REASONING_EFFORT:-medium}',
+      effort: '${AI_CLAUDE_EFFORT:-high}',
       maxTokens: 32768,
     });
     const ci = readFileSync(join(result.projectRoot, '.gitlab-ci.yml'), 'utf8');
@@ -487,7 +488,7 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
       'SIMULATOR_REMOTE_PORT', 'SIMULATOR_REMOTE_BASE_PATH', 'SIMULATOR_REMOTE_PROJECT_NAME',
       'SIMULATOR_REMOTE_IDENTITY_FILE', 'SIMULATOR_TOOLCHAIN_BIN',
       'BOARD_PROGRAM_COMMAND_JSON', 'BOARD_RESET_COMMAND_JSON', 'BOARD_SERIAL_PORT', 'BOARD_SERIAL_BAUD',
-      'BOARD_CAPTURE_COMMAND_JSON', 'BOARD_CAPTURE_TIMEOUT_MS']) {
+      'BOARD_CAPTURE_COMMAND_JSON', 'BOARD_CAPTURE_TIMEOUT_MS', 'BOT_API_URL', 'BOT_API_TOKEN', 'BOT_API_AGENT']) {
       assert.match(envExample, new RegExp(`^${name}=`, 'm'), `${name} is documented`);
     }
 
@@ -571,9 +572,26 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     // The Renode-specific and shared-twin files are generated.
     for (const file of ['platforms/board.repl', 'peripherals/README.md', 'scripts/renode-run.mjs',
       'scripts/build-probe.mjs', 'scripts/build-model.mjs', 'scripts/run-probe.resc',
-      'scripts/board/capture-serial.mjs', 'probes/_template/probe.c', 'probes/README.md', 'README.md']) {
+      'scripts/board/capture-serial.mjs', 'scripts/board/lab-agent.mjs',
+      'probes/_template/probe.c', 'probes/README.md', 'README.md']) {
       assert.ok(existsSync(join(projectRoot, file)), `${file} is generated`);
     }
+    // The runner reaches a remote Renode over the common axis and hands the
+    // .resc its inputs as Monitor variables, which Renode does not read from
+    // the environment.
+    const runner = read('scripts/renode-run.mjs');
+    assert.match(runner, /SIMULATOR_REMOTE_HOST/);
+    assert.match(runner, /\$PROBE_ELF=@/);
+    const resc = read('scripts/run-probe.resc');
+    assert.match(resc, /RunFor \$PROBE_RUN_SECONDS/);
+    assert.match(resc, /CreateFileBackend \$PROBE_UART_LOG/);
+    // references/ holds the reading material, so the source rooted there has to
+    // index documents and not only code.
+    for (const pattern of ['**/*.pdf', '**/*.docx', '**/*.repl']) {
+      assert.ok(config.rag.sources[0].include.includes(pattern), `${pattern} is indexed`);
+    }
+    assert.match(config.rag.sources[0].rootPath, /references/);
+
     // No Simics artefacts leak into a Renode project.
     assert.equal(existsSync(join(projectRoot, 'simics.config.json')), false, 'no Simics config');
     assert.equal(existsSync(join(projectRoot, 'scripts/simics-command.mjs')), false, 'no Simics wrapper');
@@ -583,7 +601,8 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     const envExample = read('.env.example');
     assert.match(envExample, /^SIMULATOR_HOST_TYPE=linux$/m);
     for (const name of ['SIMULATOR_BIN', 'SIMULATOR_REMOTE_HOST', 'SIMULATOR_REMOTE_USER',
-      'SIMULATOR_TOOLCHAIN_BIN', 'BOARD_PROGRAM_COMMAND_JSON', 'BOARD_SERIAL_PORT']) {
+      'SIMULATOR_TOOLCHAIN_BIN', 'SIMULATOR_TIMEOUT_MS', 'BOARD_PROGRAM_COMMAND_JSON', 'BOARD_SERIAL_PORT',
+      'BOT_API_URL', 'BOT_API_TOKEN', 'BOT_API_AGENT']) {
       assert.match(envExample, new RegExp(`^${name}=`, 'm'), `${name} is documented`);
     }
 

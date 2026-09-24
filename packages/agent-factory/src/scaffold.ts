@@ -199,6 +199,18 @@ function writeCommonFiles(projectRoot: string, projectName: string): void {
       '# AI_BASE_URL=https://api.x.ai/v1',
       '# AI_API_KEY=replace_me',
       '',
+      '# Claude CLI provider. The one provider that needs no API key: it drives',
+      '# the Claude Code CLI, which authenticates from the session of whoever is',
+      '# signed in on the machine that runs the factory. Every call is a fresh',
+      '# CLI session carrying its own harness prompt, about 35k input tokens that',
+      '# no later call reuses, so it suits long agent turns and not short, frequent',
+      '# requests. AI_CLAUDE_EFFORT is low|medium|high|xhigh|max.',
+      '# AI_PROVIDER=claude-cli',
+      '# AI_MODEL=claude-opus-5',
+      '# AI_REVIEWER_MODEL=claude-opus-5',
+      '# AI_CLI_EXECUTABLE=claude',
+      '# AI_CLAUDE_EFFORT=high',
+      '',
       '# Codex CLI provider (pipeline mode only):',
       '# AI_PROVIDER=codex-cli',
       '# AI_MODEL=gpt-5.6-sol',
@@ -915,8 +927,13 @@ function writeFactoryConfig(
       reviewerName: '${AI_REVIEWER_MODEL}',
       baseUrl: '${AI_BASE_URL:-}',
       apiKey: '${AI_API_KEY:-}',
-      executable: '${AI_CODEX_EXECUTABLE:-codex}',
+      // One knob for both CLI providers: which binary to run. It defaults to
+      // codex so existing projects are unaffected; a claude-cli project sets
+      // AI_CLI_EXECUTABLE=claude. Each provider's schema keeps only the effort
+      // field it understands and drops the other.
+      executable: '${AI_CLI_EXECUTABLE:-codex}',
       reasoningEffort: '${AI_CODEX_REASONING_EFFORT:-medium}',
+      effort: '${AI_CLAUDE_EFFORT:-high}',
       maxTokens: 32768,
     },
     pipeline: {
@@ -1206,9 +1223,10 @@ function writeRenodeTemplate(projectRoot: string, projectName: string): void {
       '',
       'A hardware-twin project modelled with **Renode**. The probe runs on the',
       'real board first; the same image runs under Renode; the parity gate',
-      'diffs the two traces. Renode is local and free, so there is no remote',
-      'host: `SIMULATOR_BIN` names the `renode` executable and the model runs',
-      'on this machine.',
+      'diffs the two traces. `SIMULATOR_BIN` names the `renode` executable;',
+      'with `SIMULATOR_REMOTE_HOST` empty it runs on this machine, set,',
+      '`scripts/renode-run.mjs` rsyncs the model and the probe image to that',
+      'host, runs Renode there over SSH and pulls the UART log back.',
       '',
       '## Layout',
       '',
@@ -1249,15 +1267,16 @@ function writeRenodeTemplate(projectRoot: string, projectName: string): void {
       '- The board trace is the oracle. A Renode model is right when the same probe image prints the same trace under Renode as on the board, line for line (volatile lines compared for presence only).',
       '- Describe a register-only device in the `.repl`; write a C# peripheral under `peripherals/` only when a device must act (a status word that follows a control write, a controller that reports ready, memory that appears once a controller is up). The probe WAIT and MEM lines are what such behaviour must reproduce.',
       '- The console UART the probe prints on must be modelled and mirrored to a file in `scripts/run-probe.resc`; `scripts/renode-run.mjs` hands that file to the parity gate as `$PROBE_TRACE_OUT`.',
-      '- Renode is local: never write a host name or path as a default. `SIMULATOR_BIN` and the optional `SIMULATOR_REMOTE_*` block come from `.env`.',
+      '- Never write a host name or path as a default. `SIMULATOR_BIN` and the optional `SIMULATOR_REMOTE_*` block (Renode on another host over SSH) come from `.env`.',
+      '- Renode\'s Monitor does not import OS environment variables: `scripts/renode-run.mjs` hands the ELF, the UART log path and the run length to `scripts/run-probe.resc` as Monitor variables (`-e \'$PROBE_ELF=@<path>\'`, `@` marks a path) before including it.',
       '',
     ].join('\n'), 'utf8');
   }
 
   // The board and simulator .env keys are the same for every simulator, so the
   // Renode project documents them from the shared block. There is no
-  // simics.config.json runner override here: Renode runs locally through
-  // scripts/renode-run.mjs.
+  // simics.config.json runner override here: scripts/renode-run.mjs drives
+  // Renode, locally or on the SIMULATOR_REMOTE_* host.
   const envExamplePath = resolve(projectRoot, '.env.example');
   writeFileSync(
     envExamplePath,
@@ -1533,20 +1552,28 @@ const PROBE_ENV_EXAMPLE = [
   'SIMULATOR_REMOTE_PROJECT_NAME=',
   '# SSH private key for the host. Empty means the default ssh-agent / ~/.ssh key.',
   'SIMULATOR_REMOTE_IDENTITY_FILE=',
-  '# arm-none-eabi bin directory on the host, used to build probe firmware.',
+  '# arm-none-eabi bin directory on whichever machine builds the probe, which is',
+  '# the SIMULATOR_REMOTE_* host when one is set. A shared toolchain there means',
+  '# every probe image comes out of the same compiler. Empty means PATH.',
   'SIMULATOR_TOOLCHAIN_BIN=',
+  '# Wall-clock bound for one simulator run, in milliseconds.',
+  'SIMULATOR_TIMEOUT_MS=240000',
   '',
   '# Real board (hardware-twin requirements). When BOARD_PROGRAM_COMMAND_JSON or',
   '# BOARD_SERIAL_PORT is empty, "factory probe board-run" runs in manual mode:',
   '# it prints what to load and waits for probes/<name>/board-trace.txt.',
   '# Command that programs one ELF into the board. JSON array; {elf} is replaced',
-  '# by the absolute ELF path, {name} by the probe name. Examples:',
+  '# by the absolute ELF path, {name} by the probe name. It is spawned with no',
+  '# shell, so a bare program name is looked up on PATH on every OS (Windows',
+  '# appends .exe); a full Windows path needs its backslashes doubled for JSON.',
+  '# Examples:',
   '#   ["FlashPro.exe","-script","scripts/board/program.tcl","-elf","{elf}"]',
   '#   ["openocd","-f","board/target.cfg","-c","program {elf} verify reset exit"]',
   'BOARD_PROGRAM_COMMAND_JSON=',
   '# Optional command run after programming when the board does not reset itself.',
   'BOARD_RESET_COMMAND_JSON=',
-  '# Serial port the probe prints on, e.g. /dev/tty.usbserial-A1 or COM5.',
+  '# Serial port the probe prints on, e.g. /dev/tty.usbserial-A1 or COM5; a comma',
+  '# list tries several; tcp://host:port reads a console the lab already bridges.',
   'BOARD_SERIAL_PORT=',
   'BOARD_SERIAL_BAUD=115200',
   '# Optional: a command whose stdout is the serial stream, instead of the',
@@ -1558,6 +1585,17 @@ const PROBE_ENV_EXAMPLE = [
   '# Delay between starting the capture and programming, so a capture that runs',
   '# on another machine has opened the port first.',
   'BOARD_CAPTURE_SETTLE_MS=500',
+  '# Optional regex that ends a capture instead of the probe footer, for a product',
+  '# image that prints its own marker.',
+  '# BOARD_CAPTURE_END_PATTERN=PROBE_END lines=\\d+',
+  '',
+  '# Lab bot service (not the board itself): the API that starts OpenOCD on a lab',
+  '# PC, reads its COM ports and runs a tool there. scripts/board/lab-agent.mjs',
+  '# and capture-serial.mjs (COM port mode) use it. BOT_API_AGENT is the lab PC',
+  '# the jobs go to. The token is a secret. Empty when the board is on this desk.',
+  'BOT_API_URL=',
+  'BOT_API_TOKEN=',
+  'BOT_API_AGENT=',
   '',
 ];
 
@@ -2199,7 +2237,12 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
         probeSimulatorRun: 'pnpm probe:sim-run',
       },
       900_000,
-      ['**/*.txt', '**/*.md', '**/*.json', '**/*.repl', '**/*.resc', '**/*.cs', '**/*.py', '**/*.c', '**/*.h'],
+      // references/ is where a project's reading material goes, so the source
+      // rooted there has to index documents, not only code: a manual dropped
+      // in as a PDF is the common case. The Renode file types follow.
+      ['**/*.txt', '**/*.md', '**/*.rst', '**/*.json', '**/*.yaml', '**/*.yml',
+        '**/*.pdf', '**/*.docx', '**/*.pptx', '**/*.csv', '**/*.html',
+        '**/*.repl', '**/*.resc', '**/*.cs', '**/*.py', '**/*.c', '**/*.h'],
       'renode',
     );
     writeRenodeTemplate(projectRoot, projectName);
