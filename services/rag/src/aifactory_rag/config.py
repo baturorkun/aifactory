@@ -173,6 +173,14 @@ class RagLlmConfig(BaseModel):
     # running this service, which is what makes it usable without an API key.
     executable: str = Field(default="claude", alias="executable")
     timeout_seconds: float = Field(default=300.0, alias="timeoutSeconds")
+    # claude-cli only: how hard the model thinks before answering, passed as
+    # the CLI's --effort. Empty leaves the CLI's own default in place.
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+
+    @field_validator("effort", mode="before")
+    @classmethod
+    def _blank_effort_is_default(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class RagRetrievalConfig(BaseModel):

@@ -129,7 +129,9 @@
       "provider": "${RAG_LLM_PROVIDER:-gemini}",
       "model": "${RAG_LLM_MODEL:-gemini-2.5-flash}",
       "apiKey": "${RAG_API_KEY:-}",
-      "temperature": 0.1
+      "temperature": 0.1,
+      "effort": "${RAG_LLM_EFFORT:-}",
+      "timeoutSeconds": "${RAG_LLM_TIMEOUT_SECONDS:-300}"
     },
     "retrieval": {
       "topK": "${RAG_TOP_K:-12}"

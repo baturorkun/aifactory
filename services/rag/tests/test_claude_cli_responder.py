@@ -134,6 +134,22 @@ class ClaudeCliResponderTests(unittest.TestCase):
         self.assertEqual(responder._CLAUDE_CLI_SEEDS["renode"], "SEED-NEW")
         self.assertNotIn("--resume", run.call_args_list[1].args[0])
 
+    def test_effort_is_passed_only_when_configured(self) -> None:
+        responder._CLAUDE_CLI_SEEDS.clear()
+        ok = json.dumps({"result": "a", "is_error": False, "session_id": "S"})
+        with mock.patch.object(responder.subprocess, "run", return_value=_completed(ok)) as run:
+            responder._complete_with_claude_cli(_config(effort="medium"), "Q", session_key="e1")
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--effort") + 1], "medium")
+
+        responder._CLAUDE_CLI_SEEDS.clear()
+        with mock.patch.object(responder.subprocess, "run", return_value=_completed(ok)) as run:
+            responder._complete_with_claude_cli(_config(), "Q", session_key="e2")
+        self.assertNotIn("--effort", run.call_args.args[0])
+
+    def test_a_blank_effort_means_the_cli_default(self) -> None:
+        self.assertIsNone(_config(effort="").llm.effort)
+
     def test_the_provider_is_selected_by_configuration(self) -> None:
         """A claude-cli project must not fall through to an API client."""
         chunk = responder.RetrievedChunk(

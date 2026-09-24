@@ -179,6 +179,8 @@ def _run_claude_cli(
         "--disallowedTools",
         denied,
     ]
+    if config.llm.effort:
+        command += ["--effort", config.llm.effort]
     if seed:
         command += ["--resume", seed, "--fork-session"]
 
