@@ -4,22 +4,41 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from time import perf_counter, sleep
 from typing import Any, Callable, TypeVar
 
 import psycopg
 
 from aifactory_rag.config import RagConfig, RagSourceConfig, find_source, require_ingest_config
-from aifactory_rag.db import connect, require_schema, vector_literal
+from aifactory_rag.db import connect, ensure_vector_index, require_schema, vector_literal
 from aifactory_rag.embeddings import EmbeddingAdapter, create_embedding_adapter
+from aifactory_rag.ingest.parsers import (
+    IMAGE_EXTENSIONS,
+    PLAIN_TEXT_EXTENSIONS,
+    PLAIN_TEXT_FILENAMES,
+)
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.parsers import parse_file
 from aifactory_rag.ingest.sources import SourceFile, effective_excludes, normalize_subdir, scan_files
 
 
 T = TypeVar("T")
-CONTENT_TYPE_DIRECTORIES = frozenset({"code", "documentation"})
+# What a file *is*, decided by its own name rather than by where it sits. A
+# repository cloned from GitHub arrives with its own shape - src/, docs/,
+# examples/, tools/ - and forcing it into two top-level folders would be manual
+# work that also mislabels: a README under src/ is documentation, a build script
+# under docs/ is code. Anything unrecognised stays unlabelled, and an unlabelled
+# chunk survives every content-type filter, so a new file type is never silently
+# dropped from a retrieval.
+DOCUMENTATION_EXTENSIONS = frozenset({
+    ".md", ".rst", ".txt", ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".csv",
+    ".html", ".htm", ".epub", ".odt",
+}) | IMAGE_EXTENSIONS
+
+# Structured data and configuration are machine material, not prose: a question
+# about how something works should not retrieve package.json.
+CODE_EXTENSIONS = PLAIN_TEXT_EXTENSIONS | {".json"}
 
 
 @dataclass
@@ -59,15 +78,26 @@ def _format_duration(seconds: float) -> str:
 
 
 def _content_type_metadata(relative_path: str) -> dict[str, str]:
-    """Classify files in a mixed code/documentation source by its first directory."""
-    content_type, separator, _ = relative_path.partition("/")
-    if not separator or content_type not in CONTENT_TYPE_DIRECTORIES:
-        return {}
-    return {"contentType": content_type}
+    """Classify a file as documentation or code from its extension."""
+    name = PurePosixPath(relative_path).name
+    extension = PurePosixPath(name).suffix.lower()
+    if extension in DOCUMENTATION_EXTENSIONS:
+        return {"contentType": "documentation"}
+    if extension in CODE_EXTENSIONS or name.lower() in PLAIN_TEXT_FILENAMES:
+        return {"contentType": "code"}
+    return {}
 
 
 def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir: str | None = None) -> IngestSummary:
     run_started = perf_counter()
+    # A corpus is only useful once it can be searched quickly, and the index has
+    # to match the width this run writes, so it is ensured here rather than left
+    # to a migration that cannot know which model is configured.
+    try:
+        if ensure_vector_index(config.database.connection_string, config.embedding.dimensions):
+            print(f"Built the {config.embedding.dimensions}-wide vector index.", flush=True)
+    except Exception as exc:  # an index is an optimisation, never a reason to refuse an ingest
+        print(f"Could not ensure the vector index ({exc}); retrieval will scan instead.", flush=True)
     require_ingest_config(config)
     require_schema(config.database.connection_string)
     source = find_source(config, source_id)

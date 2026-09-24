@@ -195,22 +195,13 @@ class ResilientEmbeddingTests(unittest.TestCase):
             all(
                 metadata == {
                     "relativePath": "standards/standard.pdf",
+                    # Classified from the extension, so a file is labelled
+                    # wherever it sits: see tests/test_content_type.py.
+                    "contentType": "documentation",
                 }
                 for metadata in connection.inserted_metadata
             )
         )
-
-    def test_content_type_uses_the_first_root_relative_directory_name(self) -> None:
-        self.assertEqual(
-            _content_type_metadata("code/devices/uart.dml"),
-            {"contentType": "code"},
-        )
-        self.assertEqual(
-            _content_type_metadata("documentation/guides/reference.pdf"),
-            {"contentType": "documentation"},
-        )
-        self.assertEqual(_content_type_metadata("root-file.pdf"), {})
-        self.assertEqual(_content_type_metadata("standards/section-one.pdf"), {})
 
     @patch("aifactory_rag.ingest.pipeline.sleep", lambda _: None)
     def test_database_operation_reconnects_and_retries_after_admin_shutdown(self) -> None:

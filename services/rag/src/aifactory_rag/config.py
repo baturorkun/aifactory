@@ -163,11 +163,16 @@ class RagEmbeddingConfig(BaseModel):
 
 
 class RagLlmConfig(BaseModel):
-    provider: Literal["openai", "claude", "gemini", "ollama"] = "openai"
+    provider: Literal["openai", "claude", "claude-cli", "gemini", "ollama"] = "openai"
     model: str = "gpt-4o-mini"
     api_key: str | None = Field(default=None, alias="apiKey")
     base_url: str | None = Field(default=None, alias="baseUrl")
     temperature: float = 0.1
+    # claude-cli only: the Claude Code executable and how long one answer may
+    # take. The CLI authenticates from the signed-in session on the machine
+    # running this service, which is what makes it usable without an API key.
+    executable: str = Field(default="claude", alias="executable")
+    timeout_seconds: float = Field(default=300.0, alias="timeoutSeconds")
 
 
 class RagRetrievalConfig(BaseModel):

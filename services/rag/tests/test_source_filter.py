@@ -73,13 +73,23 @@ class SourceFilterTests(unittest.TestCase):
         cursor = self.run_retrieve(["source-a"])
 
         self.assertIn("c.source_id = ANY(%s)", cursor.statement)
-        self.assertEqual(cursor.params[1], ["source-a"])
+        # params: query vector, embedding width, the source list, vector again, limit
+        self.assertEqual(cursor.params[2], ["source-a"])
 
     def test_retrieval_has_no_source_clause_without_filter(self) -> None:
         cursor = self.run_retrieve(None)
 
         self.assertNotIn("c.source_id = ANY(%s)", cursor.statement)
-        self.assertEqual(len(cursor.params), 3)
+        self.assertEqual(len(cursor.params), 4)
+
+    def test_retrieval_ignores_chunks_from_another_embedding_model(self) -> None:
+        """Mixed vector widths make PostgreSQL raise, which would take the whole
+        query down; the width predicate keeps the service answering while a
+        corpus is being moved to a new model, or left behind on the old one."""
+        cursor = self.run_retrieve(["source-a"])
+
+        self.assertIn("vector_dims(c.embedding) = %s", cursor.statement)
+        self.assertIsInstance(cursor.params[1], int)
 
 
 if __name__ == "__main__":

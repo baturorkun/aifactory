@@ -57,6 +57,42 @@ def require_schema(connection_string: str) -> None:
         )
 
 
+def ensure_vector_index(connection_string: str, dimensions: int) -> bool:
+    """Make sure the current embedding width has an index to search through.
+
+    The embedding column is dimensionless so that one database can hold more
+    than one model's vectors while a corpus is moved between them. pgvector
+    cannot index such a column, which is why the index is built on the cast to
+    a fixed width and why the retrieval query must be written the same way.
+    Without it every question is a sequential scan of every chunk: measured at
+    555 ms against 1.9 ms on a quarter of a million rows.
+
+    Returns True when an index was created, False when one already existed.
+    """
+    name = f"idx_rag_chunks_embedding_hnsw_{dimensions}"
+    # CREATE INDEX CONCURRENTLY cannot run inside a transaction, and it lets the
+    # ingest keep writing while the index is built.
+    with psycopg.connect(connection_string, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (name,))
+            row = cur.fetchone()
+            if row and row[0]:
+                return False
+            # A parallel build allocates a shared-memory segment, and a
+            # container's /dev/shm is 64 MB whatever the host has. One worker
+            # keeps the working memory private to the process instead.
+            cur.execute("SET max_parallel_maintenance_workers = 0")
+            cur.execute("SET maintenance_work_mem = '2GB'")
+            cur.execute(
+                f"""
+                CREATE INDEX CONCURRENTLY IF NOT EXISTS {name}
+                ON rag_chunks USING hnsw ((embedding::vector({dimensions})) vector_cosine_ops)
+                WHERE status = 'active' AND vector_dims(embedding) = {dimensions}
+                """
+            )
+    return True
+
+
 def vector_literal(values: Iterable[float]) -> str:
     return "[" + ",".join(f"{value:.8f}" for value in values) + "]"
 

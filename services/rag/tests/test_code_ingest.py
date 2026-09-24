@@ -50,6 +50,33 @@ class CodeIngestTests(unittest.TestCase):
             self.assertIn("device sample_device", parse_file(dml))
             self.assertIn("run-command-file", parse_file(script))
 
+    def test_parse_file_supports_renode_platforms_and_scripts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            platform = root / "board.repl"
+            script = root / "board.resc"
+            doc = root / "changelog.rst"
+            platform.write_text(
+                'cpu: CPU.CortexM @ sysbus\n    cpuType: "cortex-m3"\n', encoding="utf-8"
+            )
+            script.write_text("machine LoadPlatformDescription @board.repl\n", encoding="utf-8")
+            doc.write_text("Release notes\n=============\n", encoding="utf-8")
+
+            self.assertIn("CPU.CortexM", parse_file(platform))
+            self.assertIn("LoadPlatformDescription", parse_file(script))
+            self.assertIn("Release notes", parse_file(doc))
+
+    def test_parse_file_supports_hardware_description_and_robot_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            verilog = root / "dut.sv"
+            robot = root / "run.robot"
+            verilog.write_text("module dut(input clk); endmodule\n", encoding="utf-8")
+            robot.write_text("*** Test Cases ***\nBoot\n    Start Emulation\n", encoding="utf-8")
+
+            self.assertIn("module dut", parse_file(verilog))
+            self.assertIn("Start Emulation", parse_file(robot))
+
     def test_default_source_scans_code_and_skips_generated_trees(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

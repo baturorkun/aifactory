@@ -60,6 +60,23 @@ PLAIN_TEXT_EXTENSIONS = {
     ".gql",
     ".dml",
     ".simics",
+    # Renode's platform descriptions and scripts, the counterparts of Simics's
+    # .dml and .simics above. Both are plain text, and in a Renode corpus they
+    # are the most useful files there are: a platform description is the worked
+    # example of how a peripheral model is registered and parameterised.
+    ".repl",
+    ".resc",
+    ".rst",
+    # Hardware description and the Robot Framework tests that drive it. A
+    # co-simulation example is mostly Verilog: without these the repository
+    # indexes its README and drops the thing it is an example of.
+    ".v",
+    ".sv",
+    ".vh",
+    ".svh",
+    ".vhd",
+    ".vhdl",
+    ".robot",
     ".mk",
     ".inc",
     ".include",

@@ -25,7 +25,13 @@
   },
   "targetProject": {
     "applyArtifacts": false,
-    "allowedPaths": ["src", "app", "components", "lib", "tests"],
+    "allowedPaths": [
+      "src",
+      "app",
+      "components",
+      "lib",
+      "tests"
+    ],
     "commands": {
       "typeCheck": "pnpm typecheck",
       "lint": "pnpm lint",
@@ -79,6 +85,23 @@
         "type": "filesystem",
         "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}",
         "excludeAdditions": "${RAG_SOURCE_3_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_4_ID:-source-4}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_4_PATH:-./references/source-4}",
+        "include": [
+          "**/*.md",
+          "**/*.rst",
+          "**/*.txt",
+          "**/*.repl",
+          "**/*.resc",
+          "**/*.cs",
+          "**/*.h",
+          "**/*.c",
+          "**/*.pdf"
+        ],
+        "excludeAdditions": "${RAG_SOURCE_4_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "ingest": {
