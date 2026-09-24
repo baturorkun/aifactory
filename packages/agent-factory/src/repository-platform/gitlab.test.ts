@@ -175,3 +175,25 @@ test('GitLab adapter inspects readiness and merges with the expected SHA', async
     sha: 'abc123', should_remove_source_branch: true,
   });
 });
+
+test('GitLab adapter reports a skipped head pipeline as no checks, not a failure', async () => {
+  const statusFor = async (pipeline: string | null) => {
+    const fetchMock: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/approvals')) return Response.json({ approved: true });
+      return Response.json({
+        iid: 9, title: 'RQ-0007 - Platform', web_url: 'https://gitlab.example.test/group/project/-/merge_requests/9',
+        state: 'opened', source_branch: 'factory/RQ-0007', target_branch: 'main', draft: false, sha: 'abc123',
+        detailed_merge_status: 'mergeable', head_pipeline: pipeline ? { status: pipeline } : null, merged_at: null,
+      });
+    };
+    const adapter = new GitLabRepositoryPlatform(settings, fetchMock);
+    return (await adapter.inspectChangeRequest((await adapter.getChangeRequest(9))!)).ciStatus;
+  };
+  assert.equal(await statusFor('skipped'), 'unknown');
+  assert.equal(await statusFor(null), 'unknown');
+  assert.equal(await statusFor('failed'), 'failed');
+  assert.equal(await statusFor('canceled'), 'failed');
+  assert.equal(await statusFor('running'), 'pending');
+  assert.equal(await statusFor('success'), 'success');
+});

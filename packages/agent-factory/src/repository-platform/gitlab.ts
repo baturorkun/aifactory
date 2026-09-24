@@ -243,11 +243,16 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
           ? 'conflicted'
           : 'blocked';
     const pipeline = mr.head_pipeline?.status;
+    // A skipped pipeline ran no job ([skip ci], or a workflow rule such as the
+    // generated one that skips approve/complete commits), so there is no check
+    // to satisfy: report it like no pipeline at all and let GitLab's own merge
+    // status, which honours the project's "pipelines must succeed" setting,
+    // decide. The GitHub adapter treats a skipped check the same way.
     const ciStatus = pipeline === 'success'
       ? 'success'
       : pipeline && ['created', 'pending', 'running', 'preparing', 'waiting_for_resource'].includes(pipeline)
         ? 'pending'
-        : pipeline ? 'failed' : 'unknown';
+        : !pipeline || pipeline === 'skipped' ? 'unknown' : 'failed';
     return {
       changeRequest: asChangeRequest(mr),
       headSha: mr.sha ?? '',

@@ -743,7 +743,11 @@ function assertChangeRequestReady(
   // A repository with no CI reports no status and no check runs. The provider
   // has still evaluated its required checks: a mergeable change request with
   // nothing pending or failed is the provider saying nothing is required.
-  const noChecksRequired = readiness.ciStatus === 'unknown' && readiness.mergeStatus === 'mergeable';
+  // Before the change request leaves draft, "blocked by draft" is the only
+  // thing the provider can say; the check after it is marked ready asks for
+  // "mergeable" again, so no merge happens on the draft allowance alone.
+  const draftBlocked = allowDraftBlocked && readiness.draft && readiness.mergeStatus === 'blocked';
+  const noChecksRequired = readiness.ciStatus === 'unknown' && (readiness.mergeStatus === 'mergeable' || draftBlocked);
   if (readiness.ciStatus !== 'success' && !noChecksRequired) {
     throw new Error(`Required CI checks are ${readiness.ciStatus}; completion is blocked.`);
   }

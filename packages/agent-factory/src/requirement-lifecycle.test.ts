@@ -760,6 +760,15 @@ test('a mergeable change request in a repository with no CI is not blocked on un
       changeRequest: { iid: 1, url: 'u', title: 't', sourceBranch: created.branch, targetBranch: 'main', state: 'opened' },
       headSha: 'abc', draft: false, mergeStatus: 'blocked', ciStatus: 'unknown', approvalsSatisfied: true,
     }), /Required CI checks are unknown/);
+    // Still a draft: the only thing the provider can say is "blocked by draft".
+    // Accepted before the change request is marked ready ...
+    const draft = {
+      changeRequest: { iid: 1, url: 'u', title: 't', sourceBranch: created.branch, targetBranch: 'main', state: 'opened' as const },
+      headSha: 'abc', draft: true, mergeStatus: 'blocked' as const, ciStatus: 'unknown' as const, approvalsSatisfied: true,
+    };
+    assert.doesNotThrow(() => assertChangeRequestReadyForTest(draft, true));
+    // ... but never as the final check before merging.
+    assert.throws(() => assertChangeRequestReadyForTest(draft), /Required CI checks are unknown/);
   } finally {
     repo.cleanup();
   }
