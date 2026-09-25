@@ -45,7 +45,7 @@ class BuildInfoTests(unittest.TestCase):
             self.assertFalse(running.as_dict()["restartPending"])
 
             # A deployment copies a newer file in while the old process runs.
-            later = running.deployed_at + 60
+            later = running.updated_at + 60
             target = package / "ingest" / "parsers.py"
             target.write_text("READERS = ['pdf', 'xlsx']\n")
             os.utime(target, (later, later))
@@ -58,7 +58,7 @@ class BuildInfoTests(unittest.TestCase):
             package, pyproject = _package(Path(tmp))
             info = build_info.capture(package, pyproject, started_at=0.0).as_dict()
             self.assertEqual(info["startedAt"], "1970-01-01T00:00:00+00:00")
-            self.assertRegex(str(info["deployedAt"]), r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$")
+            self.assertRegex(str(info["updatedAt"]), r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$")
             files = build_info.code_files(package, pyproject)
             self.assertFalse(any("__pycache__" in f.parts for f in files))
             self.assertIn(pyproject, files)

@@ -32,3 +32,19 @@ Görevin daha uzun sürmesi kabul edilebilir. Token tüketimini azaltmak için:
 Bir Superpowers skill’i daha fazla token harcatsa bile hata, tekrar çalışma veya yanlış uygulama riskini belirgin biçimde azaltıyorsa kullanılabilir.
 
 <!-- superpowers-token-policy:end -->
+
+## RAG sunucusuna deploy (rsync.sh)
+
+RAG servisi (API + web) `root@192.168.1.2:/srv/aifactory` üzerinde çalışır; sunucudaki kopya git checkout değildir. Kod oraya **yalnızca `./rsync.sh` ile** gider; script'e güvenilir, dosyaları tek tek `scp` ile kopyalama.
+
+- `./rsync.sh` repo'nun tamamını `--delete-delay` ile eşitler (`.git`, `.venv-rag`, `node_modules`, `dist`, `coverage`, `*.log` hariç). Host, kullanıcı ve dizin `AIFACTORY_RSYNC_HOST` / `AIFACTORY_RSYNC_USER` / `AIFACTORY_RSYNC_DIR` ile değiştirilebilir.
+- **`.env` de senkronlanır:** yerel `.env` sunucunun kaynağıdır. Sunucuda elle oluşturulan her şey (yedek klasörleri dahil) bir sonraki sync'te silinir.
+- **Sync servisi yeniden başlatmaz.** Değişen parçaya göre ardından:
+  - RAG servis kodu (`services/rag`) veya `factory.config.json`: `ssh root@192.168.1.2 'systemctl restart aifactory-rag'`
+  - Yeni Python bağımlılığı (`services/rag/pyproject.toml`): önce `ssh root@192.168.1.2 '/srv/aifactory/.venv-rag/bin/pip install "<paket>"'`, sonra restart.
+  - Web (`services/rag-web/public`): `ssh root@192.168.1.2 'cd /srv/aifactory && docker compose --env-file .env -f infra/rag/compose.yaml up -d --build --no-deps rag-web'`. `--env-file .env` şart: yoksa compose varsayılan `127.0.0.1:8080`'e bağlanmaya çalışır ve web kapanır.
+- **Ingest** (yeni dosya tipleri veya dokümanlar için; değişmeyen dosyalar atlanır):
+  `ssh root@192.168.1.2 'cd /srv/aifactory && set -a && . ./.env && set +a && PYTHONPATH=services/rag/src .venv-rag/bin/python -m aifactory_rag --config factory.config.json ingest --source <source-id>'`
+- **Doğrulama:** `http://192.168.1.2:9090` → "RAG service" kartı. **Build** yereldeki kodun parmak iziyle aynı olmalı:
+  `cd services/rag && python3 -c "import sys; sys.path.insert(0,'src'); from aifactory_rag import build_info; print(build_info.capture().build)"`.
+  Kart sarıysa ve "restart pending" yazıyorsa kod güncellendi ama servis yeniden başlatılmadı.

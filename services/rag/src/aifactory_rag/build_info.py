@@ -7,12 +7,13 @@ is visible from outside. So the running process reports:
 - build: a fingerprint of its own source (every .py under the package plus
   pyproject.toml). The same code always gives the same build, so two hosts,
   or a host and a commit, can be compared without a git checkout.
-- deployedAt: when those files last changed on disk, i.e. the deployment
-- startedAt: when this process started, i.e. the last restart
+- updatedAt: when those files last changed. rsync.sh keeps the source
+  mtimes, so this is when the code itself last changed, not the copy time
+- startedAt: when this process started (diagnostic; not shown on the page)
 - restartPending: the files changed after the process started, so the code
   on disk is not the code that is running
 
-The fingerprint and deployedAt are taken once at start-up and describe the
+The fingerprint and updatedAt are taken once at start-up and describe the
 running code; restartPending looks at the disk again on every call.
 """
 
@@ -66,19 +67,19 @@ def _iso(timestamp: float) -> str:
 class BuildInfo:
     version: str
     build: str
-    deployed_at: float
+    updated_at: float
     started_at: float
     files: tuple[Path, ...]
 
     def restart_pending(self) -> bool:
         # One second of slack: some filesystems round mtimes.
-        return latest_mtime(list(self.files)) > self.deployed_at + 1.0
+        return latest_mtime(list(self.files)) > self.updated_at + 1.0
 
     def as_dict(self) -> dict[str, object]:
         return {
             "version": self.version,
             "build": self.build,
-            "deployedAt": _iso(self.deployed_at),
+            "updatedAt": _iso(self.updated_at),
             "startedAt": _iso(self.started_at),
             "restartPending": self.restart_pending(),
         }
@@ -94,7 +95,7 @@ def capture(
     return BuildInfo(
         version=package_version(pyproject),
         build=fingerprint(files, root),
-        deployed_at=latest_mtime(files),
+        updated_at=latest_mtime(files),
         started_at=datetime.now(tz=timezone.utc).timestamp() if started_at is None else started_at,
         files=tuple(files),
     )

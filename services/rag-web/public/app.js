@@ -15,8 +15,7 @@ const llmProvider = document.querySelector('#llm-provider');
 const buildCard = document.querySelector('.build-card');
 const buildVersion = document.querySelector('#build-version');
 const buildId = document.querySelector('#build-id');
-const buildDeployed = document.querySelector('#build-deployed');
-const buildStarted = document.querySelector('#build-started');
+const buildUpdated = document.querySelector('#build-updated');
 const buildWarning = document.querySelector('#build-warning');
 
 let busy = false;
@@ -259,14 +258,13 @@ function formatStamp(iso) {
     + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-// Which code the RAG API runs and since when (services/rag build_info.py), so a
-// deployment and the restart onto it can be confirmed here.
+// Which code the RAG API runs (services/rag build_info.py): the build confirms a
+// deployment, and "restart pending" says the code on disk is not yet running.
 function renderBuildInfo(build) {
   const fields = [
     [buildVersion, build?.version],
     [buildId, build?.build],
-    [buildDeployed, build?.deployedAt && formatStamp(build.deployedAt), build?.deployedAt],
-    [buildStarted, build?.startedAt && formatStamp(build.startedAt), build?.startedAt],
+    [buildUpdated, build?.updatedAt && formatStamp(build.updatedAt), build?.updatedAt],
   ];
   for (const [element, text, title] of fields) {
     element.textContent = text || 'unknown';
