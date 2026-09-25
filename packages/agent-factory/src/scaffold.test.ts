@@ -590,7 +590,7 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     assert.match(resc, /CreateFileBackend \$PROBE_UART_LOG/);
     // references/ holds the reading material, so the source rooted there has to
     // index documents and not only code.
-    for (const pattern of ['**/*.pdf', '**/*.docx', '**/*.repl']) {
+    for (const pattern of ['**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.repl']) {
       assert.ok(config.rag.sources[0].include.includes(pattern), `${pattern} is indexed`);
     }
     assert.match(config.rag.sources[0].rootPath, /references/);

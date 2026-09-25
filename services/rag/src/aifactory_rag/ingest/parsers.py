@@ -94,7 +94,7 @@ PLAIN_TEXT_FILENAMES = {
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 SUPPORTED_EXTENSIONS = (
     PLAIN_TEXT_EXTENSIONS
-    | {".json", ".csv", ".html", ".htm", ".pdf", ".docx", ".pptx"}
+    | {".json", ".csv", ".html", ".htm", ".pdf", ".docx", ".pptx", ".xlsx", ".xlsm"}
     | IMAGE_EXTENSIONS
 )
 
@@ -177,6 +177,8 @@ def parse_file(path: Path) -> str:
         return _parse_docx(path)
     if extension == ".pptx":
         return _parse_pptx(path)
+    if extension in {".xlsx", ".xlsm"}:
+        return _parse_xlsx(path)
     if extension in IMAGE_EXTENSIONS:
         return _parse_image(path)
     raise ValueError(f"Unsupported file extension: {extension}")
@@ -293,3 +295,41 @@ def _parse_pptx(path: Path) -> str:
         if texts:
             slides.append(f"[slide {slide_index + 1}]\n" + "\n".join(texts))
     return "\n\n".join(slides)
+
+
+def _cell_text(value: object) -> str:
+    """One cell as text: blanks empty, whole floats without the .0, line breaks
+    flattened so a row stays on one line."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return " / ".join(part.strip() for part in str(value).splitlines() if part.strip())
+
+
+def _parse_xlsx(path: Path) -> str:
+    """Every worksheet as '[sheet <name>]' followed by its non-empty rows, cells
+    joined with ' | ' like the CSV and PPTX tables. Formula cells give the value
+    Excel last computed. Register maps and interface control documents are
+    often spreadsheets, so the sheet name is kept: it is what a reader asks for."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required to ingest XLSX files. Run: pnpm rag:install") from exc
+
+    workbook = load_workbook(str(path), read_only=True, data_only=True)
+    try:
+        sheets: list[str] = []
+        for sheet in workbook.worksheets:
+            rows: list[str] = []
+            for row in sheet.iter_rows(values_only=True):
+                cells = [_cell_text(value) for value in row]
+                while cells and not cells[-1]:
+                    cells.pop()
+                if any(cells):
+                    rows.append(" | ".join(cells))
+            if rows:
+                sheets.append(f"[sheet {sheet.title}]\n" + "\n".join(rows))
+        return "\n\n".join(sheets)
+    finally:
+        workbook.close()

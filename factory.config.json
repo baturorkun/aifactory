@@ -99,7 +99,8 @@
           "**/*.cs",
           "**/*.h",
           "**/*.c",
-          "**/*.pdf"
+          "**/*.pdf",
+          "**/*.xlsx"
         ],
         "excludeAdditions": "${RAG_SOURCE_4_EXCLUDE_ADDITIONS:-[]}"
       }

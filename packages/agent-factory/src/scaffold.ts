@@ -1026,7 +1026,7 @@ function writeFactoryConfig(
           id: 'fileserver',
           type: 'filesystem',
           rootPath: '${RAG_FILESERVER_PATH:-./references}',
-          include: ragIncludes ?? ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
+          include: ragIncludes ?? ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx', '**/*.xlsx'],
           exclude: ['**/~$*', '**/.DS_Store'],
         },
       ],
@@ -2220,7 +2220,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
         probeSimulatorRun: 'pnpm probe:sim-run',
       },
       900_000,
-      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile'],
+      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile'],
       'simics',
     );
     writeSimicsTemplate(projectRoot, projectName);
@@ -2242,7 +2242,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       // rooted there has to index documents, not only code: a manual dropped
       // in as a PDF is the common case. The Renode file types follow.
       ['**/*.txt', '**/*.md', '**/*.rst', '**/*.json', '**/*.yaml', '**/*.yml',
-        '**/*.pdf', '**/*.docx', '**/*.pptx', '**/*.csv', '**/*.html',
+        '**/*.pdf', '**/*.docx', '**/*.pptx', '**/*.xlsx', '**/*.csv', '**/*.html',
         '**/*.repl', '**/*.resc', '**/*.cs', '**/*.py', '**/*.c', '**/*.h'],
       'renode',
     );

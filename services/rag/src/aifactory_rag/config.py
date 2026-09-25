@@ -35,6 +35,8 @@ class RagSourceConfig(BaseModel):
             "**/*.pdf",
             "**/*.docx",
             "**/*.pptx",
+            "**/*.xlsx",
+            "**/*.xlsm",
             "**/*.jpg",
             "**/*.jpeg",
             "**/*.png",

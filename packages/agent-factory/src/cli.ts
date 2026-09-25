@@ -1072,7 +1072,7 @@ program
             id: 'fileserver',
             type: 'filesystem',
             rootPath: '${RAG_FILESERVER_PATH:-./references}',
-            include: ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx'],
+            include: ['**/*.txt', '**/*.md', '**/*.json', '**/*.csv', '**/*.html', '**/*.htm', '**/*.pdf', '**/*.docx', '**/*.pptx', '**/*.xlsx'],
             exclude: ['**/~$*', '**/.DS_Store'],
           },
         ],

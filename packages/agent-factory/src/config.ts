@@ -190,6 +190,7 @@ const RagSourceSchema = z.object({
       '**/*.pdf',
       '**/*.docx',
       '**/*.pptx',
+      '**/*.xlsx',
     ]),
   exclude: z.array(z.string()).default(['**/~$*', '**/.DS_Store']),
   excludeAdditions: z.array(z.string()).default([]),

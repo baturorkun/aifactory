@@ -33,6 +33,7 @@ T = TypeVar("T")
 # dropped from a retrieval.
 DOCUMENTATION_EXTENSIONS = frozenset({
     ".md", ".rst", ".txt", ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".csv",
+    ".xlsx", ".xlsm", ".xls",
     ".html", ".htm", ".epub", ".odt",
 }) | IMAGE_EXTENSIONS
 
