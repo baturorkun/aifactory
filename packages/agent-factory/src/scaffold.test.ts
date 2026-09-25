@@ -144,6 +144,9 @@ test('new projects enable the draft requirement branch workflow', () => {
     // the configured corpus unused while its absence was read as a gap.
     assert.match(agentGuidelines, /## Configured Documentation/);
     assert.match(agentGuidelines, /RAG_CHAT_URL/);
+    // Documents are looked up before anyone is asked for them.
+    assert.match(agentGuidelines, /Query the RAG first/);
+    assert.match(agentGuidelines, /before asking the user or the team/);
     assert.match(agentGuidelines, /RAG_SOURCE_IDS/);
     assert.match(agentGuidelines, /not its summary/);
     // A lifecycle commit edits the requirement file it is recording, which
