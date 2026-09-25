@@ -12,6 +12,12 @@ const sessionList = document.querySelector('#session-list');
 const modelCard = document.querySelector('.model-card');
 const llmModel = document.querySelector('#llm-model');
 const llmProvider = document.querySelector('#llm-provider');
+const buildCard = document.querySelector('.build-card');
+const buildVersion = document.querySelector('#build-version');
+const buildId = document.querySelector('#build-id');
+const buildDeployed = document.querySelector('#build-deployed');
+const buildStarted = document.querySelector('#build-started');
+const buildWarning = document.querySelector('#build-warning');
 
 let busy = false;
 const SESSION_STORAGE_KEY = 'aifactory-rag-chat-sessions-v1';
@@ -234,12 +240,42 @@ async function loadRuntimeInfo() {
     llmModel.title = info.llm.model;
     llmProvider.textContent = `${info.llm.provider} provider`;
     modelCard.classList.remove('unavailable');
+    renderBuildInfo(info.build);
   } catch {
     llmModel.textContent = 'Unavailable';
     llmModel.removeAttribute('title');
     llmProvider.textContent = 'Runtime information unavailable';
     modelCard.classList.add('unavailable');
+    renderBuildInfo(null);
   }
+}
+
+// Local date and time, minutes precision; the full ISO timestamp is the tooltip.
+function formatStamp(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+    + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// Which code the RAG API runs and since when (services/rag build_info.py), so a
+// deployment and the restart onto it can be confirmed here.
+function renderBuildInfo(build) {
+  const fields = [
+    [buildVersion, build?.version],
+    [buildId, build?.build],
+    [buildDeployed, build?.deployedAt && formatStamp(build.deployedAt), build?.deployedAt],
+    [buildStarted, build?.startedAt && formatStamp(build.startedAt), build?.startedAt],
+  ];
+  for (const [element, text, title] of fields) {
+    element.textContent = text || 'unknown';
+    if (title) element.title = title; else element.removeAttribute('title');
+  }
+  const pending = Boolean(build?.restartPending);
+  buildWarning.hidden = !pending;
+  buildCard.classList.toggle('pending', pending);
+  buildCard.classList.toggle('unavailable', !build);
 }
 
 function renderAnswerText(container, text) {

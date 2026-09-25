@@ -120,6 +120,13 @@ button { color: inherit; }
 .model-card strong { overflow: hidden; color: var(--text); font: 600 12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .model-card > span:not(.model-indicator) { color: var(--muted); font-size: 10px; text-transform: capitalize; }
 .model-card.unavailable .model-indicator { background: var(--danger); box-shadow: 0 0 0 3px rgba(255, 143, 134, 0.1); }
+.build-card { margin-top: 10px; }
+.build-facts { display: grid; gap: 4px; margin: 0; }
+.build-facts div { display: flex; justify-content: space-between; gap: 10px; min-width: 0; }
+.build-facts dt { color: var(--muted); font-size: 10px; }
+.build-facts dd { overflow: hidden; margin: 0; color: var(--text); font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.build-warning { margin: 2px 0 0; color: var(--danger); font-size: 10px; }
+.build-card.pending .model-indicator { background: #d4a84f; box-shadow: 0 0 0 3px rgba(212, 168, 79, 0.1); }
 
 .sidebar-footer { display: flex; align-items: center; gap: 9px; margin-top: auto; color: var(--muted); font-size: 12px; }
 .health-dot { width: 8px; height: 8px; border-radius: 50%; background: #d4a84f; box-shadow: 0 0 0 4px rgba(212, 168, 79, 0.1); }

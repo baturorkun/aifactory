@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from aifactory_rag import build_info
 from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
@@ -42,8 +43,9 @@ def resolve_source_file(source: RagSourceConfig, relative_path: str) -> Path:
 
 def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     factory_config = load_factory_config(config_path)
+    running = build_info.capture()
     require_schema(factory_config.rag.database.connection_string)
-    app = FastAPI(title="AI Factory RAG", version="0.1.0")
+    app = FastAPI(title="AI Factory RAG", version=running.version)
 
     def auth_claims(request: Request) -> dict[str, Any]:
         return validate_request(request, factory_config.rag.auth)
@@ -56,12 +58,15 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/runtime-info")
-    def runtime_info(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, dict[str, str]]:
+    def runtime_info(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, dict[str, Any]]:
         return {
             "llm": {
                 "provider": factory_config.rag.llm.provider,
                 "model": factory_config.rag.llm.model,
-            }
+            },
+            # Which code is running and since when, so a deployment and a
+            # restart can be confirmed from the web page (build_info.py).
+            "build": running.as_dict(),
         }
 
     @app.post("/query")
