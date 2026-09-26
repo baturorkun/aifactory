@@ -1260,7 +1260,7 @@ function writeRenodeTemplate(projectRoot: string, projectName: string): void {
     'probe:build': 'node scripts/build-probe.mjs',
     'probe:sim-run': 'node scripts/renode-run.mjs',
   });
-  writeProbeTemplate(projectRoot);
+  writeProbeTemplate(projectRoot, 'renode');
 
   writeFileSync(
     resolve(projectRoot, 'README.md'),
@@ -1346,7 +1346,7 @@ function writeSimicsTemplate(projectRoot: string, projectName: string): void {
     'probe:build': 'node scripts/simics-command.mjs probe-build',
     'probe:sim-run': 'node scripts/simics-command.mjs probe-sim-run',
   });
-  writeProbeTemplate(projectRoot);
+  writeProbeTemplate(projectRoot, 'simics');
 
   writeFileSync(
     resolve(projectRoot, 'README.md'),
@@ -1662,7 +1662,8 @@ const PROBE_ENV_EXAMPLE = [
   '',
 ];
 
-function writeProbeTemplate(projectRoot: string): void {
+function writeProbeTemplate(projectRoot: string, simulator?: Simulator): void {
+  const simulatorName = simulator === 'renode' ? 'Renode' : simulator === 'simics' ? 'Simics' : 'simulator';
   const template = resolve(projectRoot, 'probes/_template');
   mkdirSync(template, { recursive: true });
 
@@ -1671,7 +1672,7 @@ function writeProbeTemplate(projectRoot: string): void {
     [
       '# Probes',
       '',
-      'Probe firmware for hardware-twin requirements. A probe reads registers and prints what it saw; the real board runs it first, its output is committed as `board-trace.txt`, and the Simics model is done when the same ELF prints the same text.',
+      `Probe firmware for hardware-twin requirements. A probe reads registers and prints what it saw; the real board runs it first, its output is committed as \`board-trace.txt\`, and the ${simulatorName} model is done when the same ELF prints the same text.`,
       '',
       '```text',
       'probes/<name>/',
@@ -1682,7 +1683,9 @@ function writeProbeTemplate(projectRoot: string): void {
       '  linker.ld         memory layout for the probe (copied from _template, then adjusted)',
       '  <name>.elf        the image the board ran; committed, never rebuilt silently',
       '  board-trace.txt   what the board printed; committed, authoritative',
-      '  run.json          optional: simulatedCycles and timeoutSeconds for the Simics run',
+      ...(simulator === 'renode'
+        ? ['                    probe.json may also set renodeSeconds (run length) and vectorTable (boot address)']
+        : ['  run.json          optional: simulatedCycles and timeoutSeconds for the Simics run']),
       '```',
       '',
       'Start a probe by copying `_template/` to `probes/<name>/`. `factory probe build` hashes every file in the directory except the ELF, the trace and `run.json`, passes the hash as `PROBE_SOURCE_HASH`, and checks that the ELF embeds it. A probe changed after the board ran it no longer matches its trace, and the board must run it again.',

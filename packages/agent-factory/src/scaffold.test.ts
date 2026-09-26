@@ -618,6 +618,11 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     }
     assert.match(config.rag.sources[0].rootPath, /references/);
 
+    // The probes README names this project's simulator, not Simics.
+    const probesReadme = read('probes/README.md');
+    assert.match(probesReadme, /the Renode model is done/);
+    assert.doesNotMatch(probesReadme, /Simics/);
+
     // No Simics artefacts leak into a Renode project.
     assert.equal(existsSync(join(projectRoot, 'simics.config.json')), false, 'no Simics config');
     assert.equal(existsSync(join(projectRoot, 'scripts/simics-command.mjs')), false, 'no Simics wrapper');
