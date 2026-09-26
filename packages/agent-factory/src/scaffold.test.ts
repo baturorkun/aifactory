@@ -203,7 +203,8 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /package_offline:/);
     assert.match(ci, /docker_image:/);
     assert.match(ci, /stages:\n {2}- ai_factory\n {2}- build\n {2}- package\n {2}- image\n {2}- deploy/);
-    assert.match(ci, /AIFACTORY_RUNNER_IMAGE: "node:20-bullseye"/);
+    assert.match(ci, /AIFACTORY_RUNNER_IMAGE: "node:20-bookworm"/);
+    assert.doesNotMatch(ci, /build_ci_image/, 'only a Renode project builds its own CI image');
     assert.match(ci, /CODEX_HOME: "\/home\/gitlab-runner\/\.codex"/);
     assert.match(ci, /ai_factory_requirement_branch:\n {2}image: "\$AIFACTORY_RUNNER_IMAGE"\n {2}tags:\n {4}- linux/);
     assert.match(ci, /MODEL_PROVIDER=.*model-provider/);
@@ -590,6 +591,26 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     const resc = read('scripts/run-probe.resc');
     assert.match(resc, /RunFor \$PROBE_RUN_SECONDS/);
     assert.match(resc, /CreateFileBackend \$PROBE_UART_LOG/);
+    // The boot vector table is the probe's choice: 0x0 through a code window,
+    // or the RAM address of a probe loaded over a debugger.
+    assert.match(runner, /\$PROBE_VECTOR_TABLE=\$\{vectorTable\}/);
+    assert.match(runner, /manifest\.vectorTable/);
+    assert.match(resc, /# cpu VectorTableOffset \$PROBE_VECTOR_TABLE/);
+
+    // CI runs in an image with Renode and the toolchain, built by hand from
+    // ci/Dockerfile on the runner host; bullseye is gone from the mirrors.
+    const renodeCi = read('.gitlab-ci.yml');
+    assert.match(renodeCi, /AIFACTORY_RUNNER_IMAGE: "[a-z0-9-]+-ci:renode-1\.17\.0-armgnu-15\.2\.rel1"/);
+    assert.match(renodeCi, /^build_ci_image:\n {2}stage: ci_image/m);
+    assert.match(renodeCi, /- docker build -t "\$AIFACTORY_RUNNER_IMAGE" ci\//);
+    assert.match(renodeCi, /\$CI_PIPELINE_SOURCE == "web"'\n {6}when: manual/);
+    const dockerfile = read('ci/Dockerfile');
+    assert.match(dockerfile, /^FROM node:20-bookworm$/m);
+    assert.match(dockerfile, /ARG RENODE_VERSION=1\.17\.0/);
+    assert.match(dockerfile, /ARG ARM_GNU_VERSION=15\.2\.rel1/);
+    assert.match(dockerfile, /sha256sum -c -/);
+    assert.match(dockerfile, /SIMULATOR_REMOTE_HOST=""/);
+    assert.match(read('ci/build-image.sh'), /AIFACTORY_RUNNER_IMAGE/);
     // references/ holds the reading material, so the source rooted there has to
     // index documents and not only code.
     for (const pattern of ['**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.repl']) {

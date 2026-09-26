@@ -291,12 +291,27 @@ function writeReferencesReadme(projectRoot: string): void {
   );
 }
 
-function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean): void {
+// A Renode project's CI runs in an image built from templates/renode/ci/
+// Dockerfile, which pins these versions; the tag names them, so bumping one
+// means a new tag here and new ARGs there.
+const RENODE_CI_VERSION = '1.17.0';
+const ARM_GNU_CI_VERSION = '15.2.rel1';
+
+function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean, simulator?: Simulator): void {
+  const ciImage = simulator === 'renode' ? `${projectName}-ci:renode-${RENODE_CI_VERSION}-armgnu-${ARM_GNU_CI_VERSION}` : undefined;
   writeFileSync(
     resolve(projectRoot, '.gitlab-ci.yml'),
     [
       'workflow:',
       '  rules:',
+      ...(ciImage
+        ? [
+            '    # A pipeline started by hand (CI/CD > Pipelines > Run pipeline) always',
+            '    # runs; that is how build_ci_image is reached.',
+            "    - if: '$CI_PIPELINE_SOURCE == \"web\"'",
+            '      when: always',
+          ]
+        : []),
       "    - if: '$CI_COMMIT_BRANCH =~ /^factory-checkpoint\\//'",
       '      when: never',
       '    # Approving or completing a requirement rewrites that requirement own',
@@ -309,13 +324,23 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       '    - when: always',
       '',
       'stages:',
+      ...(ciImage ? ['  - ci_image'] : []),
       '  - ai_factory',
       ...(deployable ? ['  - build', '  - package', '  - image', '  - deploy'] : []),
       '',
       'variables:',
       '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
       '  AIFACTORY_REPO_URL: "https://github.com/baturorkun/aifactory.git"',
-      '  AIFACTORY_RUNNER_IMAGE: "node:20-bullseye"',
+      ...(ciImage
+        ? [
+            '  # ci/Dockerfile (build_ci_image below, or ci/build-image.sh): Node plus',
+            '  # Renode and the Arm GNU toolchain, SIMULATOR_* pointing at them. It lives',
+            '  # only on the runner host, so the runner needs pull_policy = ["if-not-present"].',
+            `  AIFACTORY_RUNNER_IMAGE: "${ciImage}"`,
+          ]
+        // bookworm: bullseye's security updates have left the Debian mirrors,
+        // so apt-get in a bullseye job fails.
+        : ['  AIFACTORY_RUNNER_IMAGE: "node:20-bookworm"']),
       '  CODEX_HOME: "/home/gitlab-runner/.codex"',
       ...(deployable
         ? [
@@ -331,6 +356,27 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       '    - .pnpm-store/',
       '    - .pnpm/',
       '',
+      ...(ciImage
+        ? [
+            '# Builds ci/Dockerfile into the image the jobs run in. Started by hand: Run',
+            '# pipeline, then play build_ci_image. The image stays on the runner host (no',
+            "# registry), so the runner mounts the host's Docker socket:",
+            '#   volumes = ["/cache", "/var/run/docker.sock:/var/run/docker.sock"]',
+            'build_ci_image:',
+            '  stage: ci_image',
+            '  image: docker:27-cli',
+            '  tags:',
+            '    - linux',
+            '  rules:',
+            "    - if: '$CI_PIPELINE_SOURCE == \"web\"'",
+            '      when: manual',
+            '    - when: never',
+            '  script:',
+            '    - docker build -t "$AIFACTORY_RUNNER_IMAGE" ci/',
+            "    - docker run --rm \"$AIFACTORY_RUNNER_IMAGE\" sh -c 'renode --version | head -1; arm-none-eabi-gcc --version | head -1'",
+            '',
+          ]
+        : []),
       'ai_factory_requirement_branch:',
       '  image: "$AIFACTORY_RUNNER_IMAGE"',
       '  tags:',
@@ -2207,7 +2253,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   if (!existsSync(agentsPath)) writeFileSync(agentsPath, generatedAgentGuidelines, 'utf8');
   if (hasSuperpowersCapability(options)) ensureSuperpowersTokenPolicy(agentsPath);
   writeReferencesReadme(projectRoot);
-  writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts');
+  writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts', options.simulator as Simulator | undefined);
   writeGithubActions(projectRoot, projectName);
 
   if (options.template === 'vanilla-ts') {

@@ -7,6 +7,8 @@
 #   $PROBE_ELF          the committed probe image        (set as @path)
 #   $PROBE_UART_LOG     the file the console text goes to (set as @path)
 #   $PROBE_RUN_SECONDS  simulated seconds to run
+#   $PROBE_VECTOR_TABLE the address the core boots from (probe.json
+#                       "vectorTable"; 0x0 unless the probe says otherwise)
 #
 # The probe prints its whole trace and then spins forever, so the run is
 # bounded by RunFor, not by the firmware stopping.
@@ -21,9 +23,11 @@ mach create "board"
 machine LoadPlatformDescription $ORIGIN/../platforms/board.repl
 
 sysbus LoadELF $PROBE_ELF
-# LoadELF guesses the vector table from the ELF (often wrongly, e.g.
-# 0x20000000). A Cortex-M board that boots with VTOR = 0 needs it pinned:
-# cpu VectorTableOffset 0x0
+# LoadELF guesses the vector table from the ELF (often wrongly), so a Cortex-M
+# probe pins it: 0x0 for a board that boots with VTOR = 0 through its code
+# window, or the probe's own table for one loaded into RAM over a debugger
+# (probe.json "vectorTable"). Uncomment for a Cortex-M CPU:
+# cpu VectorTableOffset $PROBE_VECTOR_TABLE
 
 # TODO: name the console UART the probe prints on, as declared in the .repl.
 uart1 CreateFileBackend $PROBE_UART_LOG true

@@ -72,12 +72,16 @@ test('compareProbeTraces reports value differences and honours volatile', () => 
   assert.equal(diff.equal, false);
   assert.equal(diff.differences.length, 1);
   assert.equal(diff.differences[0]!.kind, 'value');
-  assert.match(formatProbeTraceDiff(diff), /#2 value[\s\S]*board : SYSREG.DEVICE_VERSION[\s\S]*simics: SYSREG.DEVICE_VERSION/);
+  assert.match(formatProbeTraceDiff(diff, 'simics'), /#2 value[\s\S]*board : SYSREG.DEVICE_VERSION[\s\S]*simics: SYSREG.DEVICE_VERSION/);
+  // The label follows the simulator: a Renode diff does not say simics.
+  assert.match(formatProbeTraceDiff(diff, 'renode'), /board : SYSREG.DEVICE_VERSION[\s\S]*renode: SYSREG.DEVICE_VERSION/);
+  assert.doesNotMatch(formatProbeTraceDiff(diff, 'renode'), /simics/);
+  assert.match(formatProbeTraceDiff(diff), /board    : [\s\S]*simulator: /);
 
   const shorter = parseProbeTrace(TRACE.replace('MDDR.TEMP @0x40020f00 = 0x00000042 volatile\r\n', '').replace('lines=3', 'lines=2'));
   const missing = compareProbeTraces(board, shorter);
   assert.equal(missing.differences[0]!.kind, 'line');
-  assert.match(formatProbeTraceDiff(missing), /simics: \(missing\)/);
+  assert.match(formatProbeTraceDiff(missing, 'simics'), /simics: \(missing\)/);
 });
 
 // ------------------------------------------------------------
@@ -335,9 +339,10 @@ test('sim-run captures a trace and compare reports parity', () => {
     assert.equal(compareProbeRuns(twin).diff.equal, true);
 
     writeFileSync(twin.probe.boardTracePath, traceFor(hash, '0x00000001'));
-    const { diff, text } = compareProbeRuns(twin);
+    const { diff, text } = compareProbeRuns(twin, 'renode');
     assert.equal(diff.equal, false);
     assert.match(text, /board : SYSREG.ESRAM_CR @0x40038000 = 0x00000001/);
+    assert.match(text, /renode: SYSREG.ESRAM_CR @0x40038000 = 0x00000000/, 'the diff names the simulator that ran');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

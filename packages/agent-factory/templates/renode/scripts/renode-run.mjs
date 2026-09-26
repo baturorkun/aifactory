@@ -28,13 +28,18 @@ if (!existsSync(resc)) { console.error(`Missing ${resc}.`); process.exit(2); }
 
 // Simulated seconds bound the probe's final spin. A probe may set its own in
 // probes/<name>/probe.json ("renodeSeconds"); otherwise 8 s.
+// The vector table the core boots from is the probe's too ("vectorTable"): a
+// probe fetched through a code window at 0 boots from 0x0, one loaded into RAM
+// over a debugger from where it was linked.
 let runSeconds = opt('PROBE_RUN_SECONDS') ?? '8';
+let vectorTable = '0x0';
 const manifestPath = resolve(PROJECT_ROOT, 'probes', probeName, 'probe.json');
 if (existsSync(manifestPath)) {
   try {
-    const seconds = JSON.parse(readFileSync(manifestPath, 'utf8')).renodeSeconds;
-    if (seconds !== undefined) runSeconds = String(seconds);
-  } catch { /* a malformed manifest falls back to the default */ }
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    if (manifest.renodeSeconds !== undefined) runSeconds = String(manifest.renodeSeconds);
+    if (/^0x[0-9a-f]+$/i.test(manifest.vectorTable ?? '')) vectorTable = manifest.vectorTable;
+  } catch { /* a malformed manifest falls back to the defaults */ }
 }
 
 const buildDir = resolve(PROJECT_ROOT, 'build/probes', probeName);
@@ -49,6 +54,7 @@ const renodeArgs = (elfPath, uartPath, rescArg) => [
   '-e', `$PROBE_ELF=@${elfPath}`,
   '-e', `$PROBE_UART_LOG=@${uartPath}`,
   '-e', `$PROBE_RUN_SECONDS="${runSeconds}"`,
+  '-e', `$PROBE_VECTOR_TABLE=${vectorTable}`,
   '-e', `include @${rescArg}`,
 ];
 const timeoutMs = Number(process.env.SIMULATOR_TIMEOUT_MS || '240000');

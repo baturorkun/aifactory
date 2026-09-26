@@ -17,7 +17,7 @@ import {
   createHandoffPackage,
   finishHandoffRun,
 } from './handoff';
-import { readManifest } from './manifest';
+import { readManifest, writeManifest } from './manifest';
 
 test('legacy agent manifests default to agent mode', () => {
   const manifest = RunManifestSchema.parse({
@@ -242,6 +242,41 @@ test('handoff finish uses the project directory fallback when target root is omi
     beginHandoffRun(runId, config);
     const finished = await finishHandoffRun(runId, config, { skipGates: true });
     assert.equal(finished.status, 'passed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a passed hardware-twin run can be finished again until its boardParity gate passes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-parity-'));
+  const requirements = join(root, 'requirements');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0003.md'), '# Twin change\n\nModel the device.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, constraints: join(root, 'constraints'), handoffs: join(root, 'handoffs'), runs },
+    targetProject: { root: target, allowedPaths: ['src'] },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0003', config);
+    beginHandoffRun(runId, config);
+    const passed = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.equal(passed.status, 'passed');
+    assert.throws(() => beginHandoffRun(runId, config), /already passed/, 'a standard run stays final');
+
+    // Gated in phase model: boardParity did not run, so approve would refuse it.
+    const runDir = join(runs, runId);
+    writeManifest(runDir, { ...passed, twin: { phase: 'model', probe: 'device' }, gateResults: { ...passed.gateResults, boardParity: 'skipped' } });
+    assert.equal(beginHandoffRun(runId, config).status, 'running');
+
+    // Once boardParity has passed, the run is final again.
+    writeManifest(runDir, { ...readManifest(runDir), status: 'passed', gateResults: { ...passed.gateResults, boardParity: 'passed' } });
+    assert.throws(() => beginHandoffRun(runId, config), /already passed/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

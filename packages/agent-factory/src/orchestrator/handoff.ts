@@ -148,7 +148,13 @@ function requireImplementationRun(runDir: string, expectedMode: 'handoff' | 'dir
 export function beginImplementationRun(runId: string, config: FactoryConfig, mode: 'handoff' | 'direct'): RunManifest {
   const runDir = resolve(config.paths.runs, runId);
   const manifest = requireImplementationRun(runDir, mode);
-  if (manifest.status === 'passed' || manifest.status === 'approved') {
+  // A hardware-twin run can pass its gates before the requirement reaches the
+  // parity phase (the sim-run that moves it there may come after the first
+  // finish). approve refuses such a run until boardParity passes, so it has
+  // to be finishable again rather than stuck as "passed".
+  const awaitingParity = manifest.status === 'passed' && manifest.twin !== undefined
+    && manifest.gateResults.boardParity !== 'passed';
+  if ((manifest.status === 'passed' && !awaitingParity) || manifest.status === 'approved') {
     throw new Error(`Handoff run ${runId} is already ${manifest.status}.`);
   }
   setRunStatus(runDir, 'running');
