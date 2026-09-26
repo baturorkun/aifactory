@@ -609,7 +609,7 @@ probe
       const config = loadConfig();
       const twin = loadTwinRequirement(reqId, config);
       const result = runProbeOnSimulator(twin, config);
-      console.log(chalk.green(`\n✓ Simulator trace captured: ${chalk.bold(twin.probe.name)}`));
+      console.log(chalk.green(`\n✓ Twin trace captured: ${chalk.bold(twin.probe.name)}`));
       console.log(chalk.dim(`  File    : ${twin.probe.simulatorTracePath}`));
       console.log(chalk.dim(`  Lines   : ${result.trace.lines.length} register(s), source ${result.trace.source}`));
       if (twin.phase === 'model') {
@@ -630,9 +630,9 @@ probe
       const simulator = config.targetProject.simulator;
       const { diff, text } = compareProbeRuns(twin, simulator);
       if (diff.equal) {
-        console.log(chalk.green(`\n✓ Parity${simulator ? ` (${simulator})` : ''}: ${text}\n`));
+        console.log(chalk.green(`\n✓ Parity, board and twin: ${text}\n`));
       } else {
-        console.log(chalk.yellow(`\n⚠ ${diff.differences.length} difference(s) between board and the simulator:\n`));
+        console.log(chalk.yellow(`\n⚠ ${diff.differences.length} difference(s) between the board and the twin:\n`));
         console.log(text);
         console.log();
         process.exitCode = 1;

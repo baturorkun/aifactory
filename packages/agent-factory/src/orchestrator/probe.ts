@@ -362,5 +362,5 @@ export function compareProbeRuns(twin: TwinRequirement, simulator?: string): { d
       comparedAt: new Date().toISOString(),
     }, null, 2)}\n`, 'utf8');
   }
-  return { diff, text: formatProbeTraceDiff(diff, simulator) };
+  return { diff, text: formatProbeTraceDiff(diff) };
 }

@@ -252,21 +252,21 @@ export function compareProbeTraces(board: ProbeTrace, simics: ProbeTrace): Probe
   return { equal: differences.length === 0, compared: count, scope: board.scope, differences };
 }
 
-// `simulator` labels the second side of each difference with the tool that
-// produced it (renode, simics); the field is still called `simics` in the
-// data for compatibility, but a Renode diff must not read as a Simics one.
-export function formatProbeTraceDiff(diff: ProbeTraceDiff, simulator = 'simulator'): string {
+// The second side of each difference is the twin: what the model produced,
+// whichever simulator ran it (renode, simics). `label` can name it otherwise;
+// the field is still called `simics` in the data, for compatibility.
+export function formatProbeTraceDiff(diff: ProbeTraceDiff, label = 'twin'): string {
   const scope = diff.scope === 'behaviour' ? 'behaviour' : 'reset state only';
   if (diff.equal) return `${diff.compared} line(s) identical (scope: ${scope})`;
-  const width = Math.max('board'.length, simulator.length);
+  const width = Math.max('board'.length, label.length);
   const out: string[] = [`scope: ${scope}`];
   for (const difference of diff.differences) {
     if (difference.kind === 'header') {
-      out.push(`header ${difference.field}: board=${difference.board} ${simulator}=${difference.simics}`);
+      out.push(`header ${difference.field}: board=${difference.board} ${label}=${difference.simics}`);
     } else {
       out.push(`#${difference.index + 1} ${difference.kind}`);
       out.push(`  ${'board'.padEnd(width)}: ${difference.board ?? '(missing)'}`);
-      out.push(`  ${simulator.padEnd(width)}: ${difference.simics ?? '(missing)'}`);
+      out.push(`  ${label.padEnd(width)}: ${difference.simics ?? '(missing)'}`);
     }
   }
   return out.join('\n');

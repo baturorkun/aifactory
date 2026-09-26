@@ -227,7 +227,7 @@ export function boardParityGate(location: ProbeLocation): GateReport {
   const start = Date.now();
   const board = readTrace(location.boardTracePath, `Board trace ${relative(location.targetRoot, location.boardTracePath)}`);
   if (!board.trace) return report('boardParity', start, false, board.error!);
-  const sim = readTrace(location.simulatorTracePath, `Simulator trace ${relative(location.targetRoot, location.simulatorTracePath)}`);
+  const sim = readTrace(location.simulatorTracePath, `Twin trace ${relative(location.targetRoot, location.simulatorTracePath)}`);
   if (!sim.trace) {
     return report('boardParity', start, false, `${sim.error} Run "factory probe sim-run" first.`);
   }
