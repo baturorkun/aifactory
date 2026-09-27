@@ -1,0 +1,127 @@
+export type RepositoryProviderName = 'gitlab' | 'github';
+
+export interface WorkItem {
+  iid: number;
+  title: string;
+  description: string;
+  url: string;
+  state: string;
+  labels: string[];
+}
+
+export interface ChangeRequest {
+  iid: number;
+  title: string;
+  url: string;
+  state: string;
+  sourceBranch: string;
+  targetBranch: string;
+}
+
+export type ChangeRequestMergeStatus =
+  | 'mergeable'
+  | 'checking'
+  | 'blocked'
+  | 'conflicted'
+  | 'merged';
+
+export type ChangeRequestCiStatus = 'success' | 'pending' | 'failed' | 'unknown';
+
+export interface ChangeRequestReadiness {
+  changeRequest: ChangeRequest;
+  headSha: string;
+  draft: boolean;
+  mergeStatus: ChangeRequestMergeStatus;
+  ciStatus: ChangeRequestCiStatus;
+  approvalsSatisfied: boolean;
+}
+
+export interface RequirementPlatformContext {
+  requirementId: string;
+  title: string;
+  branch: string;
+  targetBranch: string;
+  executionMode: 'handoff' | 'pipeline' | 'direct';
+  requirementFile: string;
+}
+
+export interface RepositoryPlatformAdapter {
+  readonly provider: RepositoryProviderName;
+  readonly targetBranch: string;
+  readonly lifecycleLabels: readonly string[];
+
+  getWorkItem(iid: number): Promise<WorkItem | undefined>;
+  findWorkItem(ownershipMarker: string): Promise<WorkItem | undefined>;
+  createWorkItem(input: {
+    title: string;
+    description: string;
+    labels: string[];
+  }): Promise<WorkItem>;
+  setWorkItemLifecycleLabel(workItem: WorkItem, label: string): Promise<WorkItem>;
+  addWorkItemComment(workItem: WorkItem, body: string, marker: string): Promise<void>;
+  closeWorkItem(workItem: WorkItem): Promise<WorkItem>;
+  /**
+   * Link a requirement's Issue to the Issue it was opened from (RQ-0021), with
+   * the platform's own relation: a sub-issue on GitHub, which has no
+   * "related" link type, and "relates to" on GitLab. Idempotent.
+   */
+  linkSourceWorkItem(source: WorkItem, requirementItem: WorkItem): Promise<void>;
+
+  getChangeRequest(iid: number): Promise<ChangeRequest | undefined>;
+  findChangeRequest(sourceBranch: string, targetBranch: string): Promise<ChangeRequest | undefined>;
+  createDraftChangeRequest(input: {
+    title: string;
+    description: string;
+    sourceBranch: string;
+    targetBranch: string;
+  }): Promise<ChangeRequest>;
+  inspectChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequestReadiness>;
+  markChangeRequestReady(changeRequest: ChangeRequest): Promise<ChangeRequest>;
+  mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest>;
+  closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest>;
+  /** Append a line to the change request's description unless it is already there. */
+  ensureChangeRequestLine(changeRequest: ChangeRequest, line: string): Promise<void>;
+}
+
+export interface GitLabPlatformSettings {
+  baseUrl: string;
+  projectId: string;
+  token: string;
+  targetBranch: string;
+  removeSourceBranchOnMerge: boolean;
+  gitIdentity?: {
+    name?: string;
+    email?: string;
+  };
+  labels: {
+    draft: string;
+    ready: string;
+    running: string;
+    needsFix: string;
+    passed: string;
+  };
+}
+
+export interface GitHubPlatformSettings {
+  baseUrl: string;
+  repository: string;
+  token: string;
+  targetBranch: string;
+  removeSourceBranchOnMerge: boolean;
+  gitIdentity?: {
+    name?: string;
+    email?: string;
+  };
+  labels: {
+    draft: string;
+    ready: string;
+    running: string;
+    needsFix: string;
+    passed: string;
+  };
+}
+
+export type ResolvedRepositoryPlatform =
+  | { provider: 'none' }
+  | { provider: 'gitlab'; settings: GitLabPlatformSettings }
+  | { provider: 'github'; settings: GitHubPlatformSettings };

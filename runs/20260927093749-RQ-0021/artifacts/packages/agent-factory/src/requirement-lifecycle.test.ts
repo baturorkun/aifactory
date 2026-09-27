@@ -903,7 +903,7 @@ test('a requirement opened from an Issue records, links and closes it on merge',
 });
 
 for (const [label, prepare, message] of [
-  ['missing', () => undefined, /does not exist/],
+  ['missing', (_adapter: FakeRepositoryPlatform) => undefined, /does not exist/],
   ['closed', (adapter: FakeRepositoryPlatform) => adapter.sources.set(7, sourceIssue(7, { state: 'closed' })), /already closed/],
   [
     'a requirement Issue',
