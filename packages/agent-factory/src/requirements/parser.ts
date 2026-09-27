@@ -199,6 +199,8 @@ function parseLifecycle(
     githubIssueUrl: metadata.githubIssueUrl || undefined,
     githubPullRequestIid: parseOptionalPositiveInteger(metadata.githubPullRequestIid),
     githubPullRequestUrl: metadata.githubPullRequestUrl || undefined,
+    sourceIssueIid: parseOptionalPositiveInteger(metadata.sourceIssueIid),
+    sourceIssueUrl: metadata.sourceIssueUrl || undefined,
   });
 }
 

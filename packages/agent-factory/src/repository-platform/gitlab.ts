@@ -43,6 +43,10 @@ interface GitLabNote {
   body?: string;
 }
 
+interface GitLabIssueLink {
+  iid: number;
+}
+
 interface GitLabUser {
   id: number;
   username: string;
@@ -174,6 +178,31 @@ export class GitLabRepositoryPlatform implements RepositoryPlatformAdapter {
     await this.request<GitLabNote>(`/issues/${workItem.iid}/notes`, {
       method: 'POST',
       body: { body: `${body}\n\n${marker}` },
+    });
+  }
+
+  async linkSourceWorkItem(source: WorkItem, requirementItem: WorkItem): Promise<void> {
+    const links = await this.request<GitLabIssueLink[]>(`/issues/${source.iid}/links`);
+    if (links.some((link) => link.iid === requirementItem.iid)) return;
+    // "relates to" is the link every GitLab tier supports; "blocks" and
+    // parent/child are paid or a different work-item type.
+    await this.request(`/issues/${source.iid}/links`, {
+      method: 'POST',
+      body: {
+        target_project_id: this.settings.projectId,
+        target_issue_iid: requirementItem.iid,
+        link_type: 'relates_to',
+      },
+    });
+  }
+
+  async ensureChangeRequestLine(changeRequest: ChangeRequest, line: string): Promise<void> {
+    const mr = await this.request<{ description?: string | null }>(`/merge_requests/${changeRequest.iid}`);
+    const description = mr.description ?? '';
+    if (description.split('\n').some((existing) => existing.trim() === line.trim())) return;
+    await this.request(`/merge_requests/${changeRequest.iid}`, {
+      method: 'PUT',
+      body: { description: `${description.replace(/\s+$/, '')}\n${line}\n` },
     });
   }
 

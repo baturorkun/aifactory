@@ -60,6 +60,12 @@ export interface RepositoryPlatformAdapter {
   setWorkItemLifecycleLabel(workItem: WorkItem, label: string): Promise<WorkItem>;
   addWorkItemComment(workItem: WorkItem, body: string, marker: string): Promise<void>;
   closeWorkItem(workItem: WorkItem): Promise<WorkItem>;
+  /**
+   * Link a requirement's Issue to the Issue it was opened from (RQ-0021), with
+   * the platform's own relation: a sub-issue on GitHub, which has no
+   * "related" link type, and "relates to" on GitLab. Idempotent.
+   */
+  linkSourceWorkItem(source: WorkItem, requirementItem: WorkItem): Promise<void>;
 
   getChangeRequest(iid: number): Promise<ChangeRequest | undefined>;
   findChangeRequest(sourceBranch: string, targetBranch: string): Promise<ChangeRequest | undefined>;
@@ -73,6 +79,8 @@ export interface RepositoryPlatformAdapter {
   markChangeRequestReady(changeRequest: ChangeRequest): Promise<ChangeRequest>;
   mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest>;
   closeChangeRequest(changeRequest: ChangeRequest): Promise<ChangeRequest>;
+  /** Append a line to the change request's description unless it is already there. */
+  ensureChangeRequestLine(changeRequest: ChangeRequest, line: string): Promise<void>;
 }
 
 export interface GitLabPlatformSettings {

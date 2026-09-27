@@ -323,6 +323,10 @@ export const RequirementLifecycleSchema = z.object({
   githubIssueUrl: z.string().url().optional(),
   githubPullRequestIid: z.number().int().positive().optional(),
   githubPullRequestUrl: z.string().url().optional(),
+  // The Issue this requirement was opened from (RQ-0021): linked on the
+  // platform, closed by the change request, and closed on completion.
+  sourceIssueIid: z.number().int().positive().optional(),
+  sourceIssueUrl: z.string().url().optional(),
 });
 export type RequirementLifecycle = z.infer<typeof RequirementLifecycleSchema>;
 

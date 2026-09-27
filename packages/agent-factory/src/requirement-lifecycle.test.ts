@@ -55,8 +55,22 @@ class FakeRepositoryPlatform implements RepositoryPlatformAdapter {
 
   constructor(readonly provider: 'gitlab' | 'github' = 'gitlab') {}
 
+  // Issues that existed before any requirement (RQ-0021), by number.
+  sources = new Map<number, WorkItem>();
+  links: Array<[number, number]> = [];
+  changeRequestLines: string[] = [];
+
   async getWorkItem(iid: number): Promise<WorkItem | undefined> {
-    return this.workItem?.iid === iid ? this.workItem : undefined;
+    if (this.workItem?.iid === iid) return this.workItem;
+    return this.sources.get(iid);
+  }
+  async linkSourceWorkItem(source: WorkItem, requirementItem: WorkItem): Promise<void> {
+    if (!this.links.some(([from, to]) => from === source.iid && to === requirementItem.iid)) {
+      this.links.push([source.iid, requirementItem.iid]);
+    }
+  }
+  async ensureChangeRequestLine(_changeRequest: ChangeRequest, line: string): Promise<void> {
+    if (!this.changeRequestLines.includes(line)) this.changeRequestLines.push(line);
   }
   async findWorkItem(marker: string): Promise<WorkItem | undefined> {
     return this.workItem?.description.includes(marker) ? this.workItem : undefined;
@@ -135,8 +149,15 @@ class FakeRepositoryPlatform implements RepositoryPlatformAdapter {
     this.draft = false;
     return changeRequest;
   }
+  // The closing reference doing its job on merge, as a platform would.
+  onMergeClosesSource?: number;
+
   async mergeChangeRequest(changeRequest: ChangeRequest, expectedHeadSha: string): Promise<ChangeRequest> {
     this.onMerge?.(expectedHeadSha);
+    if (this.onMergeClosesSource !== undefined) {
+      const closed = this.sources.get(this.onMergeClosesSource);
+      if (closed) closed.state = 'closed';
+    }
     changeRequest.state = 'merged';
     return changeRequest;
   }
@@ -815,6 +836,188 @@ test('the project config supplies the kind, mode and fast defaults, and a flag o
     assert.equal(untouched.pipelineFast, false);
     const generic = readFileSync(join(repo.root, untouched.requirementFile), 'utf8');
     assert.doesNotMatch(generic, /## Boundary/, 'a non-simics profile seeds nothing extra');
+  } finally {
+    repo.cleanup();
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Opening a requirement from an existing Issue (RQ-0021)
+// ---------------------------------------------------------------------------
+
+const GITLAB_ENVIRONMENT = {
+  GITLAB_URL: 'https://gitlab.example.test',
+  GITLAB_PROJECT_ID: 'group/project',
+  GITLAB_TOKEN: 'secret',
+};
+
+function sourceIssue(iid: number, overrides: Partial<WorkItem> = {}): WorkItem {
+  return {
+    iid,
+    title: 'LAG header removal bypasses the guardrail',
+    description: 'Reported by a person.',
+    url: `https://gitlab.example.test/group/project/-/issues/${iid}`,
+    state: 'opened',
+    labels: ['bug'],
+    ...overrides,
+  };
+}
+
+test('a requirement opened from an Issue records, links and closes it on merge', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform();
+  adapter.sources.set(7, sourceIssue(7));
+  try {
+    const created = await createDraftRequirement('Fix the guardrail bypass', 'handoff', repo.config, {
+      environment: GITLAB_ENVIRONMENT,
+      platformAdapter: adapter,
+      fromIssue: 7,
+    });
+
+    assert.equal(created.sourceIssue?.iid, 7);
+    const markdown = readFileSync(join(repo.root, created.requirementFile), 'utf8');
+    assert.match(markdown, /sourceIssueIid: 7/);
+    assert.match(markdown, /sourceIssueUrl: "https:\/\/gitlab\.example\.test\/group\/project\/-\/issues\/7"/);
+    assert.match(markdown, /Source issue: \[#7 - LAG header removal bypasses the guardrail\]/);
+    // Its own Issue is still created and owned the way it always was.
+    assert.equal(created.workItem?.iid, 12);
+    assert.deepEqual(adapter.links, [[7, 12]]);
+    assert.deepEqual(adapter.changeRequestLines, ['Closes #7']);
+    assert.equal(adapter.comments.filter((comment) => comment.includes('requirement-source:')).length, 1);
+    // The person's Issue is never rewritten.
+    assert.equal(adapter.sources.get(7)?.title, 'LAG header removal bypasses the guardrail');
+    assert.equal(adapter.sources.get(7)?.description, 'Reported by a person.');
+
+    const commentsBefore = adapter.comments.length;
+    await syncRequirementPlatform(created.requirementId, repo.config, {
+      environment: GITLAB_ENVIRONMENT,
+      platformAdapter: adapter,
+    });
+    assert.deepEqual(adapter.links, [[7, 12]]);
+    assert.deepEqual(adapter.changeRequestLines, ['Closes #7']);
+    assert.equal(adapter.comments.length, commentsBefore);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+for (const [label, prepare, message] of [
+  ['missing', (_adapter: FakeRepositoryPlatform) => undefined, /does not exist/],
+  ['closed', (adapter: FakeRepositoryPlatform) => adapter.sources.set(7, sourceIssue(7, { state: 'closed' })), /already closed/],
+  [
+    'a requirement Issue',
+    (adapter: FakeRepositoryPlatform) =>
+      adapter.sources.set(7, sourceIssue(7, { description: '<!-- aifactory:requirement:RQ-0009 -->' })),
+    /itself a requirement/,
+  ],
+] as const) {
+  test(`opening from an Issue that is ${label} is refused before anything is created`, async () => {
+    const repo = makeRepository();
+    const adapter = new FakeRepositoryPlatform();
+    prepare(adapter);
+    const headBefore = git(repo.root, 'rev-parse', 'HEAD');
+    try {
+      await assert.rejects(
+        createDraftRequirement('Should not exist', 'handoff', repo.config, {
+          environment: GITLAB_ENVIRONMENT,
+          platformAdapter: adapter,
+          fromIssue: 7,
+        }),
+        message,
+      );
+      assert.equal(git(repo.root, 'rev-parse', 'HEAD'), headBefore);
+      assert.equal(git(repo.root, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main');
+      assert.equal(adapter.workItem, undefined);
+    } finally {
+      repo.cleanup();
+    }
+  });
+}
+
+test('opening from an Issue needs a repository platform', async () => {
+  const repo = makeRepository();
+  try {
+    await assert.rejects(
+      createDraftRequirement('No platform', 'handoff', repo.config, {
+        environment: {},
+        platform: 'none',
+        fromIssue: 7,
+      }),
+      /needs a repository platform/,
+    );
+  } finally {
+    repo.cleanup();
+  }
+});
+
+async function completeFromIssue(
+  repo: ReturnType<typeof makeRepository>,
+  adapter: FakeRepositoryPlatform,
+): Promise<Awaited<ReturnType<typeof completeRequirement>>> {
+  repo.config.repositoryPlatforms.gitlab = {
+    baseUrl: GITLAB_ENVIRONMENT.GITLAB_URL,
+    projectId: GITLAB_ENVIRONMENT.GITLAB_PROJECT_ID,
+    token: GITLAB_ENVIRONMENT.GITLAB_TOKEN,
+    targetBranch: 'main',
+    removeSourceBranchOnMerge: true,
+    labels: {
+      draft: 'factory::draft', ready: 'factory::ready', running: 'factory::running',
+      needsFix: 'factory::needs-fix', passed: 'factory::passed',
+    },
+  };
+  const created = await createDraftRequirement('Fix from an Issue', 'handoff', repo.config, {
+    environment: GITLAB_ENVIRONMENT,
+    platformAdapter: adapter,
+    fromIssue: 7,
+  });
+  completeDraft(join(repo.root, created.requirementFile));
+  await submitRequirement(created.requirementId, repo.config, {
+    createHandoff: async () => 'run-approved',
+    platformAdapter: adapter,
+  });
+  const runDir = join(repo.root, 'runs', 'run-approved');
+  mkdirSync(runDir, { recursive: true });
+  writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({
+    runId: 'run-approved', requirementId: created.requirementId, executionMode: 'handoff',
+    fast: false, status: 'approved', createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(), steps: [], artifacts: [], deletedFiles: [],
+    gateResults: {}, approvedBy: 'Reviewer Name',
+  }, null, 2));
+  git(repo.root, 'add', created.requirementFile, 'runs/run-approved/manifest.json');
+  git(repo.root, 'commit', '-m', 'implement');
+  git(repo.root, 'push', 'origin', created.branch);
+  adapter.resolveHeadSha = () => git(repo.root, 'rev-parse', 'HEAD');
+  adapter.onMerge = (sha) => { git(repo.root, 'push', 'origin', `${sha}:main`); };
+  return completeRequirement(created.requirementId, 'run-approved', repo.config, {
+    environment: GITLAB_ENVIRONMENT,
+    platformAdapter: adapter,
+  });
+}
+
+test('completion closes the source Issue when the merge did not', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform();
+  adapter.sources.set(7, sourceIssue(7));
+  try {
+    const result = await completeFromIssue(repo, adapter);
+    assert.equal(result.sourceIssue?.state, 'closed');
+    assert.equal(adapter.sources.get(7)?.state, 'closed');
+    assert.equal(adapter.comments.filter((comment) => comment.includes('requirement-source-closed:')).length, 1);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('completion leaves a source Issue someone already closed alone', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform();
+  adapter.sources.set(7, sourceIssue(7));
+  adapter.onMergeClosesSource = 7;
+  try {
+    const result = await completeFromIssue(repo, adapter);
+    assert.equal(result.sourceIssue?.state, 'closed');
+    assert.equal(adapter.comments.filter((comment) => comment.includes('requirement-source-closed:')).length, 0);
   } finally {
     repo.cleanup();
   }

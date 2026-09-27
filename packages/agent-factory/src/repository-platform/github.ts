@@ -161,6 +161,17 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
     });
   }
 
+  async linkSourceWorkItem(source: WorkItem, requirementItem: WorkItem): Promise<void> {
+    const children = await this.request<GitHubIssue[]>(`/issues/${source.iid}/sub_issues?per_page=100`);
+    if (children.some((child) => child.number === requirementItem.iid)) return;
+    // The sub-issue endpoint takes the Issue's database id, not its number.
+    const full = await this.request<{ id: number }>(`/issues/${requirementItem.iid}`);
+    await this.request(`/issues/${source.iid}/sub_issues`, {
+      method: 'POST',
+      body: JSON.stringify({ sub_issue_id: full.id }),
+    });
+  }
+
   async getChangeRequest(iid: number): Promise<ChangeRequest | undefined> {
     const pr = await this.request<GitHubPullRequest | undefined>(`/pulls/${iid}`, { allowNotFound: true });
     return pr ? asChangeRequest(pr) : undefined;
@@ -194,6 +205,16 @@ export class GitHubRepositoryPlatform implements RepositoryPlatformAdapter {
       }),
     });
     return asChangeRequest(pr);
+  }
+
+  async ensureChangeRequestLine(changeRequest: ChangeRequest, line: string): Promise<void> {
+    const pr = await this.request<{ body?: string | null }>(`/pulls/${changeRequest.iid}`);
+    const body = pr.body ?? '';
+    if (body.split('\n').some((existing) => existing.trim() === line.trim())) return;
+    await this.request(`/pulls/${changeRequest.iid}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body: `${body.replace(/\s+$/, '')}\n${line}\n` }),
+    });
   }
 
   private async ensureSourceBranchRemoval(): Promise<void> {

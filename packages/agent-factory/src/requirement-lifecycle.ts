@@ -45,6 +45,8 @@ export interface NewRequirementResult {
   repositoryProvider?: 'gitlab' | 'github';
   workItem?: WorkItem;
   changeRequest?: ChangeRequest;
+  /** The Issue it was opened from (RQ-0021). */
+  sourceIssue?: WorkItem;
 }
 
 export interface SubmitRequirementResult {
@@ -67,6 +69,8 @@ interface SubmitDependencies {
 interface NewRequirementOptions {
   pipelineFast?: boolean;
   platform?: string;
+  /** The number of an existing Issue this requirement is opened from (RQ-0021). */
+  fromIssue?: number;
   kind?: RequirementKind;
   probe?: string;
   platformAdapter?: RepositoryPlatformAdapter;
@@ -106,6 +110,8 @@ export interface CompleteRequirementResult {
   provider: 'gitlab' | 'github';
   changeRequest: ChangeRequest;
   workItem: WorkItem;
+  /** The Issue the requirement was opened from, as it stands after completion. */
+  sourceIssue?: WorkItem;
   alreadyMerged: boolean;
 }
 
@@ -307,6 +313,7 @@ function draftMarkdown(input: {
   kind: RequirementKind;
   probe?: string;
   profile?: string;
+  sourceIssue?: { iid: number; url: string; title: string };
 }): string {
   const twin = input.kind === 'hardware-twin';
   // A draft that starts empty is rewritten from memory every time. Where the
@@ -324,9 +331,18 @@ function draftMarkdown(input: {
     `branch: ${quoteMetadata(input.branch)}`,
     `createdFromCommit: ${quoteMetadata(input.createdFromCommit)}`,
     ...(twin ? ['kind: hardware-twin', 'twinPhase: probe', `probe: ${input.probe}`] : []),
+    ...(input.sourceIssue
+      ? [
+          `sourceIssueIid: ${input.sourceIssue.iid}`,
+          `sourceIssueUrl: ${quoteMetadata(input.sourceIssue.url)}`,
+        ]
+      : []),
     '---',
     `# ${input.id} - ${input.title}`,
     '',
+    ...(input.sourceIssue
+      ? [`Source issue: [#${input.sourceIssue.iid} - ${input.sourceIssue.title}](${input.sourceIssue.url})`, '']
+      : []),
     '<!-- Describe the requirement here. -->',
     '',
     ...(simics && !twin
@@ -435,6 +451,16 @@ export async function createDraftRequirement(
     options.environment ?? process.env,
   );
   const root = projectRoot(config);
+  let sourceIssue: WorkItem | undefined;
+  if (options.fromIssue !== undefined) {
+    if (resolvedPlatform.provider === 'none') {
+      throw new Error('--from-issue needs a repository platform; this project has none.');
+    }
+    sourceIssue = await sourceIssueFor(
+      options.fromIssue,
+      options.platformAdapter ?? platformAdapterFor(root, resolvedPlatform),
+    );
+  }
   const baseBranch = config.requirementBranches.baseBranch;
   const remote = config.requirementBranches.remote;
   if (currentBranch(root) !== baseBranch) {
@@ -478,6 +504,9 @@ export async function createDraftRequirement(
         kind,
         probe,
         profile: config.targetProject.profile,
+        sourceIssue: sourceIssue
+          ? { iid: sourceIssue.iid, url: sourceIssue.url, title: sourceIssue.title }
+          : undefined,
       }),
       'utf8',
     );
@@ -502,6 +531,7 @@ export async function createDraftRequirement(
         pipelineFast: options.pipelineFast ?? defaults.pipelineFast,
         kind,
         probe,
+        sourceIssue,
       };
       break;
     }
@@ -721,6 +751,22 @@ export async function completeRequirement(
   ].join('\n'), completionMarker);
   workItem = await adapter.closeWorkItem(workItem);
 
+  // The Issue this requirement came from (RQ-0021). The closing reference in
+  // the change request usually closes it already; that depends on the target
+  // branch and on how the merge was made, so it is closed here explicitly
+  // too. One already closed — by the merge, or by a person — is left alone.
+  let sourceIssue: WorkItem | undefined;
+  const sourceIid = requirement.lifecycle?.sourceIssueIid;
+  if (sourceIid !== undefined) {
+    sourceIssue = await adapter.getWorkItem(sourceIid);
+    if (sourceIssue && sourceIssue.state !== 'closed') {
+      await adapter.addWorkItemComment(sourceIssue, [
+        `Resolved by **${id}**, merged in ${changeRequest.url}.`,
+      ].join('\n'), `<!-- aifactory:requirement-source-closed:${id} -->`);
+      sourceIssue = await adapter.closeWorkItem(sourceIssue);
+    }
+  }
+
   return {
     requirementId: id,
     status: 'completed',
@@ -728,6 +774,7 @@ export async function completeRequirement(
     provider: resolved.provider,
     changeRequest,
     workItem,
+    sourceIssue,
     alreadyMerged,
   };
 }
@@ -872,6 +919,40 @@ export async function cancelRequirement(
   };
 }
 
+function platformAdapterFor(
+  root: string,
+  resolved: Exclude<ResolvedRepositoryPlatform, { provider: 'none' }>,
+): RepositoryPlatformAdapter {
+  const gitIdentity = {
+    name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
+    email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
+  };
+  return resolved.provider === 'gitlab'
+    ? new GitLabRepositoryPlatform({ ...resolved.settings, gitIdentity })
+    : new GitHubRepositoryPlatform({ ...resolved.settings, gitIdentity });
+}
+
+/**
+ * The Issue a requirement is opened from (RQ-0021), checked before anything is
+ * reserved: it has to exist, be open, and be someone's Issue rather than
+ * another requirement's own.
+ */
+async function sourceIssueFor(
+  issue: number,
+  adapter: RepositoryPlatformAdapter,
+): Promise<WorkItem> {
+  if (!Number.isInteger(issue) || issue <= 0) {
+    throw new Error(`--from-issue needs an Issue number, got ${issue}.`);
+  }
+  const source = await adapter.getWorkItem(issue);
+  if (!source) throw new Error(`Issue #${issue} does not exist.`);
+  if (source.state === 'closed') throw new Error(`Issue #${issue} is already closed.`);
+  if (source.description.includes('<!-- aifactory:requirement:')) {
+    throw new Error(`Issue #${issue} is itself a requirement's Issue; open from the Issue it came from.`);
+  }
+  return source;
+}
+
 async function synchronizeRequirementPlatform(
   requirementId: string,
   config: FactoryConfig,
@@ -879,23 +960,7 @@ async function synchronizeRequirementPlatform(
   suppliedAdapter?: RepositoryPlatformAdapter,
 ): Promise<RequirementPlatformSyncResult> {
   const { root, branch, requirementPath } = assertActiveRequirementBranch(requirementId, config);
-  const adapter = suppliedAdapter ?? (
-    resolved.provider === 'gitlab'
-      ? new GitLabRepositoryPlatform({
-          ...resolved.settings,
-          gitIdentity: {
-            name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
-            email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
-          },
-        })
-      : new GitHubRepositoryPlatform({
-          ...resolved.settings,
-          gitIdentity: {
-            name: git(root, ['config', 'user.name'], { allowFailure: true }) || undefined,
-            email: git(root, ['config', 'user.email'], { allowFailure: true }) || undefined,
-          },
-        })
-  );
+  const adapter = suppliedAdapter ?? platformAdapterFor(root, resolved);
   if (adapter.provider !== resolved.provider) {
     throw new Error(`Repository provider mismatch: expected ${resolved.provider}, received ${adapter.provider}.`);
   }
@@ -984,6 +1049,33 @@ async function synchronizeRequirementPlatform(
       };
 
   updateAndPushLinkMetadata(root, branch, requirementPath, requirementFile, config, fullMetadata);
+
+  // Opened from an existing Issue (RQ-0021): link the two with the platform's
+  // own relation, make the change request close the source too, and tell the
+  // source where the work is. Every step is idempotent, so a recovering
+  // platform-sync restores what is missing without doubling what is there.
+  const sourceIid = requirement.lifecycle!.sourceIssueIid;
+  if (sourceIid !== undefined) {
+    const source = await adapter.getWorkItem(sourceIid);
+    if (!source) {
+      throw new Error(`Source Issue #${sourceIid} of ${requirementId} no longer exists.`);
+    }
+    await adapter.linkSourceWorkItem(source, workItem);
+    await adapter.ensureChangeRequestLine(changeRequest, `Closes #${sourceIid}`);
+    const crName = adapter.provider === 'github' ? 'Draft PR' : 'Draft MR';
+    await adapter.addWorkItemComment(
+      source,
+      [
+        `Handled by AI Factory requirement **${requirementId}** (#${workItem.iid}).`,
+        '',
+        `- Branch: \`${branch}\``,
+        `- ${crName}: ${changeRequest.url}`,
+        '',
+        'This Issue closes when that change request is merged.',
+      ].join('\n'),
+      `<!-- aifactory:requirement-source:${requirementId} -->`,
+    );
+  }
 
   const noteMarker = `<!-- aifactory:requirement-link:${requirementId} -->`;
   await adapter.addWorkItemComment(

@@ -197,3 +197,66 @@ test('GitLab adapter reports a skipped head pipeline as no checks, not a failure
   assert.equal(await statusFor('running'), 'pending');
   assert.equal(await statusFor('success'), 'success');
 });
+
+// RQ-0021: on GitLab a requirement opened from an existing Issue is linked to
+// it as "relates to" — the link type every tier supports — and the Merge
+// Request closes it.
+
+const SOURCE = {
+  iid: 35,
+  title: 'Enforce Supplement 8 parameter types',
+  description: 'Reported by a person.',
+  url: 'https://gitlab.example.test/group/project/-/issues/35',
+  state: 'opened',
+  labels: [],
+};
+const REQUIREMENT_ISSUE = { ...SOURCE, iid: 46, title: 'RQ-0044 - Enforce types', description: '' };
+
+test('GitLab links a requirement to its source as "relates to", once', async () => {
+  const posts: unknown[] = [];
+  let links: Array<{ iid: number }> = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (url.endsWith('/issues/35/links') && method === 'GET') return Response.json(links);
+    if (url.endsWith('/issues/35/links') && method === 'POST') {
+      posts.push(JSON.parse(String(init?.body)));
+      links = [{ iid: 46 }];
+      return Response.json({});
+    }
+    return new Response('unexpected', { status: 500 });
+  };
+  const gitlab = new GitLabRepositoryPlatform(settings, fetchMock);
+
+  await gitlab.linkSourceWorkItem(SOURCE, REQUIREMENT_ISSUE);
+  await gitlab.linkSourceWorkItem(SOURCE, REQUIREMENT_ISSUE);
+
+  assert.deepEqual(posts, [
+    { target_project_id: 'group/project', target_issue_iid: 46, link_type: 'relates_to' },
+  ]);
+});
+
+test('GitLab appends a closing reference to the Merge Request only once', async () => {
+  let description = 'Implements **RQ-0044**.\n\nCloses #46\n';
+  const puts: string[] = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith('/merge_requests/35') && (init?.method ?? 'GET') === 'GET') {
+      return Response.json({ description });
+    }
+    if (url.endsWith('/merge_requests/35') && init?.method === 'PUT') {
+      description = (JSON.parse(String(init.body)) as { description: string }).description;
+      puts.push(description);
+      return Response.json({ description });
+    }
+    return new Response('unexpected', { status: 500 });
+  };
+  const gitlab = new GitLabRepositoryPlatform(settings, fetchMock);
+  const mr = { iid: 35, title: 'RQ-0044', url: '', state: 'opened', sourceBranch: 'factory/RQ-0044', targetBranch: 'main' };
+
+  await gitlab.ensureChangeRequestLine(mr, 'Closes #35');
+  await gitlab.ensureChangeRequestLine(mr, 'Closes #35');
+
+  assert.equal(puts.length, 1);
+  assert.match(description, /Closes #46\nCloses #35\n$/);
+});

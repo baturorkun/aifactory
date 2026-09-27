@@ -41,6 +41,7 @@ pnpm factory -- --project ../myproject approve <run-id>
 | Command | Description |
 |---|---|
 | `factory requirement new <title> --mode handoff [--platform github\|gitlab\|none]` | Reserve a `[skip ci]` draft, create its branch, and create linked GitHub or GitLab resources when configured |
+| `factory requirement new <title> --from-issue <n>` | Open the requirement from an existing Issue: it still gets its own Issue and Draft PR/MR; the two Issues are linked (a sub-issue on GitHub, "relates to" on GitLab), the PR/MR closes the source, the source gets a comment, and `complete` closes it if the merge did not. Refused, creating nothing, when the Issue is missing, closed, or is itself a requirement's Issue |
 | `factory requirement platform-sync <req-id> [--platform github\|gitlab]` | Create or recover the linked Issue and Draft Pull/Merge Request (`gitlab-sync` remains an alias) |
 | `factory requirement cancel <req-id> [--reason <text>] [--platform github\|gitlab\|none]` | Mark the base-branch record cancelled, close its Pull/Merge Request, and delete its requirement branch |
 | `factory requirement complete <req-id> --run <run-id> [--by <name>] [--platform github\|gitlab]` | Validate an approved run and repository gates, record completion, merge with a SHA guard, then label and close the Issue |

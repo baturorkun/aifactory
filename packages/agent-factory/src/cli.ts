@@ -105,7 +105,8 @@ requirement
   .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline')
   .option('--kind <kind>', 'Requirement kind: standard, or hardware-twin for a board-verified model (default: requirementDefaults.kind)')
   .option('--probe <name>', 'hardware-twin only: probe directory name under probes/ (default: the title slug)')
-  .action(async (title: string, opts: { mode?: string; fast?: boolean; platform?: string; kind?: string; probe?: string }) => {
+  .option('--from-issue <number>', 'Open from an existing Issue: link it (sub-issue on GitHub, "relates to" on GitLab), close it on completion')
+  .action(async (title: string, opts: { mode?: string; fast?: boolean; platform?: string; kind?: string; probe?: string; fromIssue?: string }) => {
     try {
       if (opts.mode !== undefined && !['handoff', 'pipeline', 'direct'].includes(opts.mode)) {
         throw new Error('Invalid mode. Choose handoff, pipeline, or direct.');
@@ -117,7 +118,13 @@ requirement
         title,
         opts.mode as RequirementExecutionMode | undefined,
         loadConfig(),
-        { pipelineFast: opts.fast, platform: opts.platform, kind: opts.kind as RequirementKind | undefined, probe: opts.probe },
+        {
+          pipelineFast: opts.fast,
+          platform: opts.platform,
+          kind: opts.kind as RequirementKind | undefined,
+          probe: opts.probe,
+          fromIssue: opts.fromIssue === undefined ? undefined : Number(opts.fromIssue.replace(/^#/, '')),
+        },
       );
       console.log(chalk.green(`\n✓ Draft requirement created: ${chalk.bold(result.requirementId)}`));
       console.log(chalk.dim(`  File   : ${result.requirementFile}`));
@@ -132,6 +139,9 @@ requirement
         const crSymbol = result.repositoryProvider === 'github' ? '#' : '!';
         console.log(chalk.dim(`  Issue  : #${result.workItem.iid} ${result.workItem.url}`));
         console.log(chalk.dim(`  ${crName}: ${crSymbol}${result.changeRequest.iid} ${result.changeRequest.url}`));
+      }
+      if (result.sourceIssue) {
+        console.log(chalk.dim(`  Source : #${result.sourceIssue.iid} ${result.sourceIssue.url} (linked, closes on merge)`));
       }
       console.log(chalk.dim(`\n  Submit : pnpm factory -- requirement submit ${result.requirementId}\n`));
     } catch (err) {
@@ -201,6 +211,9 @@ requirement
       console.log(chalk.green(`✓ ${result.requirementId} completed with ${result.runId}.`));
       console.log(chalk.dim(`  Merge : ${symbol}${result.changeRequest.iid} ${result.alreadyMerged ? 'already merged' : 'merged'}`));
       console.log(chalk.dim(`  Issue : #${result.workItem.iid} labelled passed and closed`));
+      if (result.sourceIssue) {
+        console.log(chalk.dim(`  Source: #${result.sourceIssue.iid} ${result.sourceIssue.state === 'closed' ? 'closed' : result.sourceIssue.state}`));
+      }
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

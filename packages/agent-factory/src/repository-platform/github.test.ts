@@ -216,3 +216,65 @@ test('GitHub adapter inspects checks, marks a draft ready, and merges with a SHA
   const mergeRequest = requests.find((request) => request.url.endsWith('/pulls/101/merge'))!;
   assert.deepEqual(JSON.parse(String(mergeRequest.init?.body)), { sha: 'abc123', merge_method: 'merge' });
 });
+
+// RQ-0021: a requirement opened from an existing Issue becomes its sub-issue
+// (GitHub has no "related" link type), and the Pull Request closes it.
+
+const SOURCE = {
+  iid: 134,
+  title: 'Guardrail bypass',
+  description: 'Reported by a person.',
+  url: 'https://github.com/baturorkun/NetForgeSH/issues/134',
+  state: 'open',
+  labels: ['bug'],
+};
+const REQUIREMENT_ISSUE = { ...SOURCE, iid: 165, title: 'RQ-0068 - Fix', description: '' };
+
+test('GitHub links a requirement as a sub-issue of its source, once', async () => {
+  const requests: Array<{ url: string; method: string; body?: string }> = [];
+  let children: Array<{ number: number }> = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    requests.push({ url, method, body: init?.body as string | undefined });
+    if (url.endsWith('/issues/134/sub_issues?per_page=100')) return Response.json(children);
+    if (url.endsWith('/issues/165')) return Response.json({ id: 99001, number: 165 });
+    if (url.endsWith('/issues/134/sub_issues') && method === 'POST') {
+      children = [{ number: 165 }];
+      return Response.json({ number: 134 });
+    }
+    return new Response('unexpected', { status: 500 });
+  };
+  const github = new GitHubRepositoryPlatform(settings, fetchMock);
+
+  await github.linkSourceWorkItem(SOURCE, REQUIREMENT_ISSUE);
+  await github.linkSourceWorkItem(SOURCE, REQUIREMENT_ISSUE);
+
+  const posts = requests.filter((request) => request.method === 'POST');
+  assert.equal(posts.length, 1);
+  // The endpoint takes the Issue's database id, not its number.
+  assert.deepEqual(JSON.parse(posts[0].body ?? '{}'), { sub_issue_id: 99001 });
+});
+
+test('GitHub appends a closing reference to the Pull Request only once', async () => {
+  let body = 'Implements **RQ-0068**.\n\nCloses #165';
+  const patches: string[] = [];
+  const fetchMock: typeof fetch = async (input, init) => {
+    const url = String(input);
+    if (url.endsWith('/pulls/166') && (init?.method ?? 'GET') === 'GET') return Response.json({ body });
+    if (url.endsWith('/pulls/166') && init?.method === 'PATCH') {
+      body = (JSON.parse(String(init.body)) as { body: string }).body;
+      patches.push(body);
+      return Response.json({ body });
+    }
+    return new Response('unexpected', { status: 500 });
+  };
+  const github = new GitHubRepositoryPlatform(settings, fetchMock);
+  const pr = { iid: 166, title: 'RQ-0068', url: '', state: 'open', sourceBranch: 'factory/RQ-0068', targetBranch: 'main' };
+
+  await github.ensureChangeRequestLine(pr, 'Closes #134');
+  await github.ensureChangeRequestLine(pr, 'Closes #134');
+
+  assert.equal(patches.length, 1);
+  assert.match(body, /Closes #165\nCloses #134\n$/);
+});
