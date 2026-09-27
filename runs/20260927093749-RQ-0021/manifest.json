@@ -1,0 +1,43 @@
+{
+  "runId": "20260927093749-RQ-0021",
+  "requirementId": "RQ-0021",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260927093749-RQ-0021/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-09-27T09:37:49.395Z",
+  "updatedAt": "2026-09-27T09:45:16.332Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-27T09:44:50.710Z",
+      "finishedAt": "2026-09-27T09:45:10.430Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "docs/AI-FACTORY-CLI.md",
+    "packages/agent-factory/src/cli.ts",
+    "packages/agent-factory/src/repository-platform/github.test.ts",
+    "packages/agent-factory/src/repository-platform/github.ts",
+    "packages/agent-factory/src/repository-platform/gitlab.test.ts",
+    "packages/agent-factory/src/repository-platform/gitlab.ts",
+    "packages/agent-factory/src/repository-platform/types.ts",
+    "packages/agent-factory/src/requirement-lifecycle.test.ts",
+    "packages/agent-factory/src/requirement-lifecycle.ts",
+    "packages/agent-factory/src/requirements/parser.ts",
+    "packages/contracts/src/index.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-27T09:45:16.333Z",
+  "approvedBy": "Batur Orkun"
+}
