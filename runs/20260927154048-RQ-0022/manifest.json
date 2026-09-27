@@ -1,0 +1,44 @@
+{
+  "runId": "20260927154048-RQ-0022",
+  "requirementId": "RQ-0022",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260927154048-RQ-0022/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-09-27T15:40:48.891Z",
+  "updatedAt": "2026-09-27T15:47:24.541Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-27T15:40:49.229Z",
+      "finishedAt": "2026-09-27T15:47:18.329Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "docs/AI-FACTORY-CLI.md",
+    "packages/agent-factory/src/config.ts",
+    "packages/agent-factory/src/repository-platform/github.test.ts",
+    "packages/agent-factory/src/repository-platform/github.ts",
+    "packages/agent-factory/src/repository-platform/gitlab.test.ts",
+    "packages/agent-factory/src/repository-platform/gitlab.ts",
+    "packages/agent-factory/src/repository-platform/resolve.ts",
+    "packages/agent-factory/src/repository-platform/types.ts",
+    "packages/agent-factory/src/requirement-lifecycle.test.ts",
+    "packages/agent-factory/src/requirement-lifecycle.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-09-27T15:47:24.541Z",
+  "approvedBy": "Batur Orkun"
+}
