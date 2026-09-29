@@ -82,8 +82,7 @@ Loading the configuration checks each slot against its type and stops with an
 error naming the slot and the variable: a `filesystem` slot needs `PATH`; a
 `git` slot needs exactly one of `REPOSITORIES` and `GROUP`; a variable of the
 other type set on a slot (a `PATH` on a `git` slot, a `GROUP` on a
-`filesystem` one) is an error, not ignored. An unused slot, one with no `ID`,
-is skipped.
+`filesystem` one) is an error, not ignored.
 
 The file types a source takes default by type: a `git` source takes C, C++,
 TS, JS and the document types, a `filesystem` source today's list. A slot can
@@ -126,7 +125,7 @@ links it to the file at that commit on GitLab.
 - A `git` slot with both or neither of `REPOSITORIES` and `GROUP`, a
   `filesystem` slot without `PATH`, or a variable of the other type on a
   slot, fails configuration loading with the slot number and the variable
-  in the message; a slot without `ID` is skipped.
+  in the message.
 - Mirrors live under `RAG_GIT_MIRROR_DIR` and survive an `rsync.sh` deploy;
   the next ingest fetches instead of cloning again.
 - A second ingest after a push processes only the files changed since the
