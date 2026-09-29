@@ -103,6 +103,12 @@
           "**/*.xlsx"
         ],
         "excludeAdditions": "${RAG_SOURCE_4_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_5_ID:-source-5}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_5_PATH:-./references/source-5}",
+        "excludeAdditions": "${RAG_SOURCE_5_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "ingest": {
