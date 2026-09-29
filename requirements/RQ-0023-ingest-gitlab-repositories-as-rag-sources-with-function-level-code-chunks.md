@@ -48,8 +48,14 @@ ingest fetches, diffs against the commit recorded for the last successful
 ingest of that repository, and processes only added, changed and deleted
 files; a deleted or renamed file loses its chunks.
 
-**Configuration follows the numbered slots.** The server and the credential are
-shared by all git sources; each slot adds its own:
+**Configuration follows the numbered slots, and each slot names its type.**
+`RAG_SOURCE_N_TYPE` is `filesystem` or `git`, `filesystem` when unset, so the
+existing slots keep working unchanged. The type comes from this variable, not
+from the slot number and not from which other variables happen to be set: every
+slot template in `factory.config.json` carries
+`"type": "${RAG_SOURCE_N_TYPE:-filesystem}"` and the fields of both types, and
+any slot can be either. The server and the credential are shared by all git
+sources:
 
 ```bash
 RAG_GITLAB_URL=http://gitlab.bc.int
@@ -57,20 +63,32 @@ RAG_GITLAB_TOKEN=glpat-...
 RAG_GIT_MIRROR_DIR=/srv/rag-sources/git
 
 RAG_SOURCE_6_ID=bfi-code
+RAG_SOURCE_6_TYPE=git
 RAG_SOURCE_6_GROUP=aselsan/bfi
 RAG_SOURCE_6_PROJECT_EXCLUDE='["**/archive/**"]'
 RAG_SOURCE_6_EXCLUDE_ADDITIONS='["**/third_party/**"]'
 
 RAG_SOURCE_7_ID=netforgesh-code
+RAG_SOURCE_7_TYPE=git
 RAG_SOURCE_7_REPOSITORIES=netforge/netforgesh,netforge/agent
 RAG_SOURCE_7_REF=main
 ```
 
 `REPOSITORIES` is comma-separated, like `RAG_SOURCE_IDS`. A slot that needs a
 different credential names another variable with `RAG_SOURCE_N_TOKEN_ENV`;
-the configuration only ever holds variable names, never token values. The
-file types a git slot takes (C, C++, TS, JS and the document types) are fixed
-in its `factory.config.json` template; `.env` carries only exceptions.
+the configuration only ever holds variable names, never token values.
+
+Loading the configuration checks each slot against its type and stops with an
+error naming the slot and the variable: a `filesystem` slot needs `PATH`; a
+`git` slot needs exactly one of `REPOSITORIES` and `GROUP`; a variable of the
+other type set on a slot (a `PATH` on a `git` slot, a `GROUP` on a
+`filesystem` one) is an error, not ignored. An unused slot, one with no `ID`,
+is skipped.
+
+The file types a source takes default by type: a `git` source takes C, C++,
+TS, JS and the document types, a `filesystem` source today's list. A slot can
+still spell its own list, as the Renode slot does; `.env` carries only
+exceptions.
 
 **Tokens stay out of everything the service writes.** A repository list needs
 a token with `read_repository`; a group also needs `read_api`, to list its
@@ -102,6 +120,13 @@ links it to the file at that commit on GitLab.
   group and its subgroups that the project globs admit.
 - `RAG_GITLAB_TOKEN` is used when the slot names no `TOKEN_ENV`, and the
   named variable when it does.
+- A slot's type comes only from `RAG_SOURCE_N_TYPE`, defaulting to
+  `filesystem`; the five existing slots load and ingest as before without
+  it, and a `git` slot works in any slot number.
+- A `git` slot with both or neither of `REPOSITORIES` and `GROUP`, a
+  `filesystem` slot without `PATH`, or a variable of the other type on a
+  slot, fails configuration loading with the slot number and the variable
+  in the message; a slot without `ID` is skipped.
 - Mirrors live under `RAG_GIT_MIRROR_DIR` and survive an `rsync.sh` deploy;
   the next ingest fetches instead of cloning again.
 - A second ingest after a push processes only the files changed since the
