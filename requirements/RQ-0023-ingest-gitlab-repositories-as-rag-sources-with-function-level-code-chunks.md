@@ -34,41 +34,53 @@ any origin.
 
 **A source can hold a folder, repositories, or both.** A source stays one
 corpus, one `sourceId`. Its inputs are an optional folder (`PATH`, as today)
-and optional GitLab repositories, named either as a list of project paths
-(`group/project`) or as a GitLab group whose projects and subgroups' projects
-it takes, filtered by optional project-path globs. So a project's documents
-and its code, split across firmware, driver and library repositories, can be
-one id, and RQ-0024 can link a call from one repository into another; a
-corpus shared by several projects, such as `do178c`, stays a source of its
-own. There is no source type: what a slot holds is what is set on it.
+and any number of GitLab repositories and groups, each numbered under the
+slot. So a project's documents and its code, split across firmware, driver
+and library repositories, can be one id, and RQ-0024 can link a call from one
+repository into another; a corpus shared by several projects, such as
+`do178c`, stays a source of its own. There is no source type: what a slot
+holds is what is set on it.
 
 ```bash
-RAG_GITLAB_URL=http://gitlab.bc.int
-RAG_GITLAB_TOKEN=glpat-...
 RAG_GIT_MIRROR_DIR=/srv/rag-sources/git
 
-# documents and code in one corpus
 RAG_SOURCE_3_ID=aselsan-bfi
 RAG_SOURCE_3_PATH="/mnt/fs2/5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW"
-RAG_SOURCE_3_REPOSITORIES=aselsan/bfi-sw,aselsan/bfi-drivers
-RAG_SOURCE_3_REF=main
 
-# a whole group, code only
+RAG_SOURCE_3_REPO_1_URL=http://gitlab.bc.int/aselsan/bfi-sw
+RAG_SOURCE_3_REPO_1_TOKEN=glpat-...
+RAG_SOURCE_3_REPO_1_REF=main
+
+RAG_SOURCE_3_REPO_2_URL=http://gitlab.bcintr.int/simics/aselsan-bfi
+RAG_SOURCE_3_REPO_2_TOKEN=glpat-...
+
 RAG_SOURCE_6_ID=netforge-code
-RAG_SOURCE_6_GROUP=netforge
-RAG_SOURCE_6_PROJECT_EXCLUDE='["**/archive/**"]'
+RAG_SOURCE_6_GROUP_1_URL=http://gitlab.bc.int/netforge
+RAG_SOURCE_6_GROUP_1_TOKEN=glpat-...
+RAG_SOURCE_6_GROUP_1_PROJECT_EXCLUDE='["**/archive/**"]'
 RAG_SOURCE_6_EXCLUDE_ADDITIONS='["**/third_party/**"]'
 ```
 
-`REPOSITORIES` is comma-separated, like `RAG_SOURCE_IDS`. `REF` applies to
-the slot's repositories; unset, each project's default branch.
-`EXCLUDE_ADDITIONS` applies to every input of the slot. The GitLab server and
-token are shared by all slots; a slot that needs a different credential names
-another variable with `RAG_SOURCE_N_TOKEN_ENV`, and the configuration only
-ever holds variable names, never token values. `PATH` has no default any
-more, so a slot that names only repositories takes no folder. Loading the
-configuration fails, naming the slot and the variables, when a slot sets both
-`REPOSITORIES` and `GROUP`; a slot with no input at all is not a source.
+**Every repository and group carries its own URL and its own token.** There is
+no shared GitLab URL or token: a token belongs to the project (or group) it was
+made for and is never used for another, and the full URL names the server, so
+one source may take repositories from `gitlab.bc.int` and `gitlab.bcintr.int`
+alike. `REPO_K_TOKEN` is typically a project access token with
+`read_repository`; `GROUP_K_TOKEN` is a group access token that also needs
+`read_api`, to list the group's projects and subgroups' projects, filtered by
+the optional `GROUP_K_PROJECT_EXCLUDE` globs. `REF` is optional; unset, the
+repository's default branch, found with `git ls-remote`, so a repository
+entry needs no API scope. `EXCLUDE_ADDITIONS` applies to every input of the
+slot. A project reached both as a `REPO` and through a `GROUP` is ingested
+once.
+
+The numbered entries are read from the environment by both configuration
+loaders (TS and Python); `factory.config.json` does not list them one by one.
+Numbers need not be contiguous. A `REPO_K` or `GROUP_K` with a URL and no
+token, or a token and no URL, fails configuration loading with the slot, the
+entry and the missing variable. `PATH` has no default any more, so a slot that
+names only repositories takes no folder; a slot with no input at all is not a
+source.
 
 **Which files an input takes depends on the input.** A folder takes today's
 default list, or the slot's own list as the Renode slot has; a repository
@@ -90,12 +102,12 @@ processes only added, changed and deleted files; a deleted or renamed file
 loses its chunks. The folder input keeps today's change detection. The run
 report gives each input's counts separately.
 
-**Tokens stay out of everything the service writes.** A repository list needs
-a token with `read_repository`; a group also needs `read_api`, to list its
-projects. `gitlab.bc.int` answers on HTTP only (443 is closed), so the scheme
-comes from `RAG_GITLAB_URL`, and switching to HTTPS later is that one line. The
-token is passed to git per command, never stored in a mirror's git config or
-remote URL, and never written to a log line, chunk, document or error message.
+**Tokens stay out of everything the service writes.** `gitlab.bc.int` answers on
+HTTP only (443 is closed), so the scheme is the one in each URL. A token is read
+from its variable when git or the API needs it: it is passed to git per
+command, never stored in a mirror's git config or remote URL, never copied into
+the loaded configuration that the service prints or serves, and never written
+to a log line, chunk, document or error message.
 
 **Function-level chunks for C, C++, TS and JS, from every input.** Chunking
 depends on the file's language, not its origin: a `.c` file in a folder is
@@ -128,27 +140,30 @@ cited as `<path>:<start>-<end> (<symbol>)`.
 
 ## Acceptance Criteria
 
-- A slot with `PATH` and two repositories in `REPOSITORIES` ingests the
-  folder and both repositories into one `sourceId`, and a query on that id
-  returns chunks from all three.
-- A slot with `GROUP` ingests every project of the group and its subgroups
-  that the project globs admit; a slot with both `REPOSITORIES` and `GROUP`
-  fails configuration loading with the slot number and both variable names.
+- A slot with `PATH`, `REPO_1` and `REPO_2` ingests the folder and both
+  repositories into one `sourceId`, and a query on that id returns chunks
+  from all three; the two repositories may be on different GitLab servers.
+- Each repository is fetched with its own `REPO_K_TOKEN` only; a token that
+  cannot read its repository fails that entry, naming the variable, and does
+  not stop the other inputs.
+- A slot with `GROUP_1` ingests every project of the group and its subgroups
+  that the project globs admit; a project also listed as a `REPO` is
+  ingested once.
+- An entry with a URL and no token, or a token and no URL, fails configuration
+  loading with the slot, the entry and the missing variable; entry numbers
+  with gaps load.
 - The five existing slots, which set only `PATH`, load, ingest and query as
   before, with their documents' relative paths unchanged.
 - The same relative path in the folder and in a repository is stored as two
   documents.
-- `RAG_GITLAB_TOKEN` is used when the slot names no `TOKEN_ENV`, and the
-  named variable when it does.
 - Mirrors live under `RAG_GIT_MIRROR_DIR` and survive an `rsync.sh` deploy;
   the next ingest fetches instead of cloning again.
 - A second ingest after a push processes only the files changed since the
   recorded commit; chunks of deleted files are removed and a renamed file is
   not duplicated. The run report shows counts per input.
-- The token value appears in no log line, chunk, stored document, error
-  message or file under the mirror directory, including each mirror's git
-  config; a missing or rejected token fails that source with a message naming
-  the variable.
+- No token value appears in a log line, chunk, stored document, error
+  message, the served configuration or a file under the mirror directory,
+  including each mirror's git config.
 - C, C++, TS and JS files produce one chunk per symbol with the metadata
   listed above, whether they come from a folder or a repository; an
   over-long function is split and each part starts with its signature.
