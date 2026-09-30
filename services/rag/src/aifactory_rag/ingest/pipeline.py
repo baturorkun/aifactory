@@ -75,6 +75,7 @@ class InputContext:
     metadata: dict[str, Any]
     # Repository inputs: relative path -> git blob id, the change detector.
     blobs: dict[str, str] | None = None
+    ref_selector: str | None = None
 
 
 FOLDER_INPUT = InputContext(key="", label="PATH", metadata={"input": "path"})
@@ -162,7 +163,8 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                     except GitInputError as exc:
                         conn = _record_input_error(conn, config, summary, source.id, exc, repository.key)
                         continue
-                    print(f"RAG repository at : {tree.ref} {tree.commit[:12]}", flush=True)
+                    resolved = f"{tree.selector} -> {tree.ref}" if tree.selector else tree.ref
+                    print(f"RAG repository at : {resolved} ({tree.commit[:12]})", flush=True)
                     context = _repository_context(repository, tree)
                     files = _repository_files(source, tree)
                     _print_matched(repository.key, files)
@@ -232,6 +234,8 @@ def _ingest_input(
         "errors": 0,
     }
     if context.metadata.get("commit"):
+        if context.ref_selector:
+            counts["refSelector"] = context.ref_selector
         counts["ref"] = context.metadata.get("ref")
         counts["commit"] = context.metadata["commit"]
     summary.scanned_count += len(files)
@@ -327,6 +331,7 @@ def _repository_context(repository: RepositoryInput, tree: RepositoryTree) -> In
             "commit": tree.commit,
         },
         blobs=tree.blobs,
+        ref_selector=tree.selector,
     )
 
 
@@ -539,12 +544,15 @@ def _backfill_metadata(
     relative_path: str,
     context: InputContext,
 ) -> None:
-    """Give an unchanged document the labels it predates, without re-embedding.
+    """Bring an unchanged document's labels up to date, without re-embedding.
 
     Documents ingested before `contentType` existed carry none, so a filter on
     `documentation` would drop them; every document now also names its input.
+    A repository file unchanged between two commits keeps its chunks but is
+    relabelled with the commit and ref just ingested, so a citation names the
+    release the corpus follows rather than the one the file was first seen in.
     """
-    wanted = {"contentType": _content_type_metadata(relative_path).get("contentType"), "input": context.metadata["input"]}
+    wanted = {"contentType": _content_type_metadata(relative_path).get("contentType"), **context.metadata}
     wanted = {key: value for key, value in wanted.items() if value is not None}
     current = existing.get("metadata") or {}
     if all(current.get(key) == value for key, value in wanted.items()):

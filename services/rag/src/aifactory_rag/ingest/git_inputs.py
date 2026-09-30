@@ -46,6 +46,9 @@ class RepositoryTree:
     ref: str
     commit: str
     blobs: dict[str, str]  # relative path -> git blob id
+    # The REF selector this tree was resolved from (`@last-release`), if any;
+    # `ref` is always the real branch or tag.
+    selector: str | None = None
 
 
 class GitInputError(RuntimeError):
@@ -161,14 +164,51 @@ def sync_repository(repository: RepositoryInput, mirror_dir: str, environ: dict[
     else:
         git.run("remote", "set-url", "origin", repository.clone_url)
 
-    ref = repository.ref or git.default_branch()
+    requested = repository.ref
+    if requested == "@last-release":
+        ref = _last_release(repository, token)
+    elif requested == "@last-tag":
+        ref = git.last_version_tag()
+    else:
+        ref = requested or git.default_branch()
     # A REF may name a branch or a tag (a firmware release is pinned by tag).
     remote_ref, local_ref = git.resolve_ref(ref)
     git.run("fetch", "-q", "--prune", "--no-tags", "origin", f"+{remote_ref}:{local_ref}", network=True)
     commit = git.run("rev-parse", f"{local_ref}^{{commit}}").strip()
     git.run("checkout", "-q", "--force", "--detach", commit)
     git.run("clean", "-q", "-ffdx")
-    return RepositoryTree(worktree=worktree, ref=ref, commit=commit, blobs=git.blobs(commit))
+    selector = requested if requested and requested.startswith("@") else None
+    return RepositoryTree(worktree=worktree, ref=ref, commit=commit, blobs=git.blobs(commit), selector=selector)
+
+
+def _last_release(repository: RepositoryInput, token: str) -> str:
+    """The tag of the newest GitLab Release by release date, upcoming ones ignored."""
+    parts = urlsplit(repository.web_url)
+    if parts.scheme not in {"http", "https"}:
+        raise GitInputError(f"{repository.entry}_REF=@last-release needs a GitLab URL, not {repository.web_url}")
+    api = urlunsplit((parts.scheme, parts.netloc, f"/api/v4/projects/{quote(repository.project_path, safe='')}/releases", "", ""))
+    try:
+        response = httpx.get(
+            api,
+            params={"order_by": "released_at", "sort": "desc", "per_page": 20},
+            headers={"PRIVATE-TOKEN": token},
+            timeout=60,
+        )
+    except httpx.HTTPError as exc:
+        raise GitInputError(f"{repository.entry}: GitLab {parts.netloc} is not reachable: {exc.__class__.__name__}") from None
+    if response.status_code in {401, 403}:
+        raise GitInputError(
+            f"{repository.token_env} cannot read the releases of {repository.web_url} (HTTP {response.status_code}); "
+            "@last-release needs a token with read_api"
+        )
+    if response.status_code >= 400:
+        raise GitInputError(f"{repository.entry}: GitLab answered HTTP {response.status_code} listing the releases of {repository.web_url}")
+    for release in response.json():
+        tag = release.get("tag_name")
+        if tag and not release.get("upcoming_release"):
+            return str(tag)
+    raise GitInputError(f"{repository.entry}_REF=@last-release: {repository.web_url} has no release")
+
 
 
 def _token(variable: str, env: dict[str, str] | os._Environ[str]) -> str:
@@ -221,6 +261,25 @@ class _Git:
                 return line[len("ref: refs/heads/"):-len("\tHEAD")]
         raise GitInputError(f"{self.repository.entry}: {self.repository.web_url} has no default branch")
 
+    def last_version_tag(self) -> str:
+        """The tag with the highest version number; tags that are not versions are skipped."""
+        output = self.run("ls-remote", "--tags", "origin", network=True)
+        best: tuple[tuple[int, ...], str] | None = None
+        for line in output.splitlines():
+            name = line.split("\t", 1)[-1]
+            if not name.startswith("refs/tags/") or name.endswith("^{}"):
+                continue
+            tag = name[len("refs/tags/"):]
+            match = _VERSION_TAG.match(tag)
+            if not match:
+                continue
+            version = tuple(int(part) for part in match.group(1).split("."))
+            if best is None or version > best[0]:
+                best = (version, tag)
+        if best is None:
+            raise GitInputError(f"{self.repository.entry}_REF=@last-tag: {self.repository.web_url} has no version tag")
+        return best[1]
+
     def resolve_ref(self, ref: str) -> tuple[str, str]:
         """The remote ref a REF names and where it is fetched to locally."""
         output = self.run("ls-remote", "origin", f"refs/heads/{ref}", f"refs/tags/{ref}", network=True)
@@ -247,6 +306,8 @@ class _Git:
     def _redact(self, text: str) -> str:
         return text.replace(self.token, "***") if self.token else text
 
+
+_VERSION_TAG = re.compile(r"^[vV]?(\d+(?:\.\d+)*)$")
 
 _AUTH_FAILURE = re.compile(
     r"authentication failed|could not read username|http basic: access denied|"

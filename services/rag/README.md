@@ -137,11 +137,17 @@ RAG_SOURCE_3_ID=aselsan-bfi
 RAG_SOURCE_3_PATH="/mnt/fs2/…/5001-K ASELSAN BFI-SW"   # optional
 RAG_SOURCE_3_REPO_1_URL=http://gitlab.bc.int/aselsan/bfi-sw
 RAG_SOURCE_3_REPO_1_TOKEN=glpat-…      # project access token, read_repository
-RAG_SOURCE_3_REPO_1_REF=main           # optional; default branch otherwise
+RAG_SOURCE_3_REPO_1_REF=@last-release  # optional: a branch, a tag, @last-release or @last-tag; default branch otherwise
 RAG_SOURCE_3_GROUP_1_URL=http://gitlab.bc.int/aselsan
 RAG_SOURCE_3_GROUP_1_TOKEN=glpat-…     # group access token, read_api + read_repository
 RAG_SOURCE_3_GROUP_1_PROJECT_EXCLUDE='["**/archive/**"]'
 ```
+
+`@last-release` follows the newest GitLab Release (the token then needs
+`read_api`) and `@last-tag` the highest version tag; both are resolved at every
+ingest, and the report, metadata and citations carry the real tag. Write them
+with `@`, not `<...>`: `.env` is sourced by a shell, which reads `<` as a
+redirection and leaves the value empty.
 
 Numbers need not be contiguous; a URL without its token, or a token without
 its URL, stops the configuration from loading. A token is only ever used for
