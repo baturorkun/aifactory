@@ -1,0 +1,51 @@
+{
+  "runId": "20260930202710-RQ-0026",
+  "requirementId": "RQ-0026",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260930202710-RQ-0026/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-09-30T20:27:10.602Z",
+  "updatedAt": "2026-09-30T20:32:08.790Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-30T20:27:15.953Z",
+      "finishedAt": "2026-09-30T20:30:57.612Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "services/rag/.pytest_cache/v/cache/nodeids",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/__pycache__/api.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/db.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/code_chunker.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/git_inputs.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/pipeline.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/sources.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/git_inputs.py",
+    "services/rag/src/aifactory_rag/ingest/pipeline.py",
+    "services/rag/src/aifactory_rag/query/__pycache__/responder.cpython-313.pyc",
+    "services/rag/tests/__pycache__/test_code_chunker.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_git_inputs.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_git_source_config.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_ref_selectors.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_resilient_embeddings.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/test_ref_selectors.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-09-30T20:32:08.790Z",
+  "approvedBy": "Batur Orkun"
+}
