@@ -21,6 +21,8 @@ def effective_excludes(source: RagSourceConfig) -> list[str]:
 
 
 def normalize_subdir(source: RagSourceConfig, subdir: str | None) -> str | None:
+    if not source.root_path:
+        raise ValueError(f"RAG source {source.id} has no folder input")
     root = Path(source.root_path).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"RAG source root does not exist: {root}")
@@ -45,6 +47,8 @@ def normalize_subdir(source: RagSourceConfig, subdir: str | None) -> str | None:
 
 
 def scan_files(source: RagSourceConfig, subdir: str | None = None) -> list[SourceFile]:
+    if not source.root_path:
+        return []
     root = Path(source.root_path).expanduser().resolve()
     normalized_subdir = normalize_subdir(source, subdir)
     scan_root = root / normalized_subdir if normalized_subdir else root
@@ -68,6 +72,11 @@ def scan_files(source: RagSourceConfig, subdir: str | None = None) -> list[Sourc
             )
         )
     return sorted(files, key=lambda item: item.relative_path)
+
+
+def selected(relative_path: str, include: list[str], excludes: list[str]) -> bool:
+    """Whether a path passes a source's include and exclude globs."""
+    return _included(relative_path, include) and not _excluded(relative_path, excludes)
 
 
 def _included(relative_path: str, patterns: list[str]) -> bool:

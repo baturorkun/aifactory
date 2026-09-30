@@ -28,6 +28,8 @@ class IngestRunRequest(BaseModel):
 
 
 def resolve_source_file(source: RagSourceConfig, relative_path: str) -> Path:
+    if not source.root_path:
+        raise ValueError("This source has no folder; its repository files open on GitLab")
     requested = Path(relative_path)
     if not relative_path.strip() or requested.is_absolute():
         raise ValueError("Document path must be relative to its configured source")
@@ -103,7 +105,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     @app.get("/documents")
     def documents(sourceId: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
         query_text = """
-            SELECT id, source_id, relative_path, file_size, modified_at, status,
+            SELECT id, source_id, input_key, relative_path, file_size, modified_at, status,
                    last_ingested_at, last_error, metadata
             FROM rag_documents
         """
@@ -111,7 +113,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         if sourceId:
             query_text += " WHERE source_id = %s"
             params = (sourceId,)
-        query_text += " ORDER BY source_id, relative_path LIMIT 500"
+        query_text += " ORDER BY source_id, input_key, relative_path LIMIT 500"
         with connect(factory_config.rag.database.connection_string) as conn:
             return fetch_all(conn, query_text, params)
 
@@ -136,7 +138,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 """
                 SELECT id
                 FROM rag_documents
-                WHERE source_id = %s AND relative_path = %s AND status = 'active'
+                WHERE source_id = %s AND input_key = '' AND relative_path = %s AND status = 'active'
                 """,
                 (sourceId, relativePath),
             )

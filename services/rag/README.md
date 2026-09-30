@@ -113,6 +113,58 @@ For a Simics examples tree, a focused source can use:
 }
 ```
 
+### GitLab repositories
+
+A source can also hold GitLab repositories, next to its folder or instead of
+it; the documents and the code are then one corpus, one `sourceId`, told apart
+by `contentType` (`excludeContentTypes: ["code"]` or `["documentation"]`). Give
+the slot template an `envPrefix` and put each repository or group in `.env` as
+a numbered entry with its own URL and its own token:
+
+```json
+{
+  "id": "${RAG_SOURCE_3_ID:-source-3}",
+  "type": "filesystem",
+  "rootPath": "${RAG_SOURCE_3_PATH:-}",
+  "envPrefix": "RAG_SOURCE_3"
+}
+```
+
+```bash
+RAG_GIT_MIRROR_DIR=/srv/rag-sources/git   # outside /srv/aifactory: rsync.sh deletes what the checkout lacks
+
+RAG_SOURCE_3_ID=aselsan-bfi
+RAG_SOURCE_3_PATH="/mnt/fs2/…/5001-K ASELSAN BFI-SW"   # optional
+RAG_SOURCE_3_REPO_1_URL=http://gitlab.bc.int/aselsan/bfi-sw
+RAG_SOURCE_3_REPO_1_TOKEN=glpat-…      # project access token, read_repository
+RAG_SOURCE_3_REPO_1_REF=main           # optional; default branch otherwise
+RAG_SOURCE_3_GROUP_1_URL=http://gitlab.bc.int/aselsan
+RAG_SOURCE_3_GROUP_1_TOKEN=glpat-…     # group access token, read_api + read_repository
+RAG_SOURCE_3_GROUP_1_PROJECT_EXCLUDE='["**/archive/**"]'
+```
+
+Numbers need not be contiguous; a URL without its token, or a token without
+its URL, stops the configuration from loading. A token is only ever used for
+its own entry and is handed to git through the environment, so it is not
+written to the mirror's git config, a log or an error. Each repository is kept
+as a working tree under `RAG_GIT_MIRROR_DIR/<host>/<group>/<project>` and
+ingested at the fetched commit; a file whose git blob id has not changed since
+the last ingest is skipped. A repository or group that cannot be read fails
+alone and the rest of the source is still ingested. `--subdir` narrows the
+folder only.
+
+C, C++, TypeScript and JavaScript are chunked one symbol per chunk (function,
+method, class, struct, enum, typedef, macro block) with tree-sitter, from a
+folder or a repository alike; every chunk carries its symbol, kind, signature
+and line range, and a repository chunk its repository, ref and commit. Answers
+cite such a chunk as `<repository>@<commit>:<path>:<start>-<end> (<symbol>)`
+and the web page links it to GitLab. The first ingest after this change
+re-chunks existing C/C++/TS/JS files by symbol on its own; other files are not
+re-embedded, and documents that predate `contentType` gain it in place.
+
+Deploying it needs `pip install` of the tree-sitter packages in
+`pyproject.toml` and `db migrate` (migration `003_source_inputs.sql`).
+
 Set secrets in `.env`:
 
 ```bash

@@ -333,7 +333,9 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
     const groupedSources = new Map();
     for (const source of sources) {
       if (source.sourceId && source.relativePath) {
-        const key = `${source.sourceId}\u0000${source.relativePath}`;
+        // A code chunk is its own citation: the same file in two repositories,
+        // or two functions of one file, are different places.
+        const key = [source.sourceId, source.repository || '', source.relativePath, source.startLine || ''].join('\u0000');
         const group = groupedSources.get(key);
         const pageNumbers = Array.isArray(source.pageNumbers)
           ? source.pageNumbers.filter((page) => Number.isInteger(page) && page > 0)
@@ -349,13 +351,21 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
       });
       const chip = document.createElement('a');
       chip.className = 'source-chip';
-      chip.href = `/api/documents/download?${params}`;
-      chip.download = '';
-      chip.title = `Download ${source.relativePath}`;
+      if (source.webUrl) {
+        // Repository files open at the cited commit and lines on GitLab.
+        chip.href = source.webUrl;
+        chip.target = '_blank';
+        chip.rel = 'noopener';
+        chip.title = `Open ${source.repository}:${source.relativePath} on GitLab`;
+      } else if (!source.repository) {
+        chip.href = `/api/documents/download?${params}`;
+        chip.download = '';
+        chip.title = `Download ${source.relativePath}`;
+      }
       const sortedPages = [...pages].sort((left, right) => left - right);
       const pathLabel = document.createElement('span');
       pathLabel.className = 'source-path';
-      pathLabel.textContent = source.relativePath;
+      pathLabel.textContent = source.repository ? `${source.repository}:${source.relativePath}` : source.relativePath;
       const sourceDetails = document.createElement('span');
       sourceDetails.className = 'source-details';
       if (sortedPages.length) {
@@ -364,10 +374,17 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
         pageLabel.textContent = `${sortedPages.length === 1 ? 'Page' : 'Pages'} ${sortedPages.join(', ')}`;
         sourceDetails.append(pageLabel);
       }
+      if (source.symbol || source.startLine) {
+        const symbolLabel = document.createElement('span');
+        symbolLabel.className = 'source-pages';
+        const lines = source.startLine ? `L${source.startLine}–${source.endLine || source.startLine}` : '';
+        symbolLabel.textContent = [source.symbol, lines].filter(Boolean).join(' · ');
+        sourceDetails.append(symbolLabel);
+      }
       sourceDetails.append(pathLabel);
       const downloadLabel = document.createElement('span');
       downloadLabel.className = 'source-download';
-      downloadLabel.textContent = '↓ Download';
+      downloadLabel.textContent = source.webUrl ? '↗ GitLab' : source.repository ? '' : '↓ Download';
       chip.append(sourceDetails, downloadLabel);
       sourceContainer.append(chip);
     }

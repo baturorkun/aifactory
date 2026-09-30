@@ -4,7 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
@@ -20,93 +20,126 @@ class RagDatabaseConfig(BaseModel):
     )
 
 
+class GitRepositoryConfig(BaseModel):
+    """One GitLab repository of a source, read from `<prefix>_REPO_<k>_*`."""
+
+    entry: str
+    url: str
+    # The name of the variable that holds the token, never the token: the
+    # configuration is printed and served (`/sources`), the variable is not.
+    token_env: str = Field(alias="tokenEnv")
+    ref: str | None = None
+
+
+class GitGroupConfig(BaseModel):
+    """A GitLab group of a source, read from `<prefix>_GROUP_<k>_*`."""
+
+    entry: str
+    url: str
+    token_env: str = Field(alias="tokenEnv")
+    project_exclude: list[str] = Field(default_factory=list, alias="projectExclude")
+
+
+class RagGitConfig(BaseModel):
+    # Outside the deployed tree: rsync.sh deletes whatever the checkout lacks
+    # under /srv/aifactory, and a mirror there would be cloned again each deploy.
+    mirror_dir: str = Field(default="/srv/rag-sources/git", alias="mirrorDir")
+
+
+DEFAULT_INCLUDE = [
+    "**/*.txt",
+    "**/*.md",
+    "**/*.json",
+    "**/*.csv",
+    "**/*.html",
+    "**/*.htm",
+    "**/*.pdf",
+    "**/*.docx",
+    "**/*.pptx",
+    "**/*.xlsx",
+    "**/*.xlsm",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.png",
+    "**/*.bmp",
+    "**/*.tif",
+    "**/*.tiff",
+    "**/*.webp",
+    "**/*.py",
+    "**/*.pyi",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    "**/*.cts",
+    "**/*.java",
+    "**/*.kt",
+    "**/*.kts",
+    "**/*.go",
+    "**/*.rs",
+    "**/*.c",
+    "**/*.h",
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.cs",
+    "**/*.fs",
+    "**/*.fsx",
+    "**/*.rb",
+    "**/*.php",
+    "**/*.swift",
+    "**/*.scala",
+    "**/*.sh",
+    "**/*.bash",
+    "**/*.zsh",
+    "**/*.fish",
+    "**/*.ps1",
+    "**/*.sql",
+    "**/*.yaml",
+    "**/*.yml",
+    "**/*.toml",
+    "**/*.ini",
+    "**/*.cfg",
+    "**/*.conf",
+    "**/*.xml",
+    "**/*.vue",
+    "**/*.svelte",
+    "**/*.proto",
+    "**/*.graphql",
+    "**/*.gql",
+    "**/*.dml",
+    "**/*.simics",
+    "**/*.mk",
+    "**/*.inc",
+    "**/*.include",
+    "**/*.cmake",
+    "**/Dockerfile",
+    "**/Makefile",
+    "**/GNUmakefile",
+    "**/Rakefile",
+    "**/Gemfile",
+    "**/Procfile",
+    "**/Jenkinsfile",
+]
+
+
 class RagSourceConfig(BaseModel):
     id: str
     type: Literal["filesystem"] = "filesystem"
-    root_path: str = Field(alias="rootPath")
-    include: list[str] = Field(
-        default_factory=lambda: [
-            "**/*.txt",
-            "**/*.md",
-            "**/*.json",
-            "**/*.csv",
-            "**/*.html",
-            "**/*.htm",
-            "**/*.pdf",
-            "**/*.docx",
-            "**/*.pptx",
-            "**/*.xlsx",
-            "**/*.xlsm",
-            "**/*.jpg",
-            "**/*.jpeg",
-            "**/*.png",
-            "**/*.bmp",
-            "**/*.tif",
-            "**/*.tiff",
-            "**/*.webp",
-            "**/*.py",
-            "**/*.pyi",
-            "**/*.js",
-            "**/*.jsx",
-            "**/*.mjs",
-            "**/*.cjs",
-            "**/*.ts",
-            "**/*.tsx",
-            "**/*.mts",
-            "**/*.cts",
-            "**/*.java",
-            "**/*.kt",
-            "**/*.kts",
-            "**/*.go",
-            "**/*.rs",
-            "**/*.c",
-            "**/*.h",
-            "**/*.cc",
-            "**/*.cpp",
-            "**/*.cxx",
-            "**/*.hh",
-            "**/*.hpp",
-            "**/*.hxx",
-            "**/*.cs",
-            "**/*.fs",
-            "**/*.fsx",
-            "**/*.rb",
-            "**/*.php",
-            "**/*.swift",
-            "**/*.scala",
-            "**/*.sh",
-            "**/*.bash",
-            "**/*.zsh",
-            "**/*.fish",
-            "**/*.ps1",
-            "**/*.sql",
-            "**/*.yaml",
-            "**/*.yml",
-            "**/*.toml",
-            "**/*.ini",
-            "**/*.cfg",
-            "**/*.conf",
-            "**/*.xml",
-            "**/*.vue",
-            "**/*.svelte",
-            "**/*.proto",
-            "**/*.graphql",
-            "**/*.gql",
-            "**/*.dml",
-            "**/*.simics",
-            "**/*.mk",
-            "**/*.inc",
-            "**/*.include",
-            "**/*.cmake",
-            "**/Dockerfile",
-            "**/Makefile",
-            "**/GNUmakefile",
-            "**/Rakefile",
-            "**/Gemfile",
-            "**/Procfile",
-            "**/Jenkinsfile",
-        ]
-    )
+    # The folder input. Optional: a source may hold only repositories.
+    root_path: str | None = Field(default=None, alias="rootPath")
+    # The slot's variable prefix (`RAG_SOURCE_3`); its numbered REPO_<k> and
+    # GROUP_<k> entries are read from the environment under it.
+    env_prefix: str | None = Field(default=None, alias="envPrefix")
+    repositories: list[GitRepositoryConfig] = Field(default_factory=list)
+    groups: list[GitGroupConfig] = Field(default_factory=list)
+    include: list[str] = Field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = Field(
         default_factory=lambda: [
             "**/~$*",
@@ -125,6 +158,15 @@ class RagSourceConfig(BaseModel):
         ]
     )
     exclude_additions: list[str] = Field(default_factory=list, alias="excludeAdditions")
+
+    @field_validator("root_path", mode="before")
+    @classmethod
+    def _blank_root_path_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
+    @property
+    def has_inputs(self) -> bool:
+        return bool(self.root_path or self.repositories or self.groups)
 
     @field_validator("exclude_additions", mode="before")
     @classmethod
@@ -243,6 +285,7 @@ class RagGroundingConfig(BaseModel):
 class RagConfig(BaseModel):
     database: RagDatabaseConfig = Field(default_factory=RagDatabaseConfig)
     sources: list[RagSourceConfig] = Field(default_factory=list)
+    git: RagGitConfig = Field(default_factory=RagGitConfig)
     ingest: RagIngestConfig = Field(default_factory=RagIngestConfig)
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
     llm: RagLlmConfig = Field(default_factory=RagLlmConfig)
@@ -267,7 +310,64 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
     if not isinstance(rag_raw, dict):
         raise ValueError("factory.config.json field 'rag' must be an object")
     expanded_rag = _expand_env(rag_raw)
-    return FactoryConfig.model_validate({"rag": expanded_rag})
+    sources = expanded_rag.get("sources")
+    if isinstance(sources, list):
+        for source in sources:
+            if isinstance(source, dict) and source.get("envPrefix"):
+                source.update(git_entries_from_env(str(source["envPrefix"]), str(source.get("id", "")), os.environ))
+    config = FactoryConfig.model_validate({"rag": expanded_rag})
+    # A slot that names neither a folder nor a repository is an unused template
+    # slot, not a source.
+    config.rag.sources = [source for source in config.rag.sources if source.has_inputs]
+    return config
+
+
+GIT_ENTRY_PATTERN = re.compile(r"^(REPO|GROUP)_(\d+)_(URL|TOKEN|REF|PROJECT_EXCLUDE)$")
+
+
+def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]) -> dict[str, list[dict[str, Any]]]:
+    """Collect a slot's numbered repository and group entries.
+
+    `<prefix>_REPO_<k>_URL` / `_TOKEN` / `_REF` and `<prefix>_GROUP_<k>_URL` /
+    `_TOKEN` / `_PROJECT_EXCLUDE`. Numbers need not be contiguous. Only the
+    token variable's name is kept; its value is read when git needs it.
+    """
+    found: dict[tuple[str, int], dict[str, str]] = {}
+    for name, value in environ.items():
+        if not name.startswith(prefix + "_"):
+            continue
+        match = GIT_ENTRY_PATTERN.match(name[len(prefix) + 1:])
+        if not match or not value.strip():
+            continue
+        kind, number, field = match.group(1), int(match.group(2)), match.group(3)
+        found.setdefault((kind, number), {})[field] = value.strip()
+
+    repositories: list[dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
+    for (kind, number), fields in sorted(found.items(), key=lambda item: (item[0][0], item[0][1])):
+        entry = f"{prefix}_{kind}_{number}"
+        missing = [f"{entry}_{field}" for field in ("URL", "TOKEN") if field not in fields]
+        if missing:
+            label = f"{prefix} ({source_id})" if source_id else prefix
+            raise ValueError(f"{label}: {entry} is incomplete, {' and '.join(missing)} not set")
+        common = {"entry": entry, "url": fields["URL"], "tokenEnv": f"{entry}_TOKEN"}
+        if kind == "REPO":
+            repositories.append({**common, "ref": fields.get("REF")})
+        else:
+            groups.append({**common, "projectExclude": _json_glob_list(fields.get("PROJECT_EXCLUDE"), f"{entry}_PROJECT_EXCLUDE")})
+    return {"repositories": repositories, "groups": groups}
+
+
+def _json_glob_list(value: str | None, name: str) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{name} must be a JSON array of glob strings") from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise ValueError(f"{name} must be a JSON array of glob strings")
+    return parsed
 
 
 def find_source(config: RagConfig, source_id: str) -> RagSourceConfig:

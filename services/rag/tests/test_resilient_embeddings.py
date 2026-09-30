@@ -11,6 +11,7 @@ import psycopg
 
 from aifactory_rag.config import RagConfig, RagEmbeddingConfig
 from aifactory_rag.embeddings import GeminiEmbeddingAdapter, LocalEmbeddingAdapter, create_embedding_adapter
+from aifactory_rag.ingest.code_chunker import CodeChunk
 from aifactory_rag.ingest.pipeline import (
     _can_resume,
     _content_type_metadata,
@@ -170,18 +171,18 @@ class ResilientEmbeddingTests(unittest.TestCase):
             },
         }
 
-        self.assertTrue(_can_resume(existing, "same-hash", config))
-        self.assertFalse(_can_resume(existing, "changed-hash", config))
-        self.assertFalse(_can_resume({**existing, "status": "active"}, "same-hash", config))
-        self.assertFalse(_can_resume({**existing, "metadata": {"chunkSize": 2000, "chunkOverlap": 150}}, "same-hash", config))
+        self.assertTrue(_can_resume(existing, "same-hash", config, "standards/standard.pdf"))
+        self.assertFalse(_can_resume(existing, "changed-hash", config, "standards/standard.pdf"))
+        self.assertFalse(_can_resume({**existing, "status": "active"}, "same-hash", config, "standards/standard.pdf"))
+        self.assertFalse(_can_resume({**existing, "metadata": {"chunkSize": 2000, "chunkOverlap": 150}}, "same-hash", config, "standards/standard.pdf"))
         changed_embedding = {
             **existing,
             "metadata": {**existing["metadata"], "embeddingModel": "another-model"},
         }
-        self.assertFalse(_can_resume(changed_embedding, "same-hash", config))
+        self.assertFalse(_can_resume(changed_embedding, "same-hash", config, "standards/standard.pdf"))
 
     def test_chunk_batches_resume_after_completed_checkpoints(self) -> None:
-        chunks = ["zero", "one", "two", "three", "four"]
+        chunks = [CodeChunk(text) for text in ["zero", "one", "two", "three", "four"]]
         connection = FakeConnection([{"chunk_index": 0, "text": "zero"}, {"chunk_index": 1, "text": "one"}])
         adapter = FakeEmbeddingAdapter()
 
@@ -198,6 +199,8 @@ class ResilientEmbeddingTests(unittest.TestCase):
                     # Classified from the extension, so a file is labelled
                     # wherever it sits: see tests/test_content_type.py.
                     "contentType": "documentation",
+                    # Every chunk names its input; the folder is "path".
+                    "input": "path",
                 }
                 for metadata in connection.inserted_metadata
             )

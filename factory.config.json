@@ -71,25 +71,29 @@
       {
         "id": "${RAG_SOURCE_1_ID:-source-1}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_1_PATH:-./references/source-1}",
+        "rootPath": "${RAG_SOURCE_1_PATH:-}",
+        "envPrefix": "RAG_SOURCE_1",
         "excludeAdditions": "${RAG_SOURCE_1_EXCLUDE_ADDITIONS:-[]}"
       },
       {
         "id": "${RAG_SOURCE_2_ID:-source-2}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_2_PATH:-./references/source-2}",
+        "rootPath": "${RAG_SOURCE_2_PATH:-}",
+        "envPrefix": "RAG_SOURCE_2",
         "excludeAdditions": "${RAG_SOURCE_2_EXCLUDE_ADDITIONS:-[]}"
       },
       {
         "id": "${RAG_SOURCE_3_ID:-source-3}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_3_PATH:-./references/source-3}",
+        "rootPath": "${RAG_SOURCE_3_PATH:-}",
+        "envPrefix": "RAG_SOURCE_3",
         "excludeAdditions": "${RAG_SOURCE_3_EXCLUDE_ADDITIONS:-[]}"
       },
       {
         "id": "${RAG_SOURCE_4_ID:-source-4}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_4_PATH:-./references/source-4}",
+        "rootPath": "${RAG_SOURCE_4_PATH:-}",
+        "envPrefix": "RAG_SOURCE_4",
         "include": [
           "**/*.md",
           "**/*.rst",
@@ -107,10 +111,14 @@
       {
         "id": "${RAG_SOURCE_5_ID:-source-5}",
         "type": "filesystem",
-        "rootPath": "${RAG_SOURCE_5_PATH:-./references/source-5}",
+        "rootPath": "${RAG_SOURCE_5_PATH:-}",
+        "envPrefix": "RAG_SOURCE_5",
         "excludeAdditions": "${RAG_SOURCE_5_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
+    "git": {
+      "mirrorDir": "${RAG_GIT_MIRROR_DIR:-/srv/rag-sources/git}"
+    },
     "ingest": {
       "chunkSize": 1200,
       "chunkOverlap": 150,

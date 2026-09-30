@@ -177,10 +177,25 @@ const RepositoryPlatformsSchema = z.object({
     .optional(),
 });
 
+const RagGitEntrySchema = z.object({
+  entry: z.string().min(1),
+  url: z.string().min(1),
+  tokenEnv: z.string().min(1),
+  ref: z.string().nullish(),
+  projectExclude: z.array(z.string()).optional(),
+});
+
+// The RAG service (services/rag, Python) owns source loading: it reads a
+// slot's numbered REPO_<k>/GROUP_<k> entries from the environment under
+// `envPrefix`. This schema only has to accept the same shape.
 const RagSourceSchema = z.object({
   id: z.string().min(1),
   type: z.literal('filesystem').default('filesystem'),
-  rootPath: z.string().min(1),
+  // The folder input; optional because a source may hold only repositories.
+  rootPath: z.string().optional(),
+  envPrefix: z.string().optional(),
+  repositories: z.array(RagGitEntrySchema).default([]),
+  groups: z.array(RagGitEntrySchema).default([]),
   include: z
     .array(z.string())
     .default([

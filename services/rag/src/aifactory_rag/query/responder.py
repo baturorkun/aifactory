@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from llama_index.llms.anthropic import Anthropic
@@ -39,11 +40,48 @@ def answer_question(
             "relativePath": chunk.relative_path,
             "pageNumbers": list(chunk.page_numbers),
             "score": chunk.score,
+            **code_location(chunk.relative_path, chunk.metadata),
         }
         for chunk in chunks
     ]
     _record_query(config, question, answer, sources, user_id)
     return {"answer": answer, "sources": sources}
+
+
+def code_location(relative_path: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """Where a code chunk sits, and its GitLab link when it came from a repository."""
+    location: dict[str, Any] = {}
+    for key in ("repository", "commit", "symbol", "symbolKind", "startLine", "endLine"):
+        if metadata.get(key) is not None:
+            location[key] = metadata[key]
+    repository_url = metadata.get("repositoryUrl")
+    commit = metadata.get("commit")
+    if repository_url and commit and str(repository_url).startswith(("http://", "https://")):
+        anchor = ""
+        if metadata.get("startLine"):
+            anchor = f"#L{metadata['startLine']}-{metadata.get('endLine') or metadata['startLine']}"
+        location["webUrl"] = f"{repository_url}/-/blob/{commit}/{quote(relative_path)}{anchor}"
+    return location
+
+
+def citation_label(relative_path: str, metadata: dict[str, Any], page_numbers: tuple[int, ...] = ()) -> str:
+    """How a chunk is named to the model, and so how the answer cites it.
+
+    `<repository>@<short commit>:<path>:<start>-<end> (<symbol>)` for code from
+    a repository, `<path>:<start>-<end> (<symbol>)` for code from a folder, and
+    the file name with its pages for everything else.
+    """
+    label = relative_path
+    if metadata.get("repository") and metadata.get("commit"):
+        label = f"{metadata['repository']}@{str(metadata['commit'])[:8]}:{relative_path}"
+    if metadata.get("startLine"):
+        label += f":{metadata['startLine']}-{metadata.get('endLine') or metadata['startLine']}"
+    if metadata.get("symbol"):
+        label += f" ({metadata['symbol']})"
+    if page_numbers:
+        noun = "page" if len(page_numbers) == 1 else "pages"
+        label += f"; {noun} {', '.join(str(page) for page in page_numbers)}"
+    return label
 
 
 def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChunk]) -> str:
@@ -52,16 +90,14 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
 
     context_parts: list[str] = []
     for chunk in chunks:
-        page_label = ""
-        if chunk.page_numbers:
-            noun = "page" if len(chunk.page_numbers) == 1 else "pages"
-            page_label = f"; {noun} {', '.join(str(page) for page in chunk.page_numbers)}"
-        context_parts.append(f"[document: {chunk.relative_path}{page_label}]\n{chunk.text}")
+        label = citation_label(chunk.relative_path, chunk.metadata, chunk.page_numbers)
+        context_parts.append(f"[document: {label}]\n{chunk.text}")
     context = "\n\n".join(context_parts)
     prompt = (
         "Answer the question using only the provided source context. "
         "If the context is insufficient, say so. Cite supporting evidence using the document "
-        "filename and page number when available. Do not use source numbers such as 'source 1'.\n\n"
+        "filename and page number when available; cite code by the location in its document label, "
+        "exactly as given. Do not use source numbers such as 'source 1'.\n\n"
         f"Question:\n{question}\n\n"
         f"Source context:\n{context}"
     )

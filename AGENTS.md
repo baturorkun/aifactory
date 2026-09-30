@@ -42,6 +42,7 @@ RAG servisi (API + web) `root@192.168.1.2:/srv/aifactory` üzerinde çalışır;
 - **Sync servisi yeniden başlatmaz.** Değişen parçaya göre ardından:
   - RAG servis kodu (`services/rag`) veya `factory.config.json`: `ssh root@192.168.1.2 'systemctl restart aifactory-rag'`
   - Yeni Python bağımlılığı (`services/rag/pyproject.toml`): önce `ssh root@192.168.1.2 '/srv/aifactory/.venv-rag/bin/pip install "<paket>"'`, sonra restart.
+  - Yeni migration (`services/rag/src/aifactory_rag/migrations/*.sql`): restart'tan önce `ssh root@192.168.1.2 'cd /srv/aifactory && set -a && . ./.env && set +a && PYTHONPATH=services/rag/src .venv-rag/bin/python -m aifactory_rag --config factory.config.json db migrate'`. Migration'lar idempotent; eksik tablo varsa servis "schema is not migrated" der.
   - Web (`services/rag-web/public`): `ssh root@192.168.1.2 'cd /srv/aifactory && docker compose --env-file .env -f infra/rag/compose.yaml up -d --build --no-deps rag-web'`. `--env-file .env` şart: yoksa compose varsayılan `127.0.0.1:8080`'e bağlanmaya çalışır ve web kapanır.
 - **Ingest** (yeni dosya tipleri veya dokümanlar için; değişmeyen dosyalar atlanır):
   `ssh root@192.168.1.2 'cd /srv/aifactory && set -a && . ./.env && set +a && PYTHONPATH=services/rag/src .venv-rag/bin/python -m aifactory_rag --config factory.config.json ingest --source <source-id>'`
