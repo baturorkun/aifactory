@@ -14,6 +14,7 @@ from llama_index.llms.openai import OpenAI
 
 from aifactory_rag.config import RagConfig, require_query_config
 from aifactory_rag.db import connect
+from aifactory_rag.query import graph
 from aifactory_rag.query.retriever import RetrievedChunk, retrieve
 
 
@@ -23,6 +24,7 @@ def answer_question(
     user_id: str | None = None,
     source_ids: list[str] | None = None,
     exclude_content_types: list[str] | None = None,
+    expand_graph: bool = True,
 ) -> dict:
     require_query_config(config)
     chunks = retrieve(
@@ -31,6 +33,8 @@ def answer_question(
         source_ids=source_ids,
         exclude_content_types=exclude_content_types,
     )
+    if expand_graph:
+        chunks = _expand_with_graph(config, chunks)
     answer = _generate_answer(config, question, chunks)
     sources = [
         {
@@ -41,11 +45,32 @@ def answer_question(
             "pageNumbers": list(chunk.page_numbers),
             "score": chunk.score,
             **code_location(chunk.relative_path, chunk.metadata),
+            **({"graphRelation": chunk.metadata["graphRelation"]} if chunk.metadata.get("graphRelation") else {}),
         }
         for chunk in chunks
     ]
     _record_query(config, question, answer, sources, user_id)
     return {"answer": answer, "sources": sources}
+
+
+def _expand_with_graph(config: RagConfig, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Add the callers and callees of the functions found, within the top-k budget.
+
+    A third of the budget (at least two) goes to the graph; the weakest
+    retrieval hits make room for it. The graph is an addition, never a reason
+    to fail an answer.
+    """
+    top_k = config.retrieval.top_k
+    limit = max(2, top_k // 3)
+    try:
+        with connect(config.database.connection_string) as conn:
+            neighbors = graph.neighbor_chunks(conn, chunks, limit)
+    except Exception as exc:  # noqa: BLE001 - e.g. a database not yet migrated
+        print(f"Graph expansion skipped: {exc}", flush=True)
+        return chunks
+    if not neighbors:
+        return chunks
+    return chunks[: max(1, top_k - len(neighbors))] + neighbors
 
 
 def code_location(relative_path: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -91,6 +116,8 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
     context_parts: list[str] = []
     for chunk in chunks:
         label = citation_label(chunk.relative_path, chunk.metadata, chunk.page_numbers)
+        if chunk.metadata.get("graphRelation"):
+            label += f"; found through the code graph: {chunk.metadata['graphRelation']}"
         context_parts.append(f"[document: {label}]\n{chunk.text}")
     context = "\n\n".join(context_parts)
     prompt = (

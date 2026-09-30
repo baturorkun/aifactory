@@ -171,6 +171,29 @@ re-embedded, and documents that predate `contentType` gain it in place.
 Deploying it needs `pip install` of the tree-sitter packages in
 `pyproject.toml` and `db migrate` (migration `003_source_inputs.sql`).
 
+### Symbol graph
+
+The same parse records, per code file, its definitions (`rag_symbols`) and the
+edges that leave it (`rag_edges`): `calls`, `reads`/`writes` of globals,
+register macros and struct fields (never a function's own locals),
+`includes`/`imports`, `declares` (prototypes) and `contains` (class members).
+Edges are resolved by name (`resolution: name`): a call to `init` reaches every
+function named `init` in the source. The graph lives in the same PostgreSQL
+(migration `004_symbol_graph.sql`); code ingested before it gets its graph on
+the next ingest without being re-embedded.
+
+```bash
+curl "$RAG/symbols?name=a429EncodeWord&sourceIds=aselsan-bfi"
+curl "$RAG/callers?name=a429EncodeWord&sourceIds=aselsan-bfi"     # who calls it, with path and line
+curl "$RAG/callees?name=a429PublisherPublish&sourceIds=aselsan-bfi" # what it calls, with the definitions each name reaches
+curl "$RAG/references?name=TX_CTRL&sourceIds=aselsan-bfi"         # where a register is read and written
+curl "$RAG/impact?name=a429EncodeWord&sourceIds=aselsan-bfi&depth=4" # transitive callers and referrers, by file
+```
+
+A `/query` adds the callers and callees of the functions it found (and the
+header declaring them) within its top-k budget; `"expandGraph": false` turns
+that off.
+
 Set secrets in `.env`:
 
 ```bash

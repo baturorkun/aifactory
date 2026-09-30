@@ -12,6 +12,7 @@ from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
+from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
 
 
@@ -19,6 +20,8 @@ class QueryRequest(BaseModel):
     question: str
     sourceIds: list[str] = Field(default_factory=list)
     excludeContentTypes: list[str] = Field(default_factory=list)
+    # Add the callers and callees of the functions found (RQ-0024).
+    expandGraph: bool = True
 
 
 class IngestRunRequest(BaseModel):
@@ -80,6 +83,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             user_id=user_id,
             source_ids=payload.sourceIds,
             exclude_content_types=payload.excludeContentTypes,
+            expand_graph=payload.expandGraph,
         )
 
     @app.post("/ingest-runs")
@@ -150,6 +154,35 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             filename=path.name,
             headers={"Cache-Control": "private, no-store"},
         )
+
+    def _source_list(sourceIds: str | None) -> list[str] | None:
+        return [item.strip() for item in sourceIds.split(",") if item.strip()] if sourceIds else None
+
+    def _graph(query: Any, *args: Any) -> Any:
+        with connect(factory_config.rag.database.connection_string) as conn:
+            return query(conn, *args)
+
+    # The symbol graph (RQ-0024). `name` is a symbol, qualified or short;
+    # `sourceIds` is an optional comma-separated list.
+    @app.get("/symbols")
+    def symbols(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        return _graph(graph.find_symbols, name, _source_list(sourceIds))
+
+    @app.get("/callers")
+    def callers(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        return _graph(graph.callers, name, _source_list(sourceIds))
+
+    @app.get("/callees")
+    def callees(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        return _graph(graph.callees, name, _source_list(sourceIds))
+
+    @app.get("/references")
+    def references(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        return _graph(graph.references, name, _source_list(sourceIds))
+
+    @app.get("/impact")
+    def impact(name: str, sourceIds: str | None = None, depth: int = 3, _: dict[str, Any] = Depends(auth_claims)) -> dict:
+        return _graph(graph.impact, name, _source_list(sourceIds), depth)
 
     @app.post("/db/migrate")
     def migrate_db(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, str]:

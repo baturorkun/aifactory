@@ -29,6 +29,8 @@ def require_schema(connection_string: str) -> None:
         "rag_ingest_errors",
         "rag_queries",
         "rag_source_inputs",
+        "rag_symbols",
+        "rag_edges",
     }
     try:
         with connect(connection_string) as conn:

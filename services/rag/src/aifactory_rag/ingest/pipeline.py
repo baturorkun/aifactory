@@ -21,6 +21,7 @@ from aifactory_rag.ingest.parsers import (
 from aifactory_rag.config import DEFAULT_INCLUDE
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_code, expected_chunker, language_for
+from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
 from aifactory_rag.ingest.git_inputs import GitInputError, RepositoryInput, RepositoryTree, repository_inputs, sync_repository
 from aifactory_rag.ingest.parsers import parse_file
 from aifactory_rag.ingest.sources import SourceFile, effective_excludes, normalize_subdir, scan_files, selected
@@ -499,12 +500,14 @@ def _ingest_file(
             )
         if unchanged:
             _backfill_metadata(conn, existing, file.relative_path, context)
+            _ensure_graph(conn, existing, source.id, file)
             return "skipped", False
 
     content_hash = f"git:{blob}" if blob is not None else _sha256(file.path)
     if existing and not force and existing["content_hash"] == content_hash and existing["status"] == "active" and _ingest_config_matches(existing, config, file.relative_path):
         _touch_document(conn, int(existing["id"]), file.size, modified_at)
         _backfill_metadata(conn, existing, file.relative_path, context)
+        _ensure_graph(conn, existing, source.id, file)
         return "skipped", False
 
     text = parse_file(file.path)
@@ -515,6 +518,8 @@ def _ingest_file(
         _reset_chunk_checkpoints(conn, document_id)
     conn.commit()
     _replace_chunks(conn, document_id, source.id, file.relative_path, chunks, embed_model, config.ingest.batch_size, resume, context)
+    if language_for(file.relative_path):
+        _replace_graph(conn, document_id, source.id, extract_graph(text, file.relative_path))
     _activate_document(conn, document_id)
     return ("updated" if existing else "inserted"), fallback
 
@@ -532,6 +537,48 @@ def _chunks_for(text: str, relative_path: str, config: RagConfig) -> tuple[list[
             return symbols, False
         return [CodeChunk(chunk) for chunk in chunk_text(text, size, overlap)], True
     return [CodeChunk(chunk) for chunk in chunk_text(text, size, overlap)], False
+
+
+def _ensure_graph(conn: psycopg.Connection, existing: dict[str, Any], source_id: str, file: SourceFile) -> None:
+    """Give an unchanged code document its symbol graph without re-embedding it.
+
+    Code ingested before the graph existed, or under an older graph version,
+    is parsed again for its symbols and edges only.
+    """
+    if not language_for(file.relative_path):
+        return
+    if (existing.get("metadata") or {}).get("graph") == GRAPH_VERSION:
+        return
+    _replace_graph(conn, int(existing["id"]), source_id, extract_graph(parse_file(file.path), file.relative_path))
+
+
+def _replace_graph(conn: psycopg.Connection, document_id: int, source_id: str, graph: FileGraph | None) -> None:
+    """Replace one document's symbols and edges; a file that cannot be read has none."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM rag_edges WHERE document_id = %s", (document_id,))
+        cur.execute("DELETE FROM rag_symbols WHERE document_id = %s", (document_id,))
+        if graph is not None:
+            if graph.symbols:
+                cur.executemany(
+                    """
+                    INSERT INTO rag_symbols(source_id, document_id, name, short_name, kind, signature, start_line, end_line)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    [(source_id, document_id, s.name, s.short_name, s.kind, s.signature, s.start_line, s.end_line) for s in graph.symbols],
+                )
+            if graph.edges:
+                cur.executemany(
+                    """
+                    INSERT INTO rag_edges(source_id, document_id, from_symbol, kind, to_name, line)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    [(source_id, document_id, e.from_symbol, e.kind, e.to_name, e.line) for e in graph.edges],
+                )
+        patch = {"graph": GRAPH_VERSION, **({} if graph is not None else {"graphFallback": True})}
+        cur.execute(
+            "UPDATE rag_documents SET metadata = metadata || %s::jsonb WHERE id = %s",
+            (json.dumps(patch), document_id),
+        )
 
 
 def _input_metadata(relative_path: str, context: InputContext) -> dict[str, Any]:
@@ -796,6 +843,9 @@ def _mark_deleted(conn: psycopg.Connection, source_id: str, input_key: str, seen
                 "UPDATE rag_chunks SET status = 'deleted' WHERE document_id = ANY(%s)",
                 (document_ids,),
             )
+            # A deleted file's symbols stop being definitions and its calls stop being callers.
+            cur.execute("DELETE FROM rag_edges WHERE document_id = ANY(%s)", (document_ids,))
+            cur.execute("DELETE FROM rag_symbols WHERE document_id = ANY(%s)", (document_ids,))
         return len(document_ids)
 
 
