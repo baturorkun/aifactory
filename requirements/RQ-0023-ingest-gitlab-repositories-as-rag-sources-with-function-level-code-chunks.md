@@ -18,76 +18,77 @@ repositoryProvider: github
 
 The RAG answers from documents on the file shares, but most of what the
 projects need to know about their own software is in code on GitLab
-(`gitlab.bc.int`): C/C++ firmware and drivers, TS/JS services and tools. The
-only source type is `filesystem`, so code reaches the corpus only when someone
-copies a checkout onto a share, and it is then chunked by size like prose: a
-chunk starts in the middle of one function and ends in the next, carries no
-symbol name, and a question about a function by name retrieves whatever text
-happens to sit near the name.
+(`gitlab.bc.int`): C/C++ firmware and drivers, TS/JS services and tools. A
+source can only name a folder, so code reaches the corpus only when someone
+copies a checkout onto a share, and every file, code included, is chunked by
+size like prose: a chunk starts in the middle of one function and ends in the
+next, carries no symbol name, and a question about a function by name
+retrieves whatever text happens to sit near the name.
 
-This is the first of three layers for code (the symbol graph and Joern
-data-flow queries follow as their own requirements); it gives the other two
-their input: the repositories on the RAG host and one chunk per symbol.
+This is the first of three layers for code (the symbol graph, RQ-0024, and
+Joern data-flow queries, RQ-0025, follow). It gives the other two their
+input: repositories on the RAG host, and one chunk per symbol for code from
+any origin.
 
 ## What it does
 
-**A `git` source type.** One source is one corpus (one `sourceId`) and may
-hold several repositories, so a project whose code is split across firmware,
-driver and library repositories is queried with a single id, and RQ-0024 can
-link a call from one of them into another. A source names either its
-repositories, as GitLab project paths (`group/project`), or a GitLab group,
-whose projects and subgroups' projects it takes, filtered by optional
-project-path globs. It may name a ref; by default each project's default
-branch. File include/exclude globs work as for `filesystem` sources.
-
-The RAG host keeps a mirror of each repository under `RAG_GIT_MIRROR_DIR`,
-which must lie outside the deployed tree (`rsync.sh` deletes anything under
-`/srv/aifactory` that the checkout does not have; the default is
-`/srv/rag-sources/git`), and ingests the tree at the fetched commit. A later
-ingest fetches, diffs against the commit recorded for the last successful
-ingest of that repository, and processes only added, changed and deleted
-files; a deleted or renamed file loses its chunks.
-
-**Configuration follows the numbered slots, and each slot names its type.**
-`RAG_SOURCE_N_TYPE` is `filesystem` or `git`, `filesystem` when unset, so the
-existing slots keep working unchanged. The type comes from this variable, not
-from the slot number and not from which other variables happen to be set: every
-slot template in `factory.config.json` carries
-`"type": "${RAG_SOURCE_N_TYPE:-filesystem}"` and the fields of both types, and
-any slot can be either. The server and the credential are shared by all git
-sources:
+**A source can hold a folder, repositories, or both.** A source stays one
+corpus, one `sourceId`. Its inputs are an optional folder (`PATH`, as today)
+and optional GitLab repositories, named either as a list of project paths
+(`group/project`) or as a GitLab group whose projects and subgroups' projects
+it takes, filtered by optional project-path globs. So a project's documents
+and its code, split across firmware, driver and library repositories, can be
+one id, and RQ-0024 can link a call from one repository into another; a
+corpus shared by several projects, such as `do178c`, stays a source of its
+own. There is no source type: what a slot holds is what is set on it.
 
 ```bash
 RAG_GITLAB_URL=http://gitlab.bc.int
 RAG_GITLAB_TOKEN=glpat-...
 RAG_GIT_MIRROR_DIR=/srv/rag-sources/git
 
-RAG_SOURCE_6_ID=bfi-code
-RAG_SOURCE_6_TYPE=git
-RAG_SOURCE_6_GROUP=aselsan/bfi
+# documents and code in one corpus
+RAG_SOURCE_3_ID=aselsan-bfi
+RAG_SOURCE_3_PATH="/mnt/fs2/5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW"
+RAG_SOURCE_3_REPOSITORIES=aselsan/bfi-sw,aselsan/bfi-drivers
+RAG_SOURCE_3_REF=main
+
+# a whole group, code only
+RAG_SOURCE_6_ID=netforge-code
+RAG_SOURCE_6_GROUP=netforge
 RAG_SOURCE_6_PROJECT_EXCLUDE='["**/archive/**"]'
 RAG_SOURCE_6_EXCLUDE_ADDITIONS='["**/third_party/**"]'
-
-RAG_SOURCE_7_ID=netforgesh-code
-RAG_SOURCE_7_TYPE=git
-RAG_SOURCE_7_REPOSITORIES=netforge/netforgesh,netforge/agent
-RAG_SOURCE_7_REF=main
 ```
 
-`REPOSITORIES` is comma-separated, like `RAG_SOURCE_IDS`. A slot that needs a
-different credential names another variable with `RAG_SOURCE_N_TOKEN_ENV`;
-the configuration only ever holds variable names, never token values.
+`REPOSITORIES` is comma-separated, like `RAG_SOURCE_IDS`. `REF` applies to
+the slot's repositories; unset, each project's default branch.
+`EXCLUDE_ADDITIONS` applies to every input of the slot. The GitLab server and
+token are shared by all slots; a slot that needs a different credential names
+another variable with `RAG_SOURCE_N_TOKEN_ENV`, and the configuration only
+ever holds variable names, never token values. `PATH` has no default any
+more, so a slot that names only repositories takes no folder. Loading the
+configuration fails, naming the slot and the variables, when a slot sets both
+`REPOSITORIES` and `GROUP`; a slot with no input at all is not a source.
 
-Loading the configuration checks each slot against its type and stops with an
-error naming the slot and the variable: a `filesystem` slot needs `PATH`; a
-`git` slot needs exactly one of `REPOSITORIES` and `GROUP`; a variable of the
-other type set on a slot (a `PATH` on a `git` slot, a `GROUP` on a
-`filesystem` one) is an error, not ignored.
+**Which files an input takes depends on the input.** A folder takes today's
+default list, or the slot's own list as the Renode slot has; a repository
+takes the code types (C, C++, TS, JS and the other code extensions already
+known) and the document types.
 
-The file types a source takes default by type: a `git` source takes C, C++,
-TS, JS and the document types, a `filesystem` source today's list. A slot can
-still spell its own list, as the Renode slot does; `.env` carries only
-exceptions.
+**A file is identified by its input and path.** The same path in the folder
+and in a repository, or in two repositories, is two documents. Files from the
+folder keep the relative paths they have today, so the existing corpora are
+not re-keyed.
+
+**Repositories are mirrored on the RAG host and ingested by commit.** Each
+repository is kept under `RAG_GIT_MIRROR_DIR`, which lies outside the deployed
+tree because `rsync.sh` deletes anything under `/srv/aifactory` that the
+checkout does not have; the default is `/srv/rag-sources/git`. The ingest
+takes the tree at the fetched commit. A later ingest fetches, diffs against
+the commit recorded for that repository's last successful ingest, and
+processes only added, changed and deleted files; a deleted or renamed file
+loses its chunks. The folder input keeps today's change detection. The run
+report gives each input's counts separately.
 
 **Tokens stay out of everything the service writes.** A repository list needs
 a token with `read_repository`; a group also needs `read_api`, to list its
@@ -96,52 +97,67 @@ comes from `RAG_GITLAB_URL`, and switching to HTTPS later is that one line. The
 token is passed to git per command, never stored in a mirror's git config or
 remote URL, and never written to a log line, chunk, document or error message.
 
-**Function-level chunks for C, C++, TS and JS.** Files in these languages are
+**Function-level chunks for C, C++, TS and JS, from every input.** Chunking
+depends on the file's language, not its origin: a `.c` file in a folder is
+chunked the same way as one in a repository. Files in these languages are
 parsed with tree-sitter and chunked per function, method, class, struct, enum
 and top-level type or macro block, with a file-level chunk for what is left
 (includes, imports, globals). A symbol longer than the chunk size is split
-inside its body and every part keeps the symbol's signature at its head. Each
-chunk's metadata records repository, ref, commit, path, language, symbol name,
-symbol kind, signature and start/end line, and `contentType: code`, so the
-existing `excludeContentTypes: ["code"]` filter keeps working. A file the
-parser cannot handle falls back to the current size-based chunking and is
-reported, never dropped.
+inside its body and every part keeps the symbol's signature at its head. A
+file the parser cannot handle falls back to size-based chunking and is
+reported, never dropped. Other code types (DML, Python, ...) keep size-based
+chunking.
 
-**Citations point at the code.** A code chunk is cited as
-`<repository>@<short commit>:<path>:<start>-<end> (<symbol>)`, and the web UI
-links it to the file at that commit on GitLab.
+**Metadata.** Every chunk keeps what it has today, including `contentType`
+(`documentation` or `code`, from the extension), so
+`excludeContentTypes: ["code"]` and `["documentation"]` separate documents
+from code inside one source. Every chunk also records its input: the folder,
+or the repository with ref and commit. A symbol chunk adds language, symbol
+name, symbol kind, signature and start/end line.
+
+**Existing corpora are re-chunked once.** An unchanged file is skipped today
+when chunk size, overlap and embedding settings match; the chunker's version
+joins that comparison, so after this change the code files already in
+`renode`, `simics` and `aselsan-bfi` are chunked again, and document chunks
+ingested before `contentType` existed gain it.
+
+**Citations point at the code.** A chunk from a repository is cited as
+`<repository>@<short commit>:<path>:<start>-<end> (<symbol>)` and the web UI
+links it to the file at that commit on GitLab; a symbol chunk from a folder is
+cited as `<path>:<start>-<end> (<symbol>)`.
 
 ## Acceptance Criteria
 
-- A `git` source with two repositories in `REPOSITORIES` ingests both at
-  their fetched commits into one `sourceId`, and a query on that id returns
-  chunks from either; a source with a `GROUP` ingests every project of the
-  group and its subgroups that the project globs admit.
+- A slot with `PATH` and two repositories in `REPOSITORIES` ingests the
+  folder and both repositories into one `sourceId`, and a query on that id
+  returns chunks from all three.
+- A slot with `GROUP` ingests every project of the group and its subgroups
+  that the project globs admit; a slot with both `REPOSITORIES` and `GROUP`
+  fails configuration loading with the slot number and both variable names.
+- The five existing slots, which set only `PATH`, load, ingest and query as
+  before, with their documents' relative paths unchanged.
+- The same relative path in the folder and in a repository is stored as two
+  documents.
 - `RAG_GITLAB_TOKEN` is used when the slot names no `TOKEN_ENV`, and the
   named variable when it does.
-- A slot's type comes only from `RAG_SOURCE_N_TYPE`, defaulting to
-  `filesystem`; the five existing slots load and ingest as before without
-  it, and a `git` slot works in any slot number.
-- A `git` slot with both or neither of `REPOSITORIES` and `GROUP`, a
-  `filesystem` slot without `PATH`, or a variable of the other type on a
-  slot, fails configuration loading with the slot number and the variable
-  in the message.
 - Mirrors live under `RAG_GIT_MIRROR_DIR` and survive an `rsync.sh` deploy;
   the next ingest fetches instead of cloning again.
 - A second ingest after a push processes only the files changed since the
   recorded commit; chunks of deleted files are removed and a renamed file is
-  not duplicated.
+  not duplicated. The run report shows counts per input.
 - The token value appears in no log line, chunk, stored document, error
   message or file under the mirror directory, including each mirror's git
   config; a missing or rejected token fails that source with a message naming
   the variable.
 - C, C++, TS and JS files produce one chunk per symbol with the metadata
-  listed above; an over-long function is split and each part starts with its
-  signature.
+  listed above, whether they come from a folder or a repository; an
+  over-long function is split and each part starts with its signature.
 - A file tree-sitter cannot parse is ingested with size-based chunks and
   appears in the run's report.
-- `excludeContentTypes: ["code"]` removes these chunks from a query and
-  leaving it off returns them.
-- A query naming a function returns that function's chunk with its
-  repository, commit, path and line range in the citation.
-- The existing `filesystem` sources ingest and query as before.
+- In a source holding documents and code, `excludeContentTypes: ["code"]`
+  returns only documents and `["documentation"]` only code.
+- Re-ingesting an existing corpus after the change re-chunks its unchanged
+  C/C++/TS/JS files by symbol, without `--force`.
+- A query naming a function returns that function's chunk, cited with its
+  repository, commit, path and line range, or path and line range for a
+  folder.
