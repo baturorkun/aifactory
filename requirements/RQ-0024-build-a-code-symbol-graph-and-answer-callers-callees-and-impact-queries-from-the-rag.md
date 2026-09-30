@@ -39,13 +39,19 @@ implementation) and `contains` (file, class or namespace to member). Edges are
 stored in Postgres tables beside `rag_chunks`; no separate graph database. An
 incremental ingest replaces the edges of changed files only.
 
-**Precise resolution where a build exists, names where it does not.**
-Tree-sitter gives edges resolved by name, marked `resolution: name`. Where an
-index is available, SCIP replaces them with `resolution: precise` edges:
-`scip-typescript` for TS/JS, and `scip-clang` for C/C++ when the repository
-provides a `compile_commands.json`. Embedded C built with a cross-compiler
-often has none; those repositories keep name-resolved edges, and an ambiguous
-name links to every candidate rather than guessing one.
+**Edges are resolved by name.** Tree-sitter gives edges resolved by name,
+marked `resolution: name`, and an ambiguous name links to every candidate
+rather than guessing one. Precise resolution through SCIP (`scip-typescript`,
+`scip-clang` with a `compile_commands.json`) is left to a later requirement:
+the first corpus, `aselsan/bfi-sw`, has no TypeScript and no compilation
+database, and its C is cross-compiled, so SCIP would need a toolchain on the
+shared RAG host for no gain today. The `resolution` field is there for it.
+
+**References are the reads and writes inside functions.** An identifier used in
+a function body that is not one of that function's parameters or locals is a
+reference to something outside it (a global, an enum constant, a register
+macro), recorded as `reads` or, on the left of an assignment or in `++`/`--`,
+`writes`; struct fields and object properties likewise.
 
 **Graph endpoints.** `GET /symbols?name=` finds definitions;
 `/callers`, `/callees` and `/references` return one hop with file, line and
@@ -67,11 +73,12 @@ them like any chunk. The expansion can be switched off per query.
   and where it is written.
 - `/impact` of a function lists every transitive caller up to the requested
   depth, stops at the limit and never loops on recursion.
-- A TS repository and a C repository with `compile_commands.json` produce
-  `precise` edges; a C repository without one produces `name` edges, and two
-  functions of the same name are both linked, not one chosen.
+- Every edge carries `resolution: name`, and a call to a name two functions
+  share is linked to both, not one chosen.
 - Changing one file and re-ingesting updates only that file's symbols and
   edges; edges into deleted symbols are removed.
+- Code already ingested before this change gets its symbols and edges on the
+  next ingest without being re-embedded.
 - A `/query` about a function includes its callers and callees in the
   context and citations; the same query with expansion off does not.
 - Graph queries on a corpus of at least one million edges answer one-hop
