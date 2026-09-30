@@ -35,16 +35,19 @@ answer that uses them says so.
 
 ## What it does
 
-**A code property graph per C/C++ repository and commit.** For the `git`
-sources of RQ-0023 marked for it, the RAG host builds a Joern CPG of each
-repository at the ingested commit and keeps the latest one. Joern runs in a
+**A code property graph per code input.** For a source marked for it, the RAG
+host builds a Joern CPG of each C/C++ input of RQ-0023, wherever the code comes
+from: each repository at its ingested commit, and the C/C++ files of the
+folder input as of its last ingest. It keeps the latest graph of each input
+and rebuilds it when that input changes. Joern runs in a
 container from its published image, so the host needs no JVM, with a memory
 limit taken from the configuration. A build that fails or runs out of memory
-fails that repository only and is reported.
+fails that input only and is reported.
 
 **Prepared data-flow queries behind an endpoint.** `POST /dataflow` takes a
 query name and its parameters and returns the flows it finds, each as a path
-of steps with repository, commit, file, line and code excerpt. The first set:
+of steps with input (repository and commit, or folder), file, line and code
+excerpt. The first set:
 
 * `coupling` — for a component (a directory or a set of files), the globals,
   parameters and return values through which it exchanges data with the
@@ -56,7 +59,7 @@ of steps with repository, commit, file, line and code excerpt. The first set:
   written outside it, with whether each access is `volatile` and whether it
   is inside a critical section.
 
-Sources, sinks and handler names are configurable per repository.
+Sources, sinks and handler names are configurable per source.
 
 **The answering LLM can call it.** A `/query` classified as a data-flow
 question calls `/dataflow` as a tool, cites the returned paths like chunks,
@@ -64,8 +67,9 @@ and states that the result is a tool finding, not verified evidence.
 
 ## Acceptance Criteria
 
-- After ingesting a C repository marked for data-flow, a CPG exists for its
-  ingested commit and a re-ingest at a new commit replaces it.
+- After ingesting a source marked for data-flow, a CPG exists for each of
+  its C/C++ inputs, a repository and a folder alike; a re-ingest after a
+  change to one input rebuilds that input's graph only.
 - Joern runs only in its container with the configured memory limit; the
   host has no Java installed for it.
 - `unchecked-input` on a fixture with one unchecked and one checked index from
@@ -76,5 +80,5 @@ and states that the result is a tool finding, not verified evidence.
   the conditional calls between them.
 - A data-flow question to `/query` returns an answer that cites the paths and
   carries the not-qualified-tool notice.
-- A failed or out-of-memory CPG build is reported for that repository and does
-  not affect other repositories or the rest of the RAG.
+- A failed or out-of-memory CPG build is reported for that input and does
+  not affect other inputs or the rest of the RAG.
