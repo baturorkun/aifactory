@@ -16,7 +16,8 @@ repositoryProvider: github
 ---
 # RQ-0024 - Build a code symbol graph and answer callers, callees and impact queries from the RAG
 
-RQ-0023 puts GitLab code into the RAG one chunk per symbol, which answers
+RQ-0023 puts code into the RAG one chunk per symbol, from folders and GitLab
+repositories alike, which answers
 "show me this function". It does not answer the questions an engineer asks
 next: who calls it, what it calls, where a register or global is written,
 which header declares it, and what else a change to it touches. Vector search
@@ -28,7 +29,9 @@ answering LLM walk them.
 
 ## What it does
 
-**A symbol graph per source and commit.** From the same parse RQ-0023 does,
+**A symbol graph per source, across its inputs.** From the same parse RQ-0023
+does, over every code input of a source (folder and repositories alike, so a
+call from one repository into another, or into code in the folder, is linked),
 the ingest records each symbol definition (the chunk it lives in) and the edges
 `calls`, `references` (reads or writes of a global, a struct field or a
 register macro), `includes` / `imports`, `declares` (header to
@@ -47,8 +50,8 @@ name links to every candidate rather than guessing one.
 **Graph endpoints.** `GET /symbols?name=` finds definitions;
 `/callers`, `/callees` and `/references` return one hop with file, line and
 resolution; `/impact` returns the transitive callers and referrers of a
-symbol up to a depth limit, grouped by repository and file. Every result
-names the commit it was computed at.
+symbol up to a depth limit, grouped by input and file. Every result names the
+commit it was computed at for code from a repository.
 
 **Graph-expanded answers.** A `/query` whose best hits are code chunks adds
 the direct callers and callees of those symbols (and the header that declares
