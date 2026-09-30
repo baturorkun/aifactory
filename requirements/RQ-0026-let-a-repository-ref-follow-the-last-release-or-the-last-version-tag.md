@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-30T20:26:26.750Z"
 branch: "factory/RQ-0026"
 createdFromCommit: "82e392062131ab0d40568d60b0dddb3a76884c0d"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/30"
+githubIssueIid: 30
+repositoryProvider: github
 ---
 # RQ-0026 - Let a repository REF follow the last release or the last version tag
 
