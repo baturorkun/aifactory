@@ -215,7 +215,12 @@ def _parse_pdf(path: Path) -> str:
     seen_hashes: set[str] = set()
     for index, page in enumerate(reader.pages):
         parts: list[str] = []
-        text = page.extract_text() or ""
+        try:
+            text = page.extract_text() or ""
+        except Exception:
+            # A malformed font on one page (DO-330: a Type0 font with no
+            # /DescendantFonts, 17 of 138 pages) must not drop the other pages.
+            text = ""
         if text.strip():
             parts.append(text.strip())
         image_text = _embedded_image_text(_pdf_page_blobs(page), seen_hashes)
