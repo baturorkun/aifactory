@@ -322,11 +322,6 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
     return config
 
 
-# REF values that are resolved at every ingest instead of naming a branch or
-# tag. `@` because .env is sourced by a shell: `<LAST_RELEASE>` would be read as
-# a redirection and leave the value silently empty.
-REF_SELECTORS = ("@last-release", "@last-tag")
-
 GIT_ENTRY_PATTERN = re.compile(r"^(REPO|GROUP)_(\d+)_(URL|TOKEN|REF|PROJECT_EXCLUDE)$")
 
 
@@ -357,12 +352,7 @@ def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]
             raise ValueError(f"{label}: {entry} is incomplete, {' and '.join(missing)} not set")
         common = {"entry": entry, "url": fields["URL"], "tokenEnv": f"{entry}_TOKEN"}
         if kind == "REPO":
-            ref = fields.get("REF")
-            if ref and ref.startswith("@") and ref not in REF_SELECTORS:
-                raise ValueError(
-                    f"{entry}_REF={ref} is not a known selector; use a branch or tag name, or one of {', '.join(REF_SELECTORS)}"
-                )
-            repositories.append({**common, "ref": ref})
+            repositories.append({**common, "ref": fields.get("REF")})
         else:
             groups.append({**common, "projectExclude": _json_glob_list(fields.get("PROJECT_EXCLUDE"), f"{entry}_PROJECT_EXCLUDE")})
     return {"repositories": repositories, "groups": groups}

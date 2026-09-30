@@ -1,0 +1,255 @@
+"""GitLab repositories as inputs of a source.
+
+Each repository is kept as a working tree under the configured mirror
+directory and ingested at the commit its ref points to after a fetch. Change
+detection is by git blob id: a file whose blob id matches the one recorded on
+its document is unchanged since the last ingest and is not parsed again, which
+is exactly the set of files a diff against the recorded commit would report,
+and stays correct when a previous run failed part-way.
+
+Tokens are read from their variables when git or the GitLab API needs them and
+handed to git through the environment (`GIT_CONFIG_COUNT`), so they never reach
+a command line, a mirror's git config, a remote URL, a log or an error.
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+import re
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
+
+import httpx
+
+from aifactory_rag.config import GitGroupConfig, GitRepositoryConfig, RagSourceConfig
+
+
+@dataclass(frozen=True)
+class RepositoryInput:
+    """One repository to ingest, from a REPO entry or found through a GROUP."""
+
+    entry: str  # RAG_SOURCE_3_REPO_1, or RAG_SOURCE_6_GROUP_1 for a group's project
+    key: str  # host/group/project: the input key its documents are stored under
+    project_path: str  # group/project
+    clone_url: str  # no credentials, ever
+    web_url: str
+    token_env: str
+    ref: str | None = None
+
+
+@dataclass(frozen=True)
+class RepositoryTree:
+    worktree: Path
+    ref: str
+    commit: str
+    blobs: dict[str, str]  # relative path -> git blob id
+
+
+class GitInputError(RuntimeError):
+    """A repository or group that could not be read; its entry is named."""
+
+
+def repository_inputs(source: RagSourceConfig, environ: dict[str, str] | None = None) -> tuple[list[RepositoryInput], list[GitInputError]]:
+    """Resolve REPO entries and expand GROUP entries into repositories.
+
+    A project reached both ways is taken once, from its REPO entry. A group
+    that cannot be listed is returned as an error and does not stop the rest.
+    """
+    env = os.environ if environ is None else environ
+    inputs: dict[str, RepositoryInput] = {}
+    errors: list[GitInputError] = []
+    for repository in source.repositories:
+        item = _repository_input(repository)
+        inputs.setdefault(item.key, item)
+    for group in source.groups:
+        try:
+            for item in _group_inputs(group, env):
+                inputs.setdefault(item.key, item)
+        except GitInputError as exc:
+            errors.append(exc)
+    return list(inputs.values()), errors
+
+
+def _repository_input(repository: GitRepositoryConfig) -> RepositoryInput:
+    scheme, host, project_path = _split_url(repository.url, repository.entry)
+    # file:// serves the tests: a bare repository on disk stands in for GitLab.
+    netloc = "" if scheme == "file" else host
+    return RepositoryInput(
+        entry=repository.entry,
+        key=f"{host}/{project_path}",
+        project_path=project_path,
+        clone_url=urlunsplit((scheme, netloc, f"/{project_path}.git", "", "")),
+        web_url=urlunsplit((scheme, netloc, f"/{project_path}", "", "")),
+        token_env=repository.token_env,
+        ref=repository.ref,
+    )
+
+
+def _split_url(url: str, entry: str) -> tuple[str, str, str]:
+    parts = urlsplit(url.strip())
+    if parts.scheme not in {"http", "https", "file"} or (parts.scheme != "file" and not parts.netloc):
+        raise GitInputError(f"{entry}_URL is not an http(s) GitLab URL: {url}")
+    if parts.username or parts.password:
+        raise GitInputError(f"{entry}_URL must not carry credentials; set {entry}_TOKEN instead")
+    path = parts.path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    if not path:
+        raise GitInputError(f"{entry}_URL names no project or group: {url}")
+    host = parts.netloc or "local"
+    return parts.scheme, host, path
+
+
+def _group_inputs(group: GitGroupConfig, env: dict[str, str] | os._Environ[str]) -> list[RepositoryInput]:
+    from aifactory_rag.ingest.sources import _matches
+
+    scheme, host, group_path = _split_url(group.url, group.entry)
+    token = _token(group.token_env, env)
+    api = urlunsplit((scheme, host, f"/api/v4/groups/{quote(group_path, safe='')}/projects", "", ""))
+    found: list[RepositoryInput] = []
+    page = 1
+    while True:
+        try:
+            response = httpx.get(
+                api,
+                params={"include_subgroups": "true", "archived": "false", "per_page": 100, "page": page, "simple": "true"},
+                headers={"PRIVATE-TOKEN": token},
+                timeout=60,
+            )
+        except httpx.HTTPError as exc:
+            raise GitInputError(f"{group.entry}: GitLab {host} is not reachable: {exc.__class__.__name__}") from None
+        if response.status_code in {401, 403, 404}:
+            raise GitInputError(
+                f"{group.token_env} cannot list the projects of {group.url} (HTTP {response.status_code}); "
+                "a group access token needs read_api and read_repository"
+            )
+        if response.status_code >= 400:
+            raise GitInputError(f"{group.entry}: GitLab answered HTTP {response.status_code} listing {group.url}")
+        for project in response.json():
+            project_path = str(project.get("path_with_namespace") or "")
+            if not project_path or any(_matches(project_path, pattern) for pattern in group.project_exclude):
+                continue
+            found.append(RepositoryInput(
+                entry=group.entry,
+                key=f"{host}/{project_path}",
+                project_path=project_path,
+                clone_url=urlunsplit((scheme, host, f"/{project_path}.git", "", "")),
+                web_url=urlunsplit((scheme, host, f"/{project_path}", "", "")),
+                token_env=group.token_env,
+                ref=None,
+            ))
+        next_page = response.headers.get("x-next-page", "").strip()
+        if not next_page:
+            return found
+        page = int(next_page)
+
+
+def sync_repository(repository: RepositoryInput, mirror_dir: str, environ: dict[str, str] | None = None) -> RepositoryTree:
+    """Fetch a repository's ref into its working tree and list its files."""
+    env = os.environ if environ is None else environ
+    token = _token(repository.token_env, env)
+    worktree = Path(mirror_dir).expanduser() / repository.key
+    git = _Git(worktree, token, repository)
+
+    if not (worktree / ".git").is_dir():
+        worktree.mkdir(parents=True, exist_ok=True)
+        git.run("init", "-q")
+        git.run("remote", "add", "origin", repository.clone_url)
+    else:
+        git.run("remote", "set-url", "origin", repository.clone_url)
+
+    ref = repository.ref or git.default_branch()
+    # A REF may name a branch or a tag (a firmware release is pinned by tag).
+    remote_ref, local_ref = git.resolve_ref(ref)
+    git.run("fetch", "-q", "--prune", "--no-tags", "origin", f"+{remote_ref}:{local_ref}", network=True)
+    commit = git.run("rev-parse", f"{local_ref}^{{commit}}").strip()
+    git.run("checkout", "-q", "--force", "--detach", commit)
+    git.run("clean", "-q", "-ffdx")
+    return RepositoryTree(worktree=worktree, ref=ref, commit=commit, blobs=git.blobs(commit))
+
+
+def _token(variable: str, env: dict[str, str] | os._Environ[str]) -> str:
+    value = (env.get(variable) or "").strip()
+    if not value:
+        raise GitInputError(f"{variable} is not set")
+    return value
+
+
+class _Git:
+    def __init__(self, worktree: Path, token: str, repository: RepositoryInput) -> None:
+        self.worktree = worktree
+        self.token = token
+        self.repository = repository
+        basic = base64.b64encode(f"oauth2:{token}".encode()).decode()
+        self.env = {
+            **os.environ,
+            "GIT_TERMINAL_PROMPT": "0",
+            # Configuration through the environment reaches only this process:
+            # nothing is written to .git/config and nothing shows in `ps`.
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+            "GIT_CONFIG_KEY_1": "credential.helper",
+            "GIT_CONFIG_VALUE_1": "",
+        }
+
+    def run(self, *args: str, network: bool = False) -> str:
+        completed = subprocess.run(  # noqa: S603 - fixed git subcommands
+            ["git", *args],
+            cwd=self.worktree,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if completed.returncode != 0:
+            detail = self._redact((completed.stderr or completed.stdout or "").strip())[-500:]
+            if network and _AUTH_FAILURE.search(detail):
+                raise GitInputError(
+                    f"{self.repository.token_env} cannot read {self.repository.web_url}: {detail}"
+                )
+            raise GitInputError(f"{self.repository.entry}: git {args[0]} failed for {self.repository.web_url}: {detail}")
+        return completed.stdout
+
+    def default_branch(self) -> str:
+        output = self.run("ls-remote", "--symref", "origin", "HEAD", network=True)
+        for line in output.splitlines():
+            if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD"):
+                return line[len("ref: refs/heads/"):-len("\tHEAD")]
+        raise GitInputError(f"{self.repository.entry}: {self.repository.web_url} has no default branch")
+
+    def resolve_ref(self, ref: str) -> tuple[str, str]:
+        """The remote ref a REF names and where it is fetched to locally."""
+        output = self.run("ls-remote", "origin", f"refs/heads/{ref}", f"refs/tags/{ref}", network=True)
+        names = {line.split("\t", 1)[1] for line in output.splitlines() if "\t" in line}
+        if f"refs/heads/{ref}" in names:
+            return f"refs/heads/{ref}", f"refs/remotes/origin/{ref}"
+        if f"refs/tags/{ref}" in names:
+            return f"refs/tags/{ref}", f"refs/tags/{ref}"
+        raise GitInputError(f"{self.repository.entry}_REF: {self.repository.web_url} has no branch or tag {ref}")
+
+    def blobs(self, commit: str) -> dict[str, str]:
+        output = self.run("ls-tree", "-r", "-z", "--full-tree", commit)
+        blobs: dict[str, str] = {}
+        for record in output.split("\0"):
+            if not record:
+                continue
+            meta, _, path = record.partition("\t")
+            mode, kind, blob = meta.split(" ")
+            # Submodules and symlinks carry no content of their own here.
+            if kind == "blob" and mode != "120000":
+                blobs[path] = blob
+        return blobs
+
+    def _redact(self, text: str) -> str:
+        return text.replace(self.token, "***") if self.token else text
+
+
+_AUTH_FAILURE = re.compile(
+    r"authentication failed|could not read username|http basic: access denied|"
+    r"\b40[134]\b|repository not found|not found|access denied|forbidden",
+    re.IGNORECASE,
+)
