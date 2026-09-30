@@ -1,6 +1,6 @@
 ---
 id: RQ-0023
-status: completed
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,9 +8,6 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-09-29T15:30:49.166Z"
 branch: "factory/RQ-0023"
 createdFromCommit: "8af96d5d9f2a7059a5b492ba1a89eba31f709705"
-completedRunId: "20260930083729-RQ-0023"
-completedBy: "Batur Orkun"
-completedAt: "2026-09-30T20:17:03.157Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/25"
 githubPullRequestIid: 25
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/24"
@@ -77,11 +74,8 @@ entry needs no API scope. `EXCLUDE_ADDITIONS` applies to every input of the
 slot. A project reached both as a `REPO` and through a `GROUP` is ingested
 once.
 
-The numbered entries are read from the environment by the RAG service's
-configuration loader (Python), which owns the sources; the TS loader of the
-`factory` CLI keeps only the grounding settings and needs only to accept the
-shape. `factory.config.json` does not list them one by one: a slot template
-names its variable prefix (`envPrefix`).
+The numbered entries are read from the environment by both configuration
+loaders (TS and Python); `factory.config.json` does not list them one by one.
 Numbers need not be contiguous. A `REPO_K` or `GROUP_K` with a URL and no
 token, or a token and no URL, fails configuration loading with the slot, the
 entry and the missing variable. `PATH` has no default any more, so a slot that
