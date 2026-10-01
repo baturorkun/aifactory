@@ -12,6 +12,7 @@ from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
+from aifactory_rag import dataflow
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
 
@@ -22,6 +23,13 @@ class QueryRequest(BaseModel):
     excludeContentTypes: list[str] = Field(default_factory=list)
     # Add the callers and callees of the functions found (RQ-0024).
     expandGraph: bool = True
+
+
+class DataflowRequest(BaseModel):
+    sourceId: str
+    query: str
+    # component (coupling), sources / sinks (unchecked-input), isr (shared-state)
+    params: dict[str, str] = Field(default_factory=dict)
 
 
 class IngestRunRequest(BaseModel):
@@ -183,6 +191,20 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     @app.get("/impact")
     def impact(name: str, sourceIds: str | None = None, depth: int = 3, path: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> dict:
         return _graph(graph.impact, name, _source_list(sourceIds), depth, path)
+
+    # Data-flow and coupling findings from Joern (RQ-0025); not a qualified tool.
+    @app.post("/dataflow")
+    def dataflow_query(payload: DataflowRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:
+        try:
+            source = find_source(factory_config.rag, payload.sourceId)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        settings = dataflow.JoernSettings(url=factory_config.rag.joern.url, workspace=factory_config.rag.joern.workspace)
+        try:
+            with connect(factory_config.rag.database.connection_string) as conn:
+                return dataflow.run_dataflow(conn, settings, source, payload.query, payload.params)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/db/migrate")
     def migrate_db(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, str]:

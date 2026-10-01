@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,6 +15,7 @@ from llama_index.llms.openai import OpenAI
 
 from aifactory_rag.config import RagConfig, require_query_config
 from aifactory_rag.db import connect
+from aifactory_rag import dataflow
 from aifactory_rag.query import graph
 from aifactory_rag.query.retriever import RetrievedChunk, retrieve
 
@@ -35,7 +37,10 @@ def answer_question(
     )
     if expand_graph:
         chunks = _expand_with_graph(config, chunks)
-    answer = _generate_answer(config, question, chunks)
+    findings = _dataflow_findings(config, question, source_ids, chunks)
+    answer = _generate_answer(config, question, chunks, [text for text, _ in findings])
+    if findings and dataflow.NOTICE not in answer:
+        answer = f"{answer}\n\n> {dataflow.NOTICE}"
     sources = [
         {
             "sourceId": chunk.source_id,
@@ -49,8 +54,61 @@ def answer_question(
         }
         for chunk in chunks
     ]
+    sources.extend(location for _, location in findings)
     _record_query(config, question, answer, sources, user_id)
     return {"answer": answer, "sources": sources}
+
+
+MAX_DATAFLOW_FINDINGS = 6
+
+
+def _dataflow_findings(
+    config: RagConfig, question: str, source_ids: list[str] | None, chunks: list[RetrievedChunk] | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Run the prepared Joern query a data-flow question asks for (RQ-0025).
+
+    Each finding becomes context text and a citation. All findings are
+    gathered first and the most relevant kept: those in files the retrieval
+    also found, then those that share words with the question, so a noisy
+    input cannot crowd out the one the question is about. Joern being down or
+    a source without a graph costs these findings, never the answer.
+    """
+    kinds = dataflow.classify(question)
+    if not kinds:
+        return []
+    candidates = [s for s in config.sources if s.dataflow and (not source_ids or s.id in source_ids)]
+    settings = dataflow.JoernSettings(url=config.joern.url, workspace=config.joern.workspace)
+    found: list[tuple[str, dict[str, Any]]] = []
+    retrieved = {chunk.relative_path for chunk in chunks or []}
+    words = {word.lower() for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", question)}
+
+    def relevance(item: tuple[str, dict[str, Any]]) -> tuple[int, int]:
+        text, location = item
+        lowered = text.lower()
+        return (int(location.get("relativePath") in retrieved), sum(word in lowered for word in words))
+
+    try:
+        with connect(config.database.connection_string) as conn:
+            for source in candidates:
+                for kind in kinds:
+                    result = dataflow.run_dataflow(conn, settings, source, kind)
+                    for item in result["inputs"]:
+                        for finding in item["findings"]:
+                            text, anchor = dataflow.describe(finding)
+                            found.append((
+                                f"[data-flow finding by Joern ({kind}), not a qualified tool; input {item['input']}"
+                                f"{' @ ' + str(item.get('ref')) if item.get('ref') else ''}"
+                                f"{' (' + str(item['commit'])[:8] + ')' if item.get('commit') else ''}]\n{text}",
+                                {
+                                    "sourceId": source.id, "relativePath": anchor.get("file", ""), "dataflow": kind,
+                                    "symbol": anchor.get("method"), "startLine": anchor.get("line"), "endLine": anchor.get("line"),
+                                    **({"webUrl": anchor["webUrl"]} if anchor.get("webUrl") else {}),
+                                    **({"repository": item["input"]} if item["input"] != "path" else {}),
+                                },
+                            ))
+    except Exception as exc:  # noqa: BLE001 - findings are an addition to the answer
+        print(f"Data-flow findings skipped: {exc}", flush=True)
+    return sorted(found, key=relevance, reverse=True)[:MAX_DATAFLOW_FINDINGS]
 
 
 def _expand_with_graph(config: RagConfig, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
@@ -109,8 +167,8 @@ def citation_label(relative_path: str, metadata: dict[str, Any], page_numbers: t
     return label
 
 
-def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChunk]) -> str:
-    if not chunks:
+def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChunk], findings: list[str] | None = None) -> str:
+    if not chunks and not findings:
         return "No matching source content was found for this question."
 
     context_parts: list[str] = []
@@ -119,12 +177,14 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
         if chunk.metadata.get("graphRelation"):
             label += f"; found through the code graph: {chunk.metadata['graphRelation']}"
         context_parts.append(f"[document: {label}]\n{chunk.text}")
+    context_parts.extend(findings or [])
     context = "\n\n".join(context_parts)
     prompt = (
         "Answer the question using only the provided source context. "
         "If the context is insufficient, say so. Cite supporting evidence using the document "
         "filename and page number when available; cite code by the location in its document label, "
-        "exactly as given. Do not use source numbers such as 'source 1'.\n\n"
+        "exactly as given. Do not use source numbers such as 'source 1'. A data-flow finding by Joern is "
+        "a tool finding, not verified evidence: say so when you use one.\n\n"
         f"Question:\n{question}\n\n"
         f"Source context:\n{context}"
     )

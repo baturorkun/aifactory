@@ -40,6 +40,11 @@ class GitGroupConfig(BaseModel):
     project_exclude: list[str] = Field(default_factory=list, alias="projectExclude")
 
 
+class RagJoernConfig(BaseModel):
+    url: str = "http://127.0.0.1:8090"
+    workspace: str = "/srv/rag-sources/joern"
+
+
 class RagGitConfig(BaseModel):
     # Outside the deployed tree: rsync.sh deletes whatever the checkout lacks
     # under /srv/aifactory, and a mirror there would be cloned again each deploy.
@@ -139,6 +144,12 @@ class RagSourceConfig(BaseModel):
     env_prefix: str | None = Field(default=None, alias="envPrefix")
     repositories: list[GitRepositoryConfig] = Field(default_factory=list)
     groups: list[GitGroupConfig] = Field(default_factory=list)
+    # RQ-0025: build Joern graphs of this source's C/C++ inputs, and the
+    # source, sink and interrupt-handler patterns its queries use.
+    dataflow: bool = False
+    dataflow_sources: str | None = Field(default=None, alias="dataflowSources")
+    dataflow_sinks: str | None = Field(default=None, alias="dataflowSinks")
+    dataflow_isr: str | None = Field(default=None, alias="dataflowIsr")
     include: list[str] = Field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = Field(
         default_factory=lambda: [
@@ -286,6 +297,7 @@ class RagConfig(BaseModel):
     database: RagDatabaseConfig = Field(default_factory=RagDatabaseConfig)
     sources: list[RagSourceConfig] = Field(default_factory=list)
     git: RagGitConfig = Field(default_factory=RagGitConfig)
+    joern: RagJoernConfig = Field(default_factory=RagJoernConfig)
     ingest: RagIngestConfig = Field(default_factory=RagIngestConfig)
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
     llm: RagLlmConfig = Field(default_factory=RagLlmConfig)
@@ -315,6 +327,7 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
         for source in sources:
             if isinstance(source, dict) and source.get("envPrefix"):
                 source.update(git_entries_from_env(str(source["envPrefix"]), str(source.get("id", "")), os.environ))
+                source.update(dataflow_from_env(str(source["envPrefix"]), os.environ))
     config = FactoryConfig.model_validate({"rag": expanded_rag})
     # A slot that names neither a folder nor a repository is an unused template
     # slot, not a source.
@@ -366,6 +379,17 @@ def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]
         else:
             groups.append({**common, "projectExclude": _json_glob_list(fields.get("PROJECT_EXCLUDE"), f"{entry}_PROJECT_EXCLUDE")})
     return {"repositories": repositories, "groups": groups}
+
+
+def dataflow_from_env(prefix: str, environ: Mapping[str, str]) -> dict[str, Any]:
+    """`<prefix>_DATAFLOW=on` and its optional `_SOURCES`, `_SINKS`, `_ISR` patterns."""
+    flag = (environ.get(f"{prefix}_DATAFLOW") or "").strip().lower()
+    values: dict[str, Any] = {"dataflow": flag in {"1", "on", "true", "yes"}}
+    for suffix, key in (("SOURCES", "dataflowSources"), ("SINKS", "dataflowSinks"), ("ISR", "dataflowIsr")):
+        value = (environ.get(f"{prefix}_DATAFLOW_{suffix}") or "").strip()
+        if value:
+            values[key] = value
+    return values
 
 
 def _json_glob_list(value: str | None, name: str) -> list[str]:

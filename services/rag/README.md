@@ -209,6 +209,32 @@ records definitions and uses, not reads and writes, so the kind of a
 reference still comes from tree-sitter. For `aselsan/bfi-sw` the `scip-index`
 CI job produces the index (bfi-sw MR !3).
 
+### Data-flow queries (Joern)
+
+A source marked `RAG_SOURCE_N_DATAFLOW=on` gets a Joern code property graph of
+each of its C/C++ inputs at every ingest (a repository per commit, the folder
+per state of its C/C++ files). Joern runs as the `joern` service of
+`infra/rag/compose.yaml` (pinned v4.0.644, `RAG_JOERN_MEMORY` 4g limit,
+`RAG_JOERN_HEAP` 3g, loopback port `RAG_JOERN_PORT` 8090, workspace
+`RAG_JOERN_WORKSPACE`):
+
+```bash
+docker compose --env-file .env -f infra/rag/compose.yaml up -d --build --no-deps joern
+```
+
+`POST /dataflow {"sourceId", "query", "params"}` runs a prepared query over
+the source's graphs: `unchecked-input` (values from receive/read functions
+reaching an index or a `memcpy`/`memset` size with no dominating bound
+check), `shared-state` (globals written in an interrupt handler and used
+outside it, with `volatile` and critical-section flags) and `coupling`
+(calls and globals between directories, with the conditions of each call;
+`params.component` narrows it). `RAG_SOURCE_N_DATAFLOW_SOURCES`, `_SINKS` and
+`_ISR` override the patterns. A `/query` that reads as a data-flow question
+runs the matching query, cites the most relevant findings and ends with the
+notice that Joern is not a qualified tool (DO-330). The fixture tests in
+`tests/test_dataflow_joern.py` run against a live Joern when
+`RAG_JOERN_URL` and `RAG_JOERN_WORKSPACE` are set.
+
 Set secrets in `.env`:
 
 ```bash

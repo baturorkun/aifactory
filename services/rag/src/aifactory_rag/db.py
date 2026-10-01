@@ -31,6 +31,7 @@ def require_schema(connection_string: str) -> None:
         "rag_source_inputs",
         "rag_symbols",
         "rag_edges",
+        "rag_dataflow_graphs",
     }
     try:
         with connect(connection_string) as conn:

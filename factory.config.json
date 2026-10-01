@@ -119,6 +119,10 @@
     "git": {
       "mirrorDir": "${RAG_GIT_MIRROR_DIR:-/srv/rag-sources/git}"
     },
+    "joern": {
+      "url": "${RAG_JOERN_URL:-http://127.0.0.1:8090}",
+      "workspace": "${RAG_JOERN_WORKSPACE:-/srv/rag-sources/joern}"
+    },
     "ingest": {
       "chunkSize": 1200,
       "chunkOverlap": 150,

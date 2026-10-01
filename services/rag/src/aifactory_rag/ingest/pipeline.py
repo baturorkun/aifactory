@@ -24,6 +24,7 @@ from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_cod
 from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
 from aifactory_rag.ingest.git_inputs import GitInputError, RepositoryInput, RepositoryTree, find_scip_index, repository_inputs, sync_repository
 from aifactory_rag.ingest.scip_index import ScipIndex, read_index
+from aifactory_rag import dataflow
 from aifactory_rag.ingest.parsers import parse_file
 from aifactory_rag.ingest.sources import SourceFile, effective_excludes, normalize_subdir, scan_files, selected
 
@@ -152,6 +153,13 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                 files = scan_files(source, normalized_subdir)
                 _print_matched(FOLDER_INPUT.label, files)
                 conn = _ingest_input(conn, config, source, FOLDER_INPUT, files, embed_model, force, summary, normalized_subdir)
+                if source.dataflow and normalized_subdir is None:
+                    code = [(f.relative_path, f.size, f.modified_timestamp) for f in files if language_for(f.relative_path) in {"c", "cpp"}]
+                    if code:
+                        conn = _build_dataflow_graph(
+                            conn, config, source.id, "", f"{source.id}-path", str(source.root_path),
+                            dataflow.folder_state(code), summary.inputs[-1],
+                        )
 
             # A subdirectory narrows the folder input; repositories are left alone.
             if normalized_subdir is None and (source.repositories or source.groups):
@@ -178,6 +186,11 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                         lambda current: _record_input_state_and_commit(current, source.id, repository, tree),
                     )
                     conn = _apply_scip_index(conn, config, source.id, repository, tree, summary.inputs[-1])
+                    if source.dataflow and any(language_for(path) in {"c", "cpp"} for path in tree.blobs):
+                        conn = _build_dataflow_graph(
+                            conn, config, source.id, repository.key, repository.key, str(tree.worktree),
+                            tree.commit, summary.inputs[-1], ref=tree.ref, repository_url=repository.web_url,
+                        )
 
             summary.status = "failed" if summary.error_count else "passed"
             summary.duration_seconds = round(perf_counter() - run_started, 3)
@@ -206,6 +219,62 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
             raise
     finally:
         _safe_close(conn)
+
+
+def _build_dataflow_graph(
+    conn: psycopg.Connection,
+    config: RagConfig,
+    source_id: str,
+    input_key: str,
+    graph_key: str,
+    input_path: str,
+    state: str,
+    counts: dict[str, Any],
+    ref: str | None = None,
+    repository_url: str | None = None,
+) -> psycopg.Connection:
+    """Build (or keep) the Joern graph of one code input; a failure stays with that input."""
+    project = dataflow.project_name(graph_key, state)
+    client = dataflow.JoernClient(dataflow.JoernSettings(url=config.joern.url, workspace=config.joern.workspace))
+    try:
+        built = client.ensure_project(project, input_path)
+    except dataflow.JoernError as exc:
+        counts["dataflow"] = f"failed: {_short_error(exc)}"
+        print(f"RAG data-flow     : {graph_key}: {exc}", flush=True)
+        return conn
+    counts["dataflow"] = f"{'built' if built else 'up to date'} {project}"
+    print(f"RAG data-flow     : {counts['dataflow']}", flush=True)
+    conn, _ = _run_with_database_retries(
+        conn,
+        config,
+        f"recording the data-flow graph of {graph_key}",
+        lambda current: _record_dataflow_graph_and_commit(current, source_id, input_key, project, input_path, ref, state if ref else None, repository_url),
+    )
+    return conn
+
+
+def _record_dataflow_graph_and_commit(
+    conn: psycopg.Connection,
+    source_id: str,
+    input_key: str,
+    project: str,
+    input_path: str,
+    ref: str | None,
+    commit: str | None,
+    repository_url: str | None,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO rag_dataflow_graphs(source_id, input_key, project, input_path, ref, commit_sha, repository_url, built_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT(source_id, input_key) DO UPDATE SET
+              project = EXCLUDED.project, input_path = EXCLUDED.input_path, ref = EXCLUDED.ref,
+              commit_sha = EXCLUDED.commit_sha, repository_url = EXCLUDED.repository_url, built_at = now()
+            """,
+            (source_id, input_key, project, input_path, ref, commit, repository_url),
+        )
+    conn.commit()
 
 
 def _apply_scip_index(
