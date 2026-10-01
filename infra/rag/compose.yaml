@@ -52,5 +52,25 @@ services:
     ports:
       - "${RAG_WEB_BIND:-127.0.0.1}:${RAG_WEB_PORT:-8080}:8080"
 
+  # Data-flow queries over code property graphs (RQ-0025). Reachable from the
+  # host only; the code it reads is mounted read-only, its graphs live in the
+  # workspace. The heap stays below the container limit so the JVM cannot grow
+  # into it.
+  joern:
+    build:
+      context: ../joern
+    image: aifactory-joern:v4.0.644
+    container_name: aifactory-joern
+    restart: unless-stopped
+    mem_limit: ${RAG_JOERN_MEMORY:-4g}
+    environment:
+      JAVA_OPTS: -Xmx${RAG_JOERN_HEAP:-3g}
+    ports:
+      - "127.0.0.1:${RAG_JOERN_PORT:-8090}:8080"
+    volumes:
+      - ${RAG_GIT_MIRROR_DIR:-/srv/rag-sources/git}:${RAG_GIT_MIRROR_DIR:-/srv/rag-sources/git}:ro
+      - /mnt:/mnt:ro
+      - ${RAG_JOERN_WORKSPACE:-/srv/rag-sources/joern}:/workspace
+
 volumes:
   aifactory_rag_pgdata:

@@ -39,10 +39,22 @@ answer that uses them says so.
 host builds a Joern CPG of each C/C++ input of RQ-0023, wherever the code comes
 from: each repository at its ingested commit, and the C/C++ files of the
 folder input as of its last ingest. It keeps the latest graph of each input
-and rebuilds it when that input changes. Joern runs in a
-container from its published image, so the host needs no JVM, with a memory
-limit taken from the configuration. A build that fails or runs out of memory
-fails that input only and is reported.
+and rebuilds it when that input changes. A source is marked with
+`RAG_SOURCE_N_DATAFLOW=on`. A build that fails or runs out of memory fails that
+input only and is reported.
+
+**Joern runs as a container on the RAG host.** A `joern` service in
+`infra/rag/compose.yaml`, built from a pinned Joern release (v4.0.644, checked
+against its sha256) on a JDK 21 runtime: the published `ghcr.io/joernio/joern`
+images are only `master` and `nightly` and cannot be pinned. It runs Joern's
+server mode, reachable from the host only (`127.0.0.1:${RAG_JOERN_PORT:-8090}`),
+with a container memory limit (`RAG_JOERN_MEMORY`, default 4g) and a JVM heap
+below it (`RAG_JOERN_HEAP`, default 3g) so the heap cannot grow into the
+limit. The code is mounted read-only; graphs and query results live in its
+workspace (`RAG_JOERN_WORKSPACE`, default `/srv/rag-sources/joern`). Query
+results are written there as JSON and read by the RAG service, since the
+server's reply carries only the console echo. Measured on `aselsan/bfi-sw`
+1.1.0: the graph builds in about 9 s and the container uses about 0.7 GB.
 
 **Prepared data-flow queries behind an endpoint.** `POST /dataflow` takes a
 query name and its parameters and returns the flows it finds, each as a path
@@ -59,7 +71,12 @@ excerpt. The first set:
   written outside it, with whether each access is `volatile` and whether it
   is inside a critical section.
 
-Sources, sinks and handler names are configurable per source.
+Sources, sinks and handler names are configurable per source
+(`RAG_SOURCE_N_DATAFLOW_SOURCES`, `_SINKS`, `_ISR`), with defaults for
+embedded C: receive/read functions as sources, array indexing, pointer
+arithmetic and `memcpy`/`memset` sizes as sinks, `*_IRQHandler` and `*isr*`
+functions as interrupt handlers. "No dominating bound check" means no
+comparison involving the tainted value in a condition that dominates the sink.
 
 **The answering LLM can call it.** A `/query` classified as a data-flow
 question calls `/dataflow` as a tool, cites the returned paths like chunks,
@@ -70,8 +87,9 @@ and states that the result is a tool finding, not verified evidence.
 - After ingesting a source marked for data-flow, a CPG exists for each of
   its C/C++ inputs, a repository and a folder alike; a re-ingest after a
   change to one input rebuilds that input's graph only.
-- Joern runs only in its container with the configured memory limit; the
-  host has no Java installed for it.
+- Joern runs only in its container with the configured memory limit and
+  heap; the host has no Java installed for it, and the port answers on the
+  loopback interface only.
 - `unchecked-input` on a fixture with one unchecked and one checked index from
   a receive function reports the first and not the second, with the full path.
 - `shared-state` on a fixture with an ISR reports the shared variable, its
