@@ -1,0 +1,395 @@
+# Manual Handoff
+
+Run ID: `20261001203126-RQ-0025`
+
+Use this handoff in the manual implementation flow when you want an external implementer to complete the requirement without running the AI Factory agent pipeline.
+
+## Instruction for Implementer
+
+Read the requirement and constraints below, inspect the target project, implement the change directly in the workspace, and run the configured local checks. Do not call the AI Factory LLM pipeline for this task.
+
+## Target Project
+
+- Root: /Users/batur/Documents/Projects/bytecraft/agentic/aifactory
+- Profile: (not configured)
+- Usual paths: src, app, components, lib, tests (where the requirement work normally belongs; a handoff capture is not restricted to them)
+- Build: (not configured)
+- Typecheck: pnpm typecheck
+- Lint: pnpm lint
+- Test: pnpm test
+- Command timeout: 120000 ms
+
+## Existing Files
+
+- .cache/fastembed/.locks/models--qdrant--bge-small-en-v1.5-onnx-q/0d7726d0cdccb62ee17c03bd1595cff07199b8f8.lock
+- .cache/fastembed/.locks/models--qdrant--bge-small-en-v1.5-onnx-q/51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431.lock
+- .cache/fastembed/.locks/models--qdrant--bge-small-en-v1.5-onnx-q/688882a79f44442ddc1f60d70334a7ff5df0fb47.lock
+- .cache/fastembed/.locks/models--qdrant--bge-small-en-v1.5-onnx-q/75305659f7795d4549f0e23688b52fa20a32f925.lock
+- .cache/fastembed/.locks/models--qdrant--bge-small-en-v1.5-onnx-q/9bbecc17cabbcbd3112c14d6982b51403b264bfa.lock
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/blobs/0d7726d0cdccb62ee17c03bd1595cff07199b8f8
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/blobs/51f1bd0addd6e859e42c2c8021a5e5461385bb676a649f4b269aa445449f2431
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/blobs/688882a79f44442ddc1f60d70334a7ff5df0fb47
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/blobs/75305659f7795d4549f0e23688b52fa20a32f925
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/blobs/9bbecc17cabbcbd3112c14d6982b51403b264bfa
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/files_metadata.json
+- .cache/fastembed/models--qdrant--bge-small-en-v1.5-onnx-q/refs/main
+- .dockerignore
+- .eslintrc.cjs
+- .github/workflows/codex-runner-image.yml
+- .gitignore
+- .gitlab-ci.yml
+- AGENTS.md
+- README.md
+- constraints/RQ-0000-example.json
+- docker/codex-runner.Dockerfile
+- docs/AI-FACTORY-CLI.md
+- factory.config.json
+- infra/joern/Dockerfile
+- infra/rag/compose.yaml
+- infra/rag/init/001_pgvector.sql
+- package.json
+- packages/agent-factory/bin/factory.js
+- packages/agent-factory/package.json
+- packages/agent-factory/prompts/architect.md
+- packages/agent-factory/prompts/coder.md
+- packages/agent-factory/prompts/domain-guard.md
+- packages/agent-factory/prompts/planner.md
+- packages/agent-factory/prompts/reviewer.md
+- packages/agent-factory/prompts/tester.md
+- packages/agent-factory/src/cli.ts
+- packages/agent-factory/src/config.ts
+- packages/agent-factory/src/env-check.test.ts
+- packages/agent-factory/src/env-check.ts
+- packages/agent-factory/src/model/adapter.ts
+- packages/agent-factory/src/model/claude-cli.test.ts
+- packages/agent-factory/src/model/claude-cli.ts
+- packages/agent-factory/src/model/codex-cli.test.ts
+- packages/agent-factory/src/model/codex-cli.ts
+- packages/agent-factory/src/model/gemini.test.ts
+- packages/agent-factory/src/model/gemini.ts
+- packages/agent-factory/src/model/index.test.ts
+- packages/agent-factory/src/model/index.ts
+- packages/agent-factory/src/model/mock.ts
+- packages/agent-factory/src/model/ollama.ts
+- packages/agent-factory/src/model/openai-compat.ts
+- packages/agent-factory/src/model/response-schemas.test.ts
+- packages/agent-factory/src/model/response-schemas.ts
+- packages/agent-factory/src/orchestrator/checkpoint.test.ts
+- packages/agent-factory/src/orchestrator/checkpoint.ts
+- packages/agent-factory/src/orchestrator/direct.ts
+- packages/agent-factory/src/orchestrator/failure-summary.test.ts
+- packages/agent-factory/src/orchestrator/failure-summary.ts
+- packages/agent-factory/src/orchestrator/handoff.test.ts
+- packages/agent-factory/src/orchestrator/handoff.ts
+- packages/agent-factory/src/orchestrator/manifest.test.ts
+- packages/agent-factory/src/orchestrator/manifest.ts
+- packages/agent-factory/src/orchestrator/pipeline.test.ts
+- packages/agent-factory/src/orchestrator/pipeline.ts
+- packages/agent-factory/src/orchestrator/probe.test.ts
+- packages/agent-factory/src/orchestrator/probe.ts
+- packages/agent-factory/src/orchestrator/runner.test.ts
+- packages/agent-factory/src/orchestrator/runner.ts
+- packages/agent-factory/src/project-context.test.ts
+- packages/agent-factory/src/project-context.ts
+- packages/agent-factory/src/project-guidelines.test.ts
+- packages/agent-factory/src/project-guidelines.ts
+- packages/agent-factory/src/prompts/builders.test.ts
+- packages/agent-factory/src/prompts/builders.ts
+- packages/agent-factory/src/prompts/registry.ts
+- packages/agent-factory/src/quality-gates-integration.test.ts
+- packages/agent-factory/src/rag/grounding-client.test.ts
+- packages/agent-factory/src/rag/grounding-client.ts
+- packages/agent-factory/src/rag/python-runner.test.ts
+- packages/agent-factory/src/rag/python-runner.ts
+- packages/agent-factory/src/rag/systemd.ts
+- packages/agent-factory/src/repository-platform/github.test.ts
+- packages/agent-factory/src/repository-platform/github.ts
+- packages/agent-factory/src/repository-platform/gitlab.test.ts
+- packages/agent-factory/src/repository-platform/gitlab.ts
+- packages/agent-factory/src/repository-platform/resolve.test.ts
+- packages/agent-factory/src/repository-platform/resolve.ts
+- packages/agent-factory/src/repository-platform/types.ts
+- packages/agent-factory/src/requirement-branches.test.ts
+- packages/agent-factory/src/requirement-branches.ts
+- packages/agent-factory/src/requirement-lifecycle.test.ts
+- packages/agent-factory/src/requirement-lifecycle.ts
+- packages/agent-factory/src/requirements/parser.test.ts
+- packages/agent-factory/src/requirements/parser.ts
+- packages/agent-factory/src/scaffold.test.ts
+- packages/agent-factory/src/scaffold.ts
+- packages/agent-factory/src/simics-transport.test.ts
+- packages/agent-factory/src/utils/json.test.ts
+- packages/agent-factory/src/utils/json.ts
+- packages/agent-factory/src/workspace/apply.ts
+- packages/agent-factory/templates/renode/ci/Dockerfile
+- packages/agent-factory/templates/renode/ci/build-image.sh
+- packages/agent-factory/templates/renode/peripherals/README.md
+- packages/agent-factory/templates/renode/platforms/board.repl
+- packages/agent-factory/templates/renode/scripts/board/capture-serial.mjs
+- packages/agent-factory/templates/renode/scripts/board/lab-agent.mjs
+- packages/agent-factory/templates/renode/scripts/build-model.mjs
+- packages/agent-factory/templates/renode/scripts/build-probe.mjs
+- packages/agent-factory/templates/renode/scripts/renode-run.mjs
+- packages/agent-factory/templates/renode/scripts/run-probe.resc
+- packages/agent-factory/templates/simics/scripts/board/capture-serial.mjs
+- packages/agent-factory/templates/simics/scripts/board/lab-agent.mjs
+- packages/agent-factory/templates/simics/scripts/sync-run.mjs
+- packages/agent-factory/templates/simics/scripts/windows/Build-Modules.ps1
+- packages/agent-factory/templates/simics/scripts/windows/Build-Probe.ps1
+- packages/agent-factory/templates/simics/scripts/windows/Run-Probe.ps1
+- packages/agent-factory/templates/simics/scripts/windows/SimicsTools.ps1
+- packages/agent-factory/templates/simics/targets/probe-run/README.md
+- packages/agent-factory/tsconfig.json
+- packages/contracts/package.json
+- packages/contracts/src/index.ts
+- packages/contracts/src/probe-trace.ts
+- packages/contracts/tsconfig.json
+- packages/quality-gates/package.json
+- packages/quality-gates/src/index.ts
+- packages/quality-gates/src/probe.ts
+- packages/quality-gates/tsconfig.json
+- pnpm-lock.yaml
+- pnpm-workspace.yaml
+- requirements/RQ-0000-example.md
+- requirements/RQ-0001-rag-ingest-file-progress.md
+- requirements/RQ-0002-rag-ingest-subdirectory.md
+- requirements/RQ-0003-resilient-gemini-embedding-ingest.md
+- requirements/RQ-0004-project-rag-grounding.md
+- requirements/RQ-0005-project-guidelines.md
+- requirements/RQ-0006-requirement-branch-automation.md
+- requirements/RQ-0007-gitlab-issue-draft-merge-request-integration.md
+- requirements/RQ-0008-librechat-rag-web-chat.md
+- requirements/RQ-0009-github-issue-pull-request-integration.md
+- requirements/RQ-0010-codex-cli-pipeline-model-provider.md
+- requirements/RQ-0012-generate-project-root-safe-agent-lifecycle-guidance.md
+- requirements/RQ-0013-add-first-class-simics-project-support.md
+- requirements/RQ-0014-add-atomic-requirement-completion-and-merge-lifecycle.md
+- requirements/RQ-0015-add-hardware-twin-workflow-with-probe-firmware-board-trace-and-parity-gate-for-simics-projects.md
+- requirements/RQ-0016-generate-the-hardware-twin-runner-scripts-and-board-verified-model-rules-in-the-simics-scaffold.md
+- requirements/RQ-0017-read-the-requirement-kind-and-execution-mode-defaults-from-the-project-config-and-seed-simics-drafts-by-profile.md
+- requirements/RQ-0018-extend-the-probe-trace-contract-with-actions-and-observations-so-parity-proves-behaviour-not-only-reset-state.md
+- requirements/RQ-0019-neutralize-simulator-parameter-names-and-add-a-renode-simulator-template.md
+- requirements/RQ-0020-add-a-factory-env-check-command-that-reports-which-env-values-are-set-or-empty-grouped-by-purpose.md
+- requirements/RQ-0021-open-a-requirement-from-an-existing-issue-and-link-the-two.md
+- requirements/RQ-0022-label-the-source-issue-while-its-requirement-is-in-progress-and-once-it-is-resolved.md
+- requirements/RQ-0023-ingest-gitlab-repositories-as-rag-sources-with-function-level-code-chunks.md
+- requirements/RQ-0024-build-a-code-symbol-graph-and-answer-callers-callees-and-impact-queries-from-the-rag.md
+- requirements/RQ-0025-answer-data-flow-and-coupling-questions-about-c-code-with-joern.md
+- requirements/RQ-0026-let-a-repository-ref-follow-the-last-release-or-the-last-version-tag.md
+- requirements/RQ-0027-resolve-code-graph-edges-precisely-from-a-scip-index-published-with-the-release.md
+- rsync.sh
+- services/rag-web/Dockerfile
+- services/rag-web/nginx.conf
+- services/rag-web/public/app.js
+- services/rag-web/public/index.html
+- services/rag-web/public/styles.css
+- services/rag/.pytest_cache/.gitignore
+- services/rag/.pytest_cache/CACHEDIR.TAG
+- services/rag/.pytest_cache/README.md
+- services/rag/.pytest_cache/v/cache/lastfailed
+- services/rag/.pytest_cache/v/cache/nodeids
+- services/rag/Dockerfile
+- services/rag/README.md
+- services/rag/pyproject.toml
+- services/rag/src/aifactory_rag/__init__.py
+- services/rag/src/aifactory_rag/__main__.py
+- services/rag/src/aifactory_rag/__pycache__/__init__.cpython-313.pyc
+- services/rag/src/aifactory_rag/__pycache__/api.cpython-313.pyc
+- services/rag/src/aifactory_rag/__pycache__/build_info.cpython-313.pyc
+- services/rag/src/aifactory_rag/__pycache__/cli.cpython-313.pyc
+- services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc
+- services/rag/src/aifactory_rag/__pycache__/db.cpython-313.pyc
+- services/rag/src/aifactory_rag/__pycache__/embeddings.cpython-313.pyc
+- services/rag/src/aifactory_rag/api.py
+- services/rag/src/aifactory_rag/auth/__pycache__/entra.cpython-313.pyc
+- services/rag/src/aifactory_rag/auth/entra.py
+- services/rag/src/aifactory_rag/build_info.py
+- services/rag/src/aifactory_rag/cli.py
+- services/rag/src/aifactory_rag/config.py
+- services/rag/src/aifactory_rag/db.py
+- services/rag/src/aifactory_rag/embeddings.py
+- services/rag/src/aifactory_rag/ingest/__pycache__/chunker.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/code_chunker.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/code_graph.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/git_inputs.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/parsers.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/pipeline.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/scip_index.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/__pycache__/sources.cpython-313.pyc
+- services/rag/src/aifactory_rag/ingest/chunker.py
+- services/rag/src/aifactory_rag/ingest/code_chunker.py
+- services/rag/src/aifactory_rag/ingest/code_graph.py
+- services/rag/src/aifactory_rag/ingest/git_inputs.py
+- services/rag/src/aifactory_rag/ingest/parsers.py
+- services/rag/src/aifactory_rag/ingest/pipeline.py
+- services/rag/src/aifactory_rag/ingest/scip_index.py
+- services/rag/src/aifactory_rag/ingest/sources.py
+- services/rag/src/aifactory_rag/migrations/001_init.sql
+- services/rag/src/aifactory_rag/migrations/002_flexible_embedding_vector.sql
+- services/rag/src/aifactory_rag/migrations/003_source_inputs.sql
+- services/rag/src/aifactory_rag/migrations/004_symbol_graph.sql
+- services/rag/src/aifactory_rag/migrations/005_precise_edges.sql
+- services/rag/src/aifactory_rag/query/__pycache__/graph.cpython-313.pyc
+- services/rag/src/aifactory_rag/query/__pycache__/responder.cpython-313.pyc
+- services/rag/src/aifactory_rag/query/__pycache__/retriever.cpython-313.pyc
+- services/rag/src/aifactory_rag/query/graph.py
+- services/rag/src/aifactory_rag/query/responder.py
+- services/rag/src/aifactory_rag/query/retriever.py
+- services/rag/tests/__pycache__/test_build_info.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_claude_cli_responder.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_code_chunker.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_code_graph.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_code_ingest.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_code_ingest.cpython-313.pyc
+- services/rag/tests/__pycache__/test_config_loading.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_config_loading.cpython-313.pyc
+- services/rag/tests/__pycache__/test_content_type.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_document_download.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_document_download.cpython-313.pyc
+- services/rag/tests/__pycache__/test_git_inputs.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_git_source_config.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_page_citations.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_page_citations.cpython-313.pyc
+- services/rag/tests/__pycache__/test_pdf_parse.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_ref_selectors.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_resilient_embeddings.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_resilient_embeddings.cpython-313.pyc
+- services/rag/tests/__pycache__/test_scip_index.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_source_filter.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_source_filter.cpython-313.pyc
+- services/rag/tests/__pycache__/test_vector_index.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/__pycache__/test_xlsx_parse.cpython-313-pytest-9.1.1.pyc
+- services/rag/tests/test_build_info.py
+- services/rag/tests/test_claude_cli_responder.py
+- services/rag/tests/test_code_chunker.py
+- services/rag/tests/test_code_graph.py
+- services/rag/tests/test_code_ingest.py
+- services/rag/tests/test_config_loading.py
+- services/rag/tests/test_content_type.py
+- services/rag/tests/test_document_download.py
+- services/rag/tests/test_git_inputs.py
+- services/rag/tests/test_git_source_config.py
+- services/rag/tests/test_page_citations.py
+- services/rag/tests/test_pdf_parse.py
+- services/rag/tests/test_ref_selectors.py
+- services/rag/tests/test_resilient_embeddings.py
+- services/rag/tests/test_scip_index.py
+- services/rag/tests/test_source_filter.py
+- services/rag/tests/test_vector_index.py
+- services/rag/tests/test_xlsx_parse.py
+- templates/feature/component.ts.hbs
+- templates/service/service.ts.hbs
+- tsconfig.base.json
+- tsconfig.json
+
+## Requirement
+
+---
+id: RQ-0025
+status: ready
+executionMode: handoff
+pipelineFast: false
+createdByName: "Batur Orkun"
+createdByEmail: "batur@bc.int"
+createdAt: "2026-09-29T15:33:05.880Z"
+branch: "factory/RQ-0025"
+createdFromCommit: "ceb1fa84ce515c4ec20ee7a2b05c287054105c41"
+githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/29"
+githubPullRequestIid: 29
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/28"
+githubIssueIid: 28
+repositoryProvider: github
+---
+# RQ-0025 - Answer data-flow and coupling questions about C code with Joern
+
+RQ-0023 and RQ-0024 answer where code is and what calls what. Safety-critical
+C work also asks how data moves: which components exchange which data and
+under what control (DO-178C data coupling and control coupling analysis),
+whether a length or index that arrives on an external bus (ARINC-429, UART)
+reaches a buffer access without a bound check, and which variables an ISR and
+the main loop share. These are data-flow questions; a call graph does not
+answer them.
+
+Joern builds a code property graph (AST, control flow and data dependence
+together) from C/C++ source without a build, and answers such questions. It is
+the third of three code layers and the only one that is not embedded: it is
+run on demand and its results are cited, not retrieved by similarity.
+
+Joern is not a qualified tool (DO-330). Its results guide the engineer and
+point at code; they are never presented as certification evidence, and every
+answer that uses them says so.
+
+## What it does
+
+**A code property graph per code input.** For a source marked for it, the RAG
+host builds a Joern CPG of each C/C++ input of RQ-0023, wherever the code comes
+from: each repository at its ingested commit, and the C/C++ files of the
+folder input as of its last ingest. It keeps the latest graph of each input
+and rebuilds it when that input changes. A source is marked with
+`RAG_SOURCE_N_DATAFLOW=on`. A build that fails or runs out of memory fails that
+input only and is reported.
+
+**Joern runs as a container on the RAG host.** A `joern` service in
+`infra/rag/compose.yaml`, built from a pinned Joern release (v4.0.644, checked
+against its sha256) on a JDK 21 runtime: the published `ghcr.io/joernio/joern`
+images are only `master` and `nightly` and cannot be pinned. It runs Joern's
+server mode, reachable from the host only (`127.0.0.1:${RAG_JOERN_PORT:-8090}`),
+with a container memory limit (`RAG_JOERN_MEMORY`, default 4g) and a JVM heap
+below it (`RAG_JOERN_HEAP`, default 3g) so the heap cannot grow into the
+limit. The code is mounted read-only; graphs and query results live in its
+workspace (`RAG_JOERN_WORKSPACE`, default `/srv/rag-sources/joern`). Query
+results are written there as JSON and read by the RAG service, since the
+server's reply carries only the console echo. Measured on `aselsan/bfi-sw`
+1.1.0: the graph builds in about 9 s and the container uses about 0.7 GB.
+
+**Prepared data-flow queries behind an endpoint.** `POST /dataflow` takes a
+query name and its parameters and returns the flows it finds, each as a path
+of steps with input (repository and commit, or folder), file, line and code
+excerpt. The first set:
+
+* `coupling` — for a component (a directory or a set of files), the globals,
+  parameters and return values through which it exchanges data with the
+  others, and the conditions under which it calls them;
+* `unchecked-input` — flows from configured sources (register reads, receive
+  functions of a bus driver) to array indexing, pointer arithmetic or
+  `memcpy`/`memset` sizes with no dominating bound check on the path;
+* `shared-state` — variables written in an interrupt handler and read or
+  written outside it, with whether each access is `volatile` and whether it
+  is inside a critical section.
+
+Sources, sinks and handler names are configurable per source
+(`RAG_SOURCE_N_DATAFLOW_SOURCES`, `_SINKS`, `_ISR`), with defaults for
+embedded C: receive/read functions as sources, array indexing, pointer
+arithmetic and `memcpy`/`memset` sizes as sinks, `*_IRQHandler` and `*isr*`
+functions as interrupt handlers. "No dominating bound check" means no
+comparison involving the tainted value in a condition that dominates the sink.
+
+**The answering LLM can call it.** A `/query` classified as a data-flow
+question calls `/dataflow` as a tool, cites the returned paths like chunks,
+and states that the result is a tool finding, not verified evidence.
+
+## Acceptance Criteria
+
+- After ingesting a source marked for data-flow, a CPG exists for each of
+  its C/C++ inputs, a repository and a folder alike; a re-ingest after a
+  change to one input rebuilds that input's graph only.
+- Joern runs only in its container with the configured memory limit and
+  heap; the host has no Java installed for it, and the port answers on the
+  loopback interface only.
+- `unchecked-input` on a fixture with one unchecked and one checked index from
+  a receive function reports the first and not the second, with the full path.
+- `shared-state` on a fixture with an ISR reports the shared variable, its
+  accesses, and the non-`volatile` one.
+- `coupling` on a fixture of two components lists the data they exchange and
+  the conditional calls between them.
+- A data-flow question to `/query` returns an answer that cites the paths and
+  carries the not-qualified-tool notice.
+- A failed or out-of-memory CPG build is reported for that input and does
+  not affect other inputs or the rest of the RAG.
+
+
+## Constraints
+
+```json
+{}
+```
