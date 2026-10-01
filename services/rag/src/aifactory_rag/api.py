@@ -169,20 +169,20 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         return _graph(graph.find_symbols, name, _source_list(sourceIds))
 
     @app.get("/callers")
-    def callers(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
-        return _graph(graph.callers, name, _source_list(sourceIds))
+    def callers(name: str, sourceIds: str | None = None, path: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        return _graph(graph.callers, name, _source_list(sourceIds), path)
 
     @app.get("/callees")
     def callees(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
         return _graph(graph.callees, name, _source_list(sourceIds))
 
     @app.get("/references")
-    def references(name: str, sourceIds: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
-        return _graph(graph.references, name, _source_list(sourceIds))
+    def references(name: str, sourceIds: str | None = None, path: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        return _graph(graph.references, name, _source_list(sourceIds), path)
 
     @app.get("/impact")
-    def impact(name: str, sourceIds: str | None = None, depth: int = 3, _: dict[str, Any] = Depends(auth_claims)) -> dict:
-        return _graph(graph.impact, name, _source_list(sourceIds), depth)
+    def impact(name: str, sourceIds: str | None = None, depth: int = 3, path: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> dict:
+        return _graph(graph.impact, name, _source_list(sourceIds), depth, path)
 
     @app.post("/db/migrate")
     def migrate_db(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, str]:

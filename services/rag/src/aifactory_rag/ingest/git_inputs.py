@@ -49,6 +49,7 @@ class RepositoryTree:
     # The REF selector this tree was resolved from (`@last-release`), if any;
     # `ref` is always the real branch or tag.
     selector: str | None = None
+    is_tag: bool = False
 
 
 class GitInputError(RuntimeError):
@@ -178,7 +179,90 @@ def sync_repository(repository: RepositoryInput, mirror_dir: str, environ: dict[
     git.run("checkout", "-q", "--force", "--detach", commit)
     git.run("clean", "-q", "-ffdx")
     selector = requested if requested and requested.startswith("@") else None
-    return RepositoryTree(worktree=worktree, ref=ref, commit=commit, blobs=git.blobs(commit), selector=selector)
+    return RepositoryTree(
+        worktree=worktree, ref=ref, commit=commit, blobs=git.blobs(commit),
+        selector=selector, is_tag=remote_ref.startswith("refs/tags/"),
+    )
+
+
+SCIP_INDEX_FILE = "index.scip"
+
+
+def find_scip_index(repository: RepositoryInput, tree: RepositoryTree, environ: dict[str, str] | None = None) -> tuple[bytes | None, str]:
+    """The SCIP index of exactly the commit being ingested, and where it came from.
+
+    Looked for in the generic packages whose version is the tag (a release
+    publishes it there), then among the job artifacts of the commit's latest
+    successful pipeline. Only the file name is the contract: no package or job
+    name is configured. Every failure is a note, never an error: without an
+    index the input keeps name-resolved edges.
+    """
+    env = os.environ if environ is None else environ
+    parts = urlsplit(repository.web_url)
+    if parts.scheme not in {"http", "https"}:
+        return None, "no SCIP index: not a GitLab repository"
+    try:
+        token = _token(repository.token_env, env)
+    except GitInputError as exc:
+        return None, f"no SCIP index: {exc}"
+    api = urlunsplit((parts.scheme, parts.netloc, f"/api/v4/projects/{quote(repository.project_path, safe='')}", "", ""))
+    headers = {"PRIVATE-TOKEN": token}
+    try:
+        with httpx.Client(headers=headers, timeout=120, follow_redirects=True) as client:
+            if tree.is_tag:
+                found = _index_from_packages(client, api, tree.ref)
+                if found:
+                    return found
+            found = _index_from_pipeline(client, api, tree.commit)
+            if found:
+                return found
+    except _NoApiAccess as exc:
+        return None, f"no SCIP index: {repository.token_env} cannot read {exc} (needs read_api)"
+    except httpx.HTTPError as exc:
+        return None, f"no SCIP index: GitLab {parts.netloc} is not reachable ({exc.__class__.__name__})"
+    return None, f"no SCIP index for {tree.ref} ({tree.commit[:12]})"
+
+
+class _NoApiAccess(Exception):
+    pass
+
+
+def _get(client: httpx.Client, url: str, what: str, **params: object) -> httpx.Response:
+    response = client.get(url, params=params or None)
+    if response.status_code in {401, 403}:
+        raise _NoApiAccess(what)
+    return response
+
+
+def _index_from_packages(client: httpx.Client, api: str, tag: str) -> tuple[bytes, str] | None:
+    response = _get(client, f"{api}/packages", "the packages", package_type="generic", package_version=tag, per_page=100)
+    if response.status_code != 200:
+        return None
+    for package in response.json():
+        files = _get(client, f"{api}/packages/{package['id']}/package_files", "the package files", per_page=100)
+        if files.status_code != 200 or not any(item.get("file_name") == SCIP_INDEX_FILE for item in files.json()):
+            continue
+        download = _get(client, f"{api}/packages/generic/{quote(package['name'], safe='')}/{quote(tag, safe='')}/{SCIP_INDEX_FILE}", "the package")
+        if download.status_code == 200 and download.content:
+            return download.content, f"package {package['name']} {tag}"
+    return None
+
+
+def _index_from_pipeline(client: httpx.Client, api: str, commit: str) -> tuple[bytes, str] | None:
+    pipelines = _get(client, f"{api}/pipelines", "the pipelines", sha=commit, status="success", order_by="id", sort="desc", per_page=1)
+    if pipelines.status_code != 200 or not pipelines.json():
+        return None
+    pipeline = pipelines.json()[0]["id"]
+    jobs = _get(client, f"{api}/pipelines/{pipeline}/jobs", "the pipeline jobs", per_page=100)
+    if jobs.status_code != 200:
+        return None
+    for job in jobs.json():
+        if not any(item.get("file_type") == "archive" for item in job.get("artifacts") or []):
+            continue
+        download = _get(client, f"{api}/jobs/{job['id']}/artifacts/{SCIP_INDEX_FILE}", "the job artifacts")
+        if download.status_code == 200 and download.content:
+            return download.content, f"pipeline {pipeline} job {job['name']}"
+    return None
 
 
 def _last_release(repository: RepositoryInput, token: str) -> str:

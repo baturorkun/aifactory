@@ -51,25 +51,35 @@ def find_symbols(conn: psycopg.Connection, name: str, source_ids: list[str] | No
         return list(cur.fetchall())
 
 
-def callers(conn: psycopg.Connection, name: str, source_ids: list[str] | None = None) -> list[dict[str, Any]]:
-    return _edges_to(conn, name, ("calls",), source_ids)
+def callers(conn: psycopg.Connection, name: str, source_ids: list[str] | None = None, path: str | None = None) -> list[dict[str, Any]]:
+    return _edges_to(conn, name, ("calls",), source_ids, path)
 
 
-def references(conn: psycopg.Connection, name: str, source_ids: list[str] | None = None) -> list[dict[str, Any]]:
-    return _edges_to(conn, name, REFERENCE_KINDS, source_ids)
+def references(conn: psycopg.Connection, name: str, source_ids: list[str] | None = None, path: str | None = None) -> list[dict[str, Any]]:
+    return _edges_to(conn, name, REFERENCE_KINDS, source_ids, path)
 
 
-def _edges_to(conn: psycopg.Connection, name: str, kinds: tuple[str, ...], source_ids: list[str] | None) -> list[dict[str, Any]]:
+def _edges_to(
+    conn: psycopg.Connection, name: str, kinds: tuple[str, ...], source_ids: list[str] | None, path: str | None = None,
+) -> list[dict[str, Any]]:
+    """Edges to a name; with `path`, to the definition in that file.
+
+    A precise edge says which definition it reaches, so asking about the
+    definition in `path` leaves out precise edges to a same-named one
+    elsewhere; name-resolved edges may reach it and are kept.
+    """
     where, params = _sources_filter("e", source_ids)
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT e.from_symbol AS symbol, e.kind, e.line, e.resolution, {_LOCATION}
+            SELECT e.from_symbol AS symbol, e.kind, e.line, e.resolution,
+                   e.to_path AS target_path, e.to_line AS target_line, {_LOCATION}
             FROM rag_edges e JOIN rag_documents d ON d.id = e.document_id AND d.status = 'active'
             WHERE e.kind = ANY(%s) AND e.to_name = %s{where}
+              AND (%s::text IS NULL OR e.resolution = 'name' OR e.to_path = %s)
             ORDER BY d.source_id, input, path, e.line
             """,
-            (list(kinds), short_name(name), *params),
+            (list(kinds), short_name(name), *params, path, path),
         )
         return list(cur.fetchall())
 
@@ -83,7 +93,8 @@ def callees(conn: psycopg.Connection, name: str, source_ids: list[str] | None = 
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            SELECT e.from_symbol AS symbol, e.to_name AS callee, e.line, e.resolution, {_LOCATION},
+            SELECT e.from_symbol AS symbol, e.to_name AS callee, e.line, e.resolution,
+                   e.to_path AS target_path, e.to_line AS target_line, {_LOCATION},
               COALESCE((
                 SELECT json_agg(json_build_object(
                   'symbol', t.name, 'kind', t.kind, 'path', td.relative_path,
@@ -92,6 +103,8 @@ def callees(conn: psycopg.Connection, name: str, source_ids: list[str] | None = 
                 ) ORDER BY td.relative_path, t.start_line)
                 FROM rag_symbols t JOIN rag_documents td ON td.id = t.document_id AND td.status = 'active'
                 WHERE t.source_id = e.source_id AND t.short_name = e.to_name AND t.kind IN ('function', 'method', 'macro')
+                  -- a precise call reaches only the definition the index names
+                  AND (e.resolution = 'name' OR (td.relative_path = e.to_path AND e.to_line BETWEEN t.start_line AND t.end_line))
               ), '[]'::json) AS definitions
             FROM rag_edges e JOIN rag_documents d ON d.id = e.document_id AND d.status = 'active'
             WHERE e.kind = 'calls' AND {_from_symbol_matches('e')}{where}
@@ -107,39 +120,44 @@ def _from_symbol_matches(alias: str) -> str:
     return f"({alias}.from_symbol = %s OR {alias}.from_symbol LIKE '%%::' || %s OR {alias}.from_symbol LIKE '%%.' || %s)"
 
 
-def impact(conn: psycopg.Connection, name: str, source_ids: list[str] | None = None, depth: int = 3) -> dict[str, Any]:
+def impact(
+    conn: psycopg.Connection, name: str, source_ids: list[str] | None = None, depth: int = 3, path: str | None = None,
+) -> dict[str, Any]:
     """Everything that calls, reads or writes a symbol, transitively, up to `depth`.
 
     Recursion in the code cannot loop the walk: each step goes one level
-    deeper and the walk stops at the limit.
+    deeper and the walk stops at the limit. A precise edge is followed only
+    into the definition it names: the caller's own file and lines.
     """
     depth = max(1, min(int(depth), MAX_IMPACT_DEPTH))
     where, params = _sources_filter("e", source_ids)
     with conn.cursor() as cur:
         cur.execute(
             f"""
-            WITH RECURSIVE walk(symbol, document_id, depth) AS (
-              SELECT %s::text, NULL::bigint, 0
+            WITH RECURSIVE walk(symbol, document_id, path, start_line, end_line, depth) AS (
+              SELECT %s::text, NULL::bigint, %s::text, NULL::int, NULL::int, 0
               UNION
-              SELECT e.from_symbol, e.document_id, w.depth + 1
+              SELECT e.from_symbol, e.document_id, d.relative_path, cs.start_line, cs.end_line, w.depth + 1
               FROM walk w
               JOIN rag_edges e
                 ON e.to_name = regexp_replace(w.symbol, '^.*(::|[.])', '')
                AND e.kind = ANY(%s)
                AND e.from_symbol IS NOT NULL{where}
+               AND (e.resolution = 'name' OR w.path IS NULL
+                    OR (e.to_path = w.path AND (w.start_line IS NULL OR e.to_line BETWEEN w.start_line AND w.end_line)))
               JOIN rag_documents d ON d.id = e.document_id AND d.status = 'active'
+              LEFT JOIN rag_symbols cs ON cs.document_id = e.document_id AND cs.name = e.from_symbol
               WHERE w.depth < %s
             )
             SELECT w.symbol, min(w.depth) AS depth, {_LOCATION},
-                   min(s.start_line) AS start_line, max(s.end_line) AS end_line
+                   min(w.start_line) AS start_line, max(w.end_line) AS end_line
             FROM walk w
             JOIN rag_documents d ON d.id = w.document_id
-            LEFT JOIN rag_symbols s ON s.document_id = w.document_id AND s.name = w.symbol
             WHERE w.depth > 0
             GROUP BY w.symbol, d.source_id, d.input_key, d.relative_path, d.metadata
             ORDER BY depth, input, path, w.symbol
             """,
-            (name, list(IMPACT_KINDS), *params, depth),
+            (name, path, list(IMPACT_KINDS), *params, depth),
         )
         rows = list(cur.fetchall())
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
@@ -214,6 +232,7 @@ _CALLEE_CHUNK = f"""
     FROM rag_edges e
     JOIN rag_symbols t ON t.source_id = e.source_id AND t.short_name = e.to_name AND t.kind IN ('function', 'method')
     JOIN rag_documents d ON d.id = t.document_id AND d.status = 'active'
+      AND (e.resolution = 'name' OR (d.relative_path = e.to_path AND e.to_line BETWEEN t.start_line AND t.end_line))
     JOIN rag_chunks c ON c.document_id = t.document_id AND c.status = 'active' AND c.metadata->>'symbol' = t.name
     WHERE e.source_id = %s AND e.kind = 'calls'
       AND (e.from_symbol = %s OR e.from_symbol LIKE '%%::' || %s OR e.from_symbol LIKE '%%.' || %s)

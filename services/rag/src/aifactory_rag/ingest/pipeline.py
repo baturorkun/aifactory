@@ -22,7 +22,8 @@ from aifactory_rag.config import DEFAULT_INCLUDE
 from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_code, expected_chunker, language_for
 from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
-from aifactory_rag.ingest.git_inputs import GitInputError, RepositoryInput, RepositoryTree, repository_inputs, sync_repository
+from aifactory_rag.ingest.git_inputs import GitInputError, RepositoryInput, RepositoryTree, find_scip_index, repository_inputs, sync_repository
+from aifactory_rag.ingest.scip_index import ScipIndex, read_index
 from aifactory_rag.ingest.parsers import parse_file
 from aifactory_rag.ingest.sources import SourceFile, effective_excludes, normalize_subdir, scan_files, selected
 
@@ -176,6 +177,7 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                         f"recording the commit of {repository.key}",
                         lambda current: _record_input_state_and_commit(current, source.id, repository, tree),
                     )
+                    conn = _apply_scip_index(conn, config, source.id, repository, tree, summary.inputs[-1])
 
             summary.status = "failed" if summary.error_count else "passed"
             summary.duration_seconds = round(perf_counter() - run_started, 3)
@@ -204,6 +206,116 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
             raise
     finally:
         _safe_close(conn)
+
+
+def _apply_scip_index(
+    conn: psycopg.Connection,
+    config: RagConfig,
+    source_id: str,
+    repository: RepositoryInput,
+    tree: RepositoryTree,
+    counts: dict[str, Any],
+) -> psycopg.Connection:
+    """Make the input's edges precise where its commit's SCIP index covers them."""
+    data, origin = find_scip_index(repository, tree)
+    index: ScipIndex | None = None
+    if data is not None:
+        try:
+            index = read_index(data)
+        except Exception as exc:  # noqa: BLE001 - an unreadable index costs precision, not the ingest
+            origin = f"unreadable SCIP index from {origin}: {_short_error(exc)}"
+    conn, precise = _run_with_database_retries(
+        conn,
+        config,
+        f"applying the SCIP index of {repository.key}",
+        lambda current: _overlay_scip_and_commit(current, source_id, repository.key, tree, index),
+    )
+    counts["scip"] = origin
+    counts["preciseEdges"] = precise
+    print(f"RAG SCIP index    : {origin}; {precise} precise edges", flush=True)
+    return conn
+
+
+def _overlay_scip_and_commit(
+    conn: psycopg.Connection,
+    source_id: str,
+    input_key: str,
+    tree: RepositoryTree,
+    index: ScipIndex | None,
+) -> int:
+    precise = _overlay_scip(conn, source_id, input_key, tree, index)
+    conn.commit()
+    return precise
+
+
+def _overlay_scip(
+    conn: psycopg.Connection,
+    source_id: str,
+    input_key: str,
+    tree: RepositoryTree,
+    index: ScipIndex | None,
+) -> int:
+    """Recompute the precise targets of one input's edges from scratch.
+
+    Every edge of the input first returns to `name`, so a file that left the
+    index, or whose definitions moved, keeps no stale target. Then each
+    `calls`/`reads`/`writes` edge of a covered file is matched to the SCIP use
+    on the same line with the same text; when that use's symbol has a
+    definition in the index, the edge records it.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, relative_path FROM rag_documents WHERE source_id = %s AND input_key = %s AND status = 'active'",
+            (source_id, input_key),
+        )
+        documents = list(cur.fetchall())
+        ids = [row["id"] for row in documents]
+        if ids:
+            cur.execute(
+                "UPDATE rag_edges SET resolution = 'name', to_path = NULL, to_line = NULL WHERE document_id = ANY(%s) AND resolution <> 'name'",
+                (ids,),
+            )
+        updates: list[tuple[str, int, int]] = []
+        if index is not None:
+            for document in documents:
+                occurrences = index.documents.get(document["relative_path"])
+                if not occurrences:
+                    continue
+                uses = _uses_by_line(tree.worktree / document["relative_path"], occurrences, index)
+                if not uses:
+                    continue
+                cur.execute(
+                    "SELECT id, line, to_name FROM rag_edges WHERE document_id = %s AND kind IN ('calls', 'reads', 'writes')",
+                    (document["id"],),
+                )
+                for edge in cur.fetchall():
+                    target = uses.get((edge["line"], edge["to_name"]))
+                    if target is not None:
+                        updates.append((target[0], target[1], edge["id"]))
+            if updates:
+                cur.executemany(
+                    "UPDATE rag_edges SET to_path = %s, to_line = %s, resolution = 'precise' WHERE id = %s",
+                    updates,
+                )
+    return len(updates)
+
+
+def _uses_by_line(path: Path, occurrences: list[Any], index: ScipIndex) -> dict[tuple[int, str], tuple[str, int]]:
+    """(line, name as written) -> definition, for the uses whose symbol is defined in the index."""
+    try:
+        lines = path.read_bytes().split(b"\n")
+    except OSError:
+        return {}
+    uses: dict[tuple[int, str], tuple[str, int]] = {}
+    for occurrence in occurrences:
+        if occurrence.is_definition or occurrence.line > len(lines):
+            continue
+        definition = index.definitions.get(occurrence.symbol)
+        if definition is None:
+            continue
+        name = lines[occurrence.line - 1][occurrence.start:occurrence.end].decode("utf-8", errors="replace")
+        uses.setdefault((occurrence.line, name), definition)
+    return uses
 
 
 def _print_matched(label: str, files: list[SourceFile]) -> None:

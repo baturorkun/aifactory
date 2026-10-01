@@ -194,6 +194,21 @@ A `/query` adds the callers and callees of the functions it found (and the
 header declaring them) within its top-k budget; `"expandGraph": false` turns
 that off.
 
+When a repository publishes a SCIP index of its build, edges become precise.
+After ingesting a repository input the RAG looks for a file named
+`index.scip` in the generic packages whose version is the ingested tag, then
+among the job artifacts of the commit's latest successful pipeline (the
+entry's token needs `read_api`). Each `calls`/`reads`/`writes` edge of a file
+the index covers is matched to the SCIP use on the same line and text and
+records the definition's path and line (`resolution: precise`); everything
+else stays `name`. The overlay is recomputed at every ingest, so an index is
+never applied to another commit. `/callers`, `/references` and `/impact` take
+an optional `path` to ask about one definition of a shared name, and
+`/callees` lists only the definition a precise call reaches. scip-clang
+records definitions and uses, not reads and writes, so the kind of a
+reference still comes from tree-sitter. For `aselsan/bfi-sw` the `scip-index`
+CI job produces the index (bfi-sw MR !3).
+
 Set secrets in `.env`:
 
 ```bash
