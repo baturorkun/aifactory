@@ -1,0 +1,58 @@
+{
+  "runId": "20260930203607-RQ-0024",
+  "requirementId": "RQ-0024",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20260930203607-RQ-0024/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-09-30T20:36:07.401Z",
+  "updatedAt": "2026-09-30T20:50:37.529Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-09-30T20:36:13.745Z",
+      "finishedAt": "2026-09-30T20:46:20.481Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "services/rag/.pytest_cache/v/cache/nodeids",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/__pycache__/api.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/db.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/api.py",
+    "services/rag/src/aifactory_rag/db.py",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/code_chunker.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/code_graph.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/git_inputs.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/pipeline.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/sources.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/code_graph.py",
+    "services/rag/src/aifactory_rag/ingest/pipeline.py",
+    "services/rag/src/aifactory_rag/migrations/004_symbol_graph.sql",
+    "services/rag/src/aifactory_rag/query/__pycache__/graph.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/query/__pycache__/responder.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/query/graph.py",
+    "services/rag/src/aifactory_rag/query/responder.py",
+    "services/rag/tests/__pycache__/test_code_chunker.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_code_graph.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_git_inputs.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_git_source_config.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_ref_selectors.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_resilient_embeddings.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/test_code_graph.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-09-30T20:50:37.532Z",
+  "approvedBy": "Batur Orkun"
+}
