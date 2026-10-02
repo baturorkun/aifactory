@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-02T07:42:22.706Z"
 branch: "factory/RQ-0028"
 createdFromCommit: "0bf9c044f5848f9d84e424b8ea99db9e4a3faca8"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/34"
+githubIssueIid: 34
+repositoryProvider: github
 ---
 # RQ-0028 - Keep a repository source current with a GitLab push webhook
 
