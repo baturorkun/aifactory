@@ -1,6 +1,6 @@
 ---
 id: RQ-0028
-status: completed
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,9 +8,6 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-02T07:42:22.706Z"
 branch: "factory/RQ-0028"
 createdFromCommit: "0bf9c044f5848f9d84e424b8ea99db9e4a3faca8"
-completedRunId: "20261002074301-RQ-0028"
-completedBy: "Batur Orkun"
-completedAt: "2026-10-02T09:11:47.856Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/35"
 githubPullRequestIid: 35
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/34"
@@ -49,13 +46,6 @@ pushes costs at most two ingests. Each run is the ordinary incremental
 ingest: changed files only, the commit's SCIP index from its pipeline when it
 has one, and a new Joern graph for a data-flow source.
 
-**A successful pipeline starts one more ingest.** The push's ingest runs
-before the commit's pipeline has produced its SCIP index (RQ-0027), or for a
-tag before the release package is uploaded. A pipeline event with status
-`success` on the followed branch (or a tag pipeline, for a release selector)
-queues another ingest of the source; its files are unchanged by then and
-skipped, and it applies the index.
-
 **Setting it up.** In the GitLab project: Settings > Webhooks, URL
 `http://<rag-host>:8765/webhooks/gitlab`, the secret token, push events (and
 tag push events for a release selector). GitLab refuses webhooks to private
@@ -73,8 +63,5 @@ addresses unless its administrator allows requests to the local network.
   per push; two sources ingest independently.
 - A tag push starts the ingest of an entry on `@last-release`/`@last-tag` and
   is ignored by an entry that follows a branch.
-- A successful pipeline on the followed branch starts an ingest that applies
-  the commit's SCIP index; a failed or running pipeline, or one on another
-  branch, starts nothing.
 - The run is recorded like any ingest (`rag_ingest_runs`), and its outcome is
   visible through `GET /ingest-runs/{id}` or the service log.

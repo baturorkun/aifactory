@@ -1,0 +1,48 @@
+{
+  "runId": "20261002074301-RQ-0028",
+  "requirementId": "RQ-0028",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261002074301-RQ-0028/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-02T07:43:01.274Z",
+  "updatedAt": "2026-10-02T09:11:15.500Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-02T07:43:35.060Z",
+      "finishedAt": "2026-10-02T07:46:04.327Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "services/rag/.pytest_cache/v/cache/nodeids",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/__pycache__/api.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/dataflow.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/db.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/webhook.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/api.py",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/pipeline.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/query/__pycache__/responder.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/webhook.py",
+    "services/rag/tests/__pycache__/test_dataflow.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_dataflow_joern.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_webhook.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/test_webhook.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-10-02T09:11:15.500Z",
+  "approvedBy": "Batur Orkun"
+}

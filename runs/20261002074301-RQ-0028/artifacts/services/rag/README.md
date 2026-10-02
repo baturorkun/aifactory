@@ -152,10 +152,7 @@ redirection and leaves the value empty.
 A push webhook keeps such a source current (RQ-0028). Give the entry a secret,
 `RAG_SOURCE_N_REPO_K_WEBHOOK_SECRET`, and add a GitLab webhook (Settings >
 Webhooks) to `http://<rag-host>:8765/webhooks/gitlab` with the same secret
-token, push events (tag push events for `@last-release`/`@last-tag`) and
-pipeline events: a successful pipeline on the followed ref starts one more
-ingest, which picks up the SCIP index (or release package) the push's own
-ingest ran too early to find.
+token and push events (tag push events for `@last-release`/`@last-tag`).
 A push to the ref the entry follows queues an incremental ingest of its
 source and answers 202; other branches are ignored; a missing or wrong token
 is refused with 401. One ingest per source runs at a time and pushes during it
