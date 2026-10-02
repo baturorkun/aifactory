@@ -12,7 +12,7 @@ from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
-from aifactory_rag import dataflow, webhook
+from aifactory_rag import dataflow, status, webhook
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
 
@@ -113,6 +113,32 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             source.model_dump(by_alias=True)
             for source in factory_config.rag.sources
         ]
+
+    # How fresh each source is: last ingest, commits, data-flow graphs (RQ-0029).
+    @app.get("/sources/status")
+    def sources_status(_: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
+        ids = [source.id for source in factory_config.rag.sources]
+        with connect(factory_config.rag.database.connection_string) as conn:
+            latest = fetch_all(conn, f"""
+                SELECT DISTINCT ON (source_id) {status.RUN_COLUMNS} FROM rag_ingest_runs
+                WHERE source_id = ANY(%s) ORDER BY source_id, started_at DESC""", (ids,))
+            finished = fetch_all(conn, f"""
+                SELECT DISTINCT ON (source_id) {status.RUN_COLUMNS} FROM rag_ingest_runs
+                WHERE source_id = ANY(%s) AND finished_at IS NOT NULL ORDER BY source_id, finished_at DESC""", (ids,))
+            inputs = fetch_all(conn, """
+                SELECT source_id, input_key, url, ref, commit_sha, committed_at, ingested_at, file_count
+                FROM rag_source_inputs WHERE source_id = ANY(%s)""", (ids,))
+            # When each input's content last changed: a document (re)ingested or removed.
+            changes = fetch_all(conn, """
+                SELECT source_id, input_key,
+                       count(*) FILTER (WHERE status = 'active') AS documents,
+                       greatest(max(last_ingested_at) FILTER (WHERE status = 'active'),
+                                max(updated_at) FILTER (WHERE status = 'deleted')) AS last_change
+                FROM rag_documents WHERE source_id = ANY(%s) GROUP BY source_id, input_key""", (ids,))
+            graphs = fetch_all(conn, """
+                SELECT source_id, input_key, project, ref, commit_sha, built_at
+                FROM rag_dataflow_graphs WHERE source_id = ANY(%s)""", (ids,))
+        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes)
 
     @app.get("/documents")
     def documents(sourceId: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
