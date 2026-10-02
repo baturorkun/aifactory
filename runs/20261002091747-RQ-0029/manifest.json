@@ -1,0 +1,44 @@
+{
+  "runId": "20261002091747-RQ-0029",
+  "requirementId": "RQ-0029",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261002091747-RQ-0029/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-02T09:17:47.282Z",
+  "updatedAt": "2026-10-02T09:53:08.816Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-02T09:18:17.306Z",
+      "finishedAt": "2026-10-02T09:20:22.842Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "services/rag-web/public/app.js",
+    "services/rag-web/public/styles.css",
+    "services/rag/.pytest_cache/v/cache/nodeids",
+    "services/rag/src/aifactory_rag/__pycache__/api.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/status.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/webhook.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/api.py",
+    "services/rag/src/aifactory_rag/status.py",
+    "services/rag/tests/__pycache__/test_source_status.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_webhook.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/test_source_status.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-02T09:53:08.821Z",
+  "approvedBy": "Batur Orkun"
+}
