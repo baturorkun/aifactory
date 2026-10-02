@@ -29,6 +29,9 @@ class GitRepositoryConfig(BaseModel):
     # configuration is printed and served (`/sources`), the variable is not.
     token_env: str = Field(alias="tokenEnv")
     ref: str | None = None
+    # RQ-0028: the variable holding the GitLab webhook's secret token, when the
+    # repository pushes to the RAG; again only the name is kept.
+    webhook_secret_env: str | None = Field(default=None, alias="webhookSecretEnv")
 
 
 class GitGroupConfig(BaseModel):
@@ -340,7 +343,7 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
 # a redirection and leave the value silently empty.
 REF_SELECTORS = ("@last-release", "@last-tag")
 
-GIT_ENTRY_PATTERN = re.compile(r"^(REPO|GROUP)_(\d+)_(URL|TOKEN|REF|PROJECT_EXCLUDE)$")
+GIT_ENTRY_PATTERN = re.compile(r"^(REPO|GROUP)_(\d+)_(URL|TOKEN|REF|PROJECT_EXCLUDE|WEBHOOK_SECRET)$")
 
 
 def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]) -> dict[str, list[dict[str, Any]]]:
@@ -375,7 +378,10 @@ def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]
                 raise ValueError(
                     f"{entry}_REF={ref} is not a known selector; use a branch or tag name, or one of {', '.join(REF_SELECTORS)}"
                 )
-            repositories.append({**common, "ref": ref})
+            repositories.append({
+                **common, "ref": ref,
+                "webhookSecretEnv": f"{entry}_WEBHOOK_SECRET" if "WEBHOOK_SECRET" in fields else None,
+            })
         else:
             groups.append({**common, "projectExclude": _json_glob_list(fields.get("PROJECT_EXCLUDE"), f"{entry}_PROJECT_EXCLUDE")})
     return {"repositories": repositories, "groups": groups}

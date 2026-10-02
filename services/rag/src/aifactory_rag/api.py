@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from aifactory_rag import build_info
@@ -12,7 +12,7 @@ from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import ingest_source
-from aifactory_rag import dataflow
+from aifactory_rag import dataflow, webhook
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
 
@@ -205,6 +205,28 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 return dataflow.run_dataflow(conn, settings, source, payload.query, payload.params)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    queue = webhook.IngestQueue(lambda source_id: ingest_source(factory_config.rag, source_id))
+
+    # GitLab push and tag-push events keep repository sources current (RQ-0028).
+    # The API is open on the network, so the entry's secret is never optional.
+    @app.post("/webhooks/gitlab")
+    async def gitlab_webhook(request: Request) -> JSONResponse:
+        try:
+            event = await request.json()
+        except ValueError:
+            return JSONResponse({"detail": "body is not JSON"}, status_code=400)
+        matches = webhook.entries_for(factory_config.rag, event)
+        if not matches:
+            return JSONResponse({"ignored": "no source follows this project"}, status_code=200)
+        token = request.headers.get("X-Gitlab-Token")
+        trusted = [m for m in matches if webhook.authentic(m.repository, token)]
+        if not trusted:
+            return JSONResponse({"detail": "webhook secret token missing or wrong"}, status_code=401)
+        sources = sorted({m.source.id for m in trusted if webhook.follows(m.repository, event)})
+        if not sources:
+            return JSONResponse({"ignored": f"no source follows {event.get('ref')}"}, status_code=200)
+        return JSONResponse({"queued": {source_id: queue.trigger(source_id) for source_id in sources}}, status_code=202)
 
     @app.post("/db/migrate")
     def migrate_db(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, str]:
