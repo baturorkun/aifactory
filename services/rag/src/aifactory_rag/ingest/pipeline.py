@@ -633,17 +633,18 @@ def _record_input_state_and_commit(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO rag_source_inputs(source_id, input_key, entry, url, ref, commit_sha, file_count, ingested_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+            INSERT INTO rag_source_inputs(source_id, input_key, entry, url, ref, commit_sha, file_count, committed_at, ingested_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT(source_id, input_key) DO UPDATE SET
               entry = EXCLUDED.entry,
               url = EXCLUDED.url,
               ref = EXCLUDED.ref,
               commit_sha = EXCLUDED.commit_sha,
               file_count = EXCLUDED.file_count,
+              committed_at = EXCLUDED.committed_at,
               ingested_at = now()
             """,
-            (source_id, repository.key, repository.entry, repository.web_url, tree.ref, tree.commit, len(tree.blobs)),
+            (source_id, repository.key, repository.entry, repository.web_url, tree.ref, tree.commit, len(tree.blobs), tree.committed_at),
         )
     conn.commit()
 

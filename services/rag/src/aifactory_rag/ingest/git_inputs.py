@@ -50,6 +50,7 @@ class RepositoryTree:
     # `ref` is always the real branch or tag.
     selector: str | None = None
     is_tag: bool = False
+    committed_at: str | None = None  # ISO 8601 committer date of `commit`
 
 
 class GitInputError(RuntimeError):
@@ -176,12 +177,13 @@ def sync_repository(repository: RepositoryInput, mirror_dir: str, environ: dict[
     remote_ref, local_ref = git.resolve_ref(ref)
     git.run("fetch", "-q", "--prune", "--no-tags", "origin", f"+{remote_ref}:{local_ref}", network=True)
     commit = git.run("rev-parse", f"{local_ref}^{{commit}}").strip()
+    committed_at = git.run("show", "-s", "--format=%cI", commit).strip() or None
     git.run("checkout", "-q", "--force", "--detach", commit)
     git.run("clean", "-q", "-ffdx")
     selector = requested if requested and requested.startswith("@") else None
     return RepositoryTree(
         worktree=worktree, ref=ref, commit=commit, blobs=git.blobs(commit),
-        selector=selector, is_tag=remote_ref.startswith("refs/tags/"),
+        selector=selector, is_tag=remote_ref.startswith("refs/tags/"), committed_at=committed_at,
     )
 
 

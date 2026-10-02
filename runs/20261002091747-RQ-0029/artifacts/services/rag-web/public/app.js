@@ -11,6 +11,7 @@ const newChatButton = document.querySelector('#new-chat');
 const sessionList = document.querySelector('#session-list');
 const modelCard = document.querySelector('.model-card');
 const llmModel = document.querySelector('#llm-model');
+const llmProvider = document.querySelector('#llm-provider');
 const buildCard = document.querySelector('.build-card');
 const buildVersion = document.querySelector('#build-version');
 const buildId = document.querySelector('#build-id');
@@ -224,8 +225,8 @@ function renderSources(sources) {
 // background.
 const STATE_LABELS = {
   updating: 'Updating now',
-  current: 'Checked',
-  'file-errors': 'Checked',
+  current: 'Updated',
+  'file-errors': 'Updated',
   failed: 'Last ingest failed',
   stale: 'Ingest stopped',
   never: 'Never ingested',
@@ -241,57 +242,38 @@ async function loadSourceStatus() {
   }
 }
 
-function metaLine(className, ...parts) {
-  const line = document.createElement('span');
-  line.className = className;
-  line.append(...parts.filter(Boolean));
-  return line;
-}
-
-function textPart(text, className) {
-  const part = document.createElement('span');
-  if (className) part.className = className;
-  part.textContent = text;
-  return part;
-}
-
-// "Checked" is when the source was last scanned (with webhooks: every push);
-// each input then says when its own content last changed, and a repository
-// which commit it holds and when that commit was made.
 function renderSourceStatus(item) {
   const meta = sourceList.querySelector(`.source-meta[data-source="${CSS.escape(item.sourceId)}"]`);
   if (!meta) return;
   const dot = document.createElement('span');
   dot.className = `status-dot ${item.state}`;
-  const label = STATE_LABELS[item.state] || item.state;
-  const stamp = item.state !== 'updating' && item.checkedAt ? ` ${formatStamp(item.checkedAt)}` : '';
-  const errors = item.state === 'file-errors' && item.lastRun ? textPart(`${item.lastRun.errors} errors`, 'source-errors') : null;
-  const lines = [metaLine('source-line', dot, textPart(`${label}${stamp}`), errors)];
-  for (const input of item.inputs) {
-    const name = textPart(input.label, 'source-input-name');
-    if (input.commit) {
-      const commit = document.createElement(input.commitUrl ? 'a' : 'span');
-      commit.className = 'source-commit';
-      commit.textContent = `${input.ref || ''} ${input.commit.slice(0, 7)}`.trim();
-      if (input.commitUrl) {
-        commit.href = input.commitUrl;
-        commit.target = '_blank';
-        commit.rel = 'noopener';
-      }
-      const when = input.committedAt ? textPart(`committed ${formatStamp(input.committedAt)}`) : null;
-      lines.push(metaLine('source-line source-input', name, commit, when));
-    } else {
-      const when = input.lastChange ? `changed ${formatStamp(input.lastChange)}` : 'no documents';
-      lines.push(metaLine('source-line source-input', name, textPart(when)));
+  const when = document.createElement('span');
+  const stamp = item.state === 'updating' ? '' : (item.updatedAt ? ` ${formatStamp(item.updatedAt)}` : '');
+  when.textContent = `${STATE_LABELS[item.state] || item.state}${stamp}`;
+  meta.replaceChildren(dot, when);
+  const repository = item.inputs.find((input) => input.commit);
+  if (repository) {
+    const commit = document.createElement(repository.commitUrl ? 'a' : 'span');
+    commit.className = 'source-commit';
+    commit.textContent = `${repository.ref || ''} ${repository.commit.slice(0, 7)}`.trim();
+    if (repository.commitUrl) {
+      commit.href = repository.commitUrl;
+      commit.target = '_blank';
+      commit.rel = 'noopener';
     }
+    meta.append(commit);
   }
-  meta.replaceChildren(...lines);
+  if (item.state === 'file-errors' && item.lastRun) {
+    const errors = document.createElement('span');
+    errors.className = 'source-errors';
+    errors.textContent = `${item.lastRun.errors} errors`;
+    meta.append(errors);
+  }
   meta.title = sourceStatusDetail(item);
 }
 
 function sourceStatusDetail(item) {
-  const lines = [`${item.sourceId}: ${STATE_LABELS[item.state] || item.state}`
-    + (item.checkedAt ? ` ${formatStamp(item.checkedAt)}` : '')];
+  const lines = [`${item.sourceId}: ${STATE_LABELS[item.state] || item.state}`];
   const run = item.running || item.lastRun;
   if (run) {
     lines.push(`Last ingest #${run.id} ${run.status}, started ${formatStamp(run.startedAt)}`
@@ -300,14 +282,11 @@ function sourceStatusDetail(item) {
       + `${run.skipped} unchanged, ${run.errors} file errors`);
   }
   for (const input of item.inputs) {
-    const parts = [`${input.label}: ${input.documents ?? 0} documents`];
-    if (input.lastChange) parts.push(`content changed ${formatStamp(input.lastChange)}`);
-    if (input.commit) parts.push(`${input.ref || ''} ${input.commit.slice(0, 12)}`.trim());
-    if (input.committedAt) parts.push(`committed ${formatStamp(input.committedAt)}`);
-    lines.push(parts.join(', '));
+    lines.push(`${input.input}: ${input.ref || ''} ${input.commit ? input.commit.slice(0, 12) : ''}`
+      + (input.ingestedAt ? `, ingested ${formatStamp(input.ingestedAt)}` : ''));
   }
   for (const graph of item.dataflow) {
-    lines.push(`Data-flow graph of ${graph.input === 'path' ? 'folder' : graph.input}: built ${graph.builtAt ? formatStamp(graph.builtAt) : 'unknown'}`);
+    lines.push(`Data-flow graph of ${graph.input}: built ${graph.builtAt ? formatStamp(graph.builtAt) : 'unknown'}`);
   }
   return lines.join('\n');
 }
@@ -337,13 +316,15 @@ async function loadRuntimeInfo() {
     if (!response.ok) throw new Error(`API returned ${response.status}`);
     const info = await response.json();
     if (!info.llm?.provider || !info.llm?.model) throw new Error('LLM configuration is missing');
-    // The page names no vendor or model: the card only says the answer model
-    // is reachable.
-    llmModel.textContent = 'Local AI Model';
+    llmModel.textContent = info.llm.model;
+    llmModel.title = info.llm.model;
+    llmProvider.textContent = `${info.llm.provider} provider`;
     modelCard.classList.remove('unavailable');
     renderBuildInfo(info.build);
   } catch {
     llmModel.textContent = 'Unavailable';
+    llmModel.removeAttribute('title');
+    llmProvider.textContent = 'Runtime information unavailable';
     modelCard.classList.add('unavailable');
     renderBuildInfo(null);
   }
@@ -362,7 +343,7 @@ function formatStamp(iso) {
 // deployment, and "restart pending" says the code on disk is not yet running.
 function renderBuildInfo(build) {
   const fields = [
-    [buildVersion, build?.version, build?.requirement && `${build.requirement}${build.version?.endsWith('-dev') ? ' (deployed, not merged yet)' : ''}`],
+    [buildVersion, build?.version],
     [buildId, build?.build],
     [buildUpdated, build?.updatedAt && formatStamp(build.updatedAt), build?.updatedAt],
   ];

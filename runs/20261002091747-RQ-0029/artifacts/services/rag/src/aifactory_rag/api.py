@@ -126,19 +126,12 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 SELECT DISTINCT ON (source_id) {status.RUN_COLUMNS} FROM rag_ingest_runs
                 WHERE source_id = ANY(%s) AND finished_at IS NOT NULL ORDER BY source_id, finished_at DESC""", (ids,))
             inputs = fetch_all(conn, """
-                SELECT source_id, input_key, url, ref, commit_sha, committed_at, ingested_at, file_count
+                SELECT source_id, input_key, url, ref, commit_sha, ingested_at, file_count
                 FROM rag_source_inputs WHERE source_id = ANY(%s)""", (ids,))
-            # When each input's content last changed: a document (re)ingested or removed.
-            changes = fetch_all(conn, """
-                SELECT source_id, input_key,
-                       count(*) FILTER (WHERE status = 'active') AS documents,
-                       greatest(max(last_ingested_at) FILTER (WHERE status = 'active'),
-                                max(updated_at) FILTER (WHERE status = 'deleted')) AS last_change
-                FROM rag_documents WHERE source_id = ANY(%s) GROUP BY source_id, input_key""", (ids,))
             graphs = fetch_all(conn, """
                 SELECT source_id, input_key, project, ref, commit_sha, built_at
                 FROM rag_dataflow_graphs WHERE source_id = ANY(%s)""", (ids,))
-        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes)
+        return status.summarize(ids, latest, finished, inputs, graphs)
 
     @app.get("/documents")
     def documents(sourceId: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
