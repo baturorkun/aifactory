@@ -11,6 +11,7 @@ const newChatButton = document.querySelector('#new-chat');
 const sessionList = document.querySelector('#session-list');
 const modelCard = document.querySelector('.model-card');
 const llmModel = document.querySelector('#llm-model');
+const llmProvider = document.querySelector('#llm-provider');
 const buildCard = document.querySelector('.build-card');
 const buildVersion = document.querySelector('#build-version');
 const buildId = document.querySelector('#build-id');
@@ -337,13 +338,15 @@ async function loadRuntimeInfo() {
     if (!response.ok) throw new Error(`API returned ${response.status}`);
     const info = await response.json();
     if (!info.llm?.provider || !info.llm?.model) throw new Error('LLM configuration is missing');
-    // The page names no vendor or model: the card only says the answer model
-    // is reachable.
-    llmModel.textContent = 'Local AI Model';
+    llmModel.textContent = info.llm.model;
+    llmModel.title = info.llm.model;
+    llmProvider.textContent = `${info.llm.provider} provider`;
     modelCard.classList.remove('unavailable');
     renderBuildInfo(info.build);
   } catch {
     llmModel.textContent = 'Unavailable';
+    llmModel.removeAttribute('title');
+    llmProvider.textContent = 'Runtime information unavailable';
     modelCard.classList.add('unavailable');
     renderBuildInfo(null);
   }
