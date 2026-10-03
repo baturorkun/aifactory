@@ -138,7 +138,8 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             graphs = fetch_all(conn, """
                 SELECT source_id, input_key, project, ref, commit_sha, built_at
                 FROM rag_dataflow_graphs WHERE source_id = ANY(%s)""", (ids,))
-        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes)
+        folders = {source.id: source.root_path for source in factory_config.rag.sources if source.root_path}
+        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes, folders=folders)
 
     @app.get("/documents")
     def documents(sourceId: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
