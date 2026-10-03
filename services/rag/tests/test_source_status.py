@@ -54,10 +54,12 @@ class SummaryTests(unittest.TestCase):
             {"source_id": "aselsan-bfi", "input_key": "", "documents": 1230, "last_change": folder_change},
         ]
         graphs = [{"source_id": "aselsan-bfi", "input_key": "", "project": "rag-x", "ref": None, "commit_sha": None, "built_at": NOW}]
-        [item] = summarize(["aselsan-bfi"], [], [], inputs, graphs, NOW, changes=changes)
+        [item] = summarize(["aselsan-bfi"], [], [], inputs, graphs, NOW, changes=changes,
+                           folders={"aselsan-bfi": "/mnt/fs2/5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW"})
         folder, repository = item["inputs"]
         self.assertEqual((folder["label"], folder["documents"], folder["lastChange"]), ("folder", 1230, folder_change.isoformat()))
         self.assertNotIn("commit", folder)
+        self.assertEqual(folder["name"], "5001-K ASELSAN BFI-SW")
         self.assertEqual((repository["label"], repository["ref"], repository["committedAt"]), ("git: bfi-sw", "project-initialization", committed.isoformat()))
         self.assertEqual(repository["commitUrl"], "http://gitlab.bc.int/aselsan/bfi-sw/-/commit/0acecaf696e7abc")
         self.assertEqual(item["dataflow"][0]["input"], "path")

@@ -242,75 +242,167 @@ async function loadSourceStatus() {
   }
 }
 
-function metaLine(className, ...parts) {
-  const line = document.createElement('span');
-  line.className = className;
-  line.append(...parts.filter(Boolean));
-  return line;
-}
+// The list stays one line per source: a status dot beside the name. The
+// detail - when it was checked, each input's ref, commit and last change, the
+// last run, the data-flow graphs - is a card beside the sidebar on hover.
+const sourceStatus = new Map();
+const sourceCard = document.querySelector('#source-card');
+let sourceCardTimer = null;
+let sourceCardFor = null;
 
-function textPart(text, className) {
-  const part = document.createElement('span');
-  if (className) part.className = className;
-  part.textContent = text;
-  return part;
-}
+const STATE_BADGES = {
+  updating: ['Updating now', 'amber pulse'],
+  current: ['Up to date', 'green'],
+  'file-errors': [null, 'amber'],
+  failed: ['Ingest failed', 'red'],
+  stale: ['Ingest stopped', 'red'],
+  never: ['Never ingested', 'grey'],
+};
 
-// "Checked" is when the source was last scanned (with webhooks: every push);
-// each input then says when its own content last changed, and a repository
-// which commit it holds and when that commit was made.
 function renderSourceStatus(item) {
+  sourceStatus.set(item.sourceId, item);
   const meta = sourceList.querySelector(`.source-meta[data-source="${CSS.escape(item.sourceId)}"]`);
   if (!meta) return;
   const dot = document.createElement('span');
   dot.className = `status-dot ${item.state}`;
-  const label = STATE_LABELS[item.state] || item.state;
-  const stamp = item.state !== 'updating' && item.checkedAt ? ` ${formatStamp(item.checkedAt)}` : '';
-  const errors = item.state === 'file-errors' && item.lastRun ? textPart(`${item.lastRun.errors} errors`, 'source-errors') : null;
-  const lines = [metaLine('source-line', dot, textPart(`${label}${stamp}`), errors)];
+  meta.replaceChildren(dot);
+  const row = meta.closest('.source-option');
+  if (!row.dataset.cardBound) {
+    row.dataset.cardBound = '1';
+    row.addEventListener('mouseenter', () => showSourceCard(row, item.sourceId));
+    row.addEventListener('mouseleave', hideSourceCardSoon);
+    row.addEventListener('focusin', () => showSourceCard(row, item.sourceId));
+    row.addEventListener('focusout', hideSourceCardSoon);
+  }
+  if (sourceCardFor === item.sourceId && !sourceCard.hidden) fillSourceCard(item);
+  // `#source=<id>` opens that source's card: a link to it, and a way to see it
+  // without a pointer.
+  const linked = new URLSearchParams(location.hash.slice(1)).get('source');
+  if (linked === item.sourceId && sourceCardFor !== item.sourceId) showSourceCard(row, item.sourceId);
+}
+
+sourceCard.addEventListener('mouseenter', () => clearTimeout(sourceCardTimer));
+sourceCard.addEventListener('mouseleave', hideSourceCardSoon);
+
+function showSourceCard(row, sourceId) {
+  const item = sourceStatus.get(sourceId);
+  if (!item) return;
+  clearTimeout(sourceCardTimer);
+  sourceCardFor = sourceId;
+  fillSourceCard(item);
+  sourceCard.hidden = false;
+  const sidebar = row.closest('.sidebar').getBoundingClientRect();
+  const rect = row.getBoundingClientRect();
+  const height = sourceCard.offsetHeight;
+  const top = Math.max(12, Math.min(rect.top - 8, window.innerHeight - height - 12));
+  sourceCard.style.left = `${sidebar.right + 10}px`;
+  sourceCard.style.top = `${top}px`;
+}
+
+function hideSourceCardSoon() {
+  clearTimeout(sourceCardTimer);
+  sourceCardTimer = setTimeout(() => {
+    sourceCard.hidden = true;
+    sourceCardFor = null;
+  }, 160);
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+function ago(iso) {
+  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!Number.isFinite(seconds)) return '';
+  if (seconds < 90) return 'just now';
+  const minutes = seconds / 60;
+  if (minutes < 90) return `${Math.round(minutes)} min ago`;
+  const hours = minutes / 60;
+  if (hours < 36) return `${Math.round(hours)} h ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+function stamp(iso, prefix) {
+  const line = el('div', 'card-when');
+  line.append(el('span', null, `${prefix} ${formatStamp(iso)}`), el('span', 'card-ago', ago(iso)));
+  return line;
+}
+
+function fillSourceCard(item) {
+  const [badgeText, badgeColor] = STATE_BADGES[item.state] || [item.state, 'grey'];
+  const head = el('div', 'card-head');
+  head.append(
+    el('strong', 'card-title', item.sourceId),
+    el('span', `card-badge ${badgeColor}`, badgeText || `${item.lastRun?.errors ?? 0} file errors`),
+  );
+  const parts = [head];
+  if (item.checkedAt) parts.push(stamp(item.checkedAt, 'Checked'));
+
   for (const input of item.inputs) {
-    const name = textPart(input.label, 'source-input-name');
-    if (input.commit) {
-      const commit = document.createElement(input.commitUrl ? 'a' : 'span');
-      commit.className = 'source-commit';
-      commit.textContent = `${input.ref || ''} ${input.commit.slice(0, 8)}`.trim();
+    const block = el('section', 'card-input');
+    const title = el('div', 'card-input-head');
+    const isGit = Boolean(input.commit);
+    const name = el('span', 'card-input-name', isGit ? input.label.replace(/^git: /, '') : (input.name || 'folder'));
+    if (!isGit && input.path) name.title = input.path;
+    title.append(
+      el('span', `card-kind ${isGit ? 'git' : 'folder'}`, isGit ? 'git' : 'folder'),
+      name,
+      el('span', 'card-count', `${input.documents ?? 0} docs`),
+    );
+    block.append(title);
+    if (isGit) {
+      const refs = el('div', 'card-refs');
+      refs.append(el('span', 'card-chip ref', input.ref || 'default branch'));
+      const commit = el(input.commitUrl ? 'a' : 'span', 'card-chip commit', input.commit.slice(0, 8));
       if (input.commitUrl) {
         commit.href = input.commitUrl;
         commit.target = '_blank';
         commit.rel = 'noopener';
+        commit.title = 'Open the commit on GitLab';
       }
-      const when = input.committedAt ? textPart(`committed ${formatStamp(input.committedAt)}`) : null;
-      lines.push(metaLine('source-line source-input', name, commit, when));
-    } else {
-      const when = input.lastChange ? `changed ${formatStamp(input.lastChange)}` : 'no documents';
-      lines.push(metaLine('source-line source-input', name, textPart(when)));
+      refs.append(commit);
+      block.append(refs);
+      if (input.committedAt) block.append(stamp(input.committedAt, 'Committed'));
     }
+    if (input.lastChange) block.append(stamp(input.lastChange, 'Changed'));
+    parts.push(block);
   }
-  meta.replaceChildren(...lines);
-  meta.title = sourceStatusDetail(item);
-}
 
-function sourceStatusDetail(item) {
-  const lines = [`${item.sourceId}: ${STATE_LABELS[item.state] || item.state}`
-    + (item.checkedAt ? ` ${formatStamp(item.checkedAt)}` : '')];
   const run = item.running || item.lastRun;
   if (run) {
-    lines.push(`Last ingest #${run.id} ${run.status}, started ${formatStamp(run.startedAt)}`
-      + (run.finishedAt ? `, finished ${formatStamp(run.finishedAt)}` : ''));
-    lines.push(`  ${run.inserted} new, ${run.updated} changed, ${run.deleted} removed, `
-      + `${run.skipped} unchanged, ${run.errors} file errors`);
+    const block = el('section', 'card-run');
+    block.append(el('div', 'card-section-title', `${item.running ? 'Running ingest' : 'Last ingest'} #${run.id}`));
+    if (run.finishedAt) block.append(stamp(run.finishedAt, 'Finished'));
+    else block.append(stamp(run.startedAt, 'Started'));
+    const stats = el('div', 'card-stats');
+    for (const [value, label, color] of [
+      [run.inserted, 'new', 'green'], [run.updated, 'changed', 'amber'], [run.deleted, 'removed', 'red'],
+      [run.skipped, 'unchanged', 'grey'], [run.errors, 'errors', run.errors ? 'amber' : 'grey'],
+    ]) {
+      const stat = el('span', `card-stat ${color}`);
+      stat.append(el('b', null, String(value ?? 0)), el('span', null, label));
+      stats.append(stat);
+    }
+    block.append(stats);
+    parts.push(block);
   }
-  for (const input of item.inputs) {
-    const parts = [`${input.label}: ${input.documents ?? 0} documents`];
-    if (input.lastChange) parts.push(`content changed ${formatStamp(input.lastChange)}`);
-    if (input.commit) parts.push(`${input.ref || ''} ${input.commit.slice(0, 8)}`.trim());
-    if (input.committedAt) parts.push(`committed ${formatStamp(input.committedAt)}`);
-    lines.push(parts.join(', '));
+
+  if (item.dataflow.length) {
+    const block = el('section', 'card-run');
+    block.append(el('div', 'card-section-title', 'Joern data-flow graphs'));
+    for (const graph of item.dataflow) {
+      const name = graph.input === 'path' ? 'folder' : graph.input.split('/').pop();
+      const line = el('div', 'card-when');
+      line.append(el('span', null, `${name} · ${graph.builtAt ? formatStamp(graph.builtAt) : 'unknown'}`),
+        el('span', 'card-ago', graph.builtAt ? ago(graph.builtAt) : ''));
+      block.append(line);
+    }
+    parts.push(block);
   }
-  for (const graph of item.dataflow) {
-    lines.push(`Data-flow graph of ${graph.input === 'path' ? 'folder' : graph.input}: built ${graph.builtAt ? formatStamp(graph.builtAt) : 'unknown'}`);
-  }
-  return lines.join('\n');
+  sourceCard.replaceChildren(...parts);
 }
 
 setInterval(loadSourceStatus, 60_000);

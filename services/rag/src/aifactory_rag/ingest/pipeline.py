@@ -270,7 +270,10 @@ def _record_dataflow_graph_and_commit(
             VALUES (%s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT(source_id, input_key) DO UPDATE SET
               project = EXCLUDED.project, input_path = EXCLUDED.input_path, ref = EXCLUDED.ref,
-              commit_sha = EXCLUDED.commit_sha, repository_url = EXCLUDED.repository_url, built_at = now()
+              commit_sha = EXCLUDED.commit_sha, repository_url = EXCLUDED.repository_url,
+              -- an up-to-date graph keeps the time it was built
+              built_at = CASE WHEN rag_dataflow_graphs.project = EXCLUDED.project
+                              THEN rag_dataflow_graphs.built_at ELSE now() END
             """,
             (source_id, input_key, project, input_path, ref, commit, repository_url),
         )

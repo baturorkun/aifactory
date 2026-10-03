@@ -23,6 +23,7 @@ def summarize(
     graphs: list[dict[str, Any]],
     now: datetime | None = None,
     changes: list[dict[str, Any]] | None = None,
+    folders: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """One entry per source.
 
@@ -57,7 +58,7 @@ def summarize(
             "checkedAt": _iso(last.get("finished_at")) if last else None,
             "running": _run(current) if running and not stale else None,
             "lastRun": _run(last) if last else None,
-            "inputs": _inputs(source_id, inputs, changes or []),
+            "inputs": _inputs(source_id, inputs, changes or [], (folders or {}).get(source_id)),
             "dataflow": [
                 {"input": row["input_key"] or "path", "project": row["project"], "ref": row.get("ref"),
                  "commit": row.get("commit_sha"), "builtAt": _iso(row.get("built_at"))}
@@ -67,7 +68,7 @@ def summarize(
     return result
 
 
-def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str, Any]], folder: str | None = None) -> list[dict[str, Any]]:
     repositories = {row["input_key"]: row for row in inputs if row["source_id"] == source_id}
     changed = {row["input_key"]: row for row in changes if row["source_id"] == source_id}
     result: list[dict[str, Any]] = []
@@ -79,6 +80,8 @@ def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str
         item: dict[str, Any] = {
             "input": key or "path",
             "label": "folder" if not key else f"git: {key.rsplit('/', 1)[-1]}",
+            # the folder's own name, so the page never has to guess what it holds
+            **({"name": folder.rstrip("/").rsplit("/", 1)[-1], "path": folder} if not key and folder else {}),
             "documents": change.get("documents"),
             "lastChange": _iso(change.get("last_change")),
         }
