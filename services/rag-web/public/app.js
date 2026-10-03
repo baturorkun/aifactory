@@ -272,7 +272,7 @@ function renderSourceStatus(item) {
     if (input.commit) {
       const commit = document.createElement(input.commitUrl ? 'a' : 'span');
       commit.className = 'source-commit';
-      commit.textContent = `${input.ref || ''} ${input.commit.slice(0, 7)}`.trim();
+      commit.textContent = `${input.ref || ''} ${input.commit.slice(0, 8)}`.trim();
       if (input.commitUrl) {
         commit.href = input.commitUrl;
         commit.target = '_blank';
@@ -302,7 +302,7 @@ function sourceStatusDetail(item) {
   for (const input of item.inputs) {
     const parts = [`${input.label}: ${input.documents ?? 0} documents`];
     if (input.lastChange) parts.push(`content changed ${formatStamp(input.lastChange)}`);
-    if (input.commit) parts.push(`${input.ref || ''} ${input.commit.slice(0, 12)}`.trim());
+    if (input.commit) parts.push(`${input.ref || ''} ${input.commit.slice(0, 8)}`.trim());
     if (input.committedAt) parts.push(`committed ${formatStamp(input.committedAt)}`);
     lines.push(parts.join(', '));
   }
