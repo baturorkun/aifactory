@@ -134,7 +134,7 @@ def _expand_with_graph(config: RagConfig, chunks: list[RetrievedChunk]) -> list[
 def code_location(relative_path: str, metadata: dict[str, Any]) -> dict[str, Any]:
     """Where a code chunk sits, and its GitLab link when it came from a repository."""
     location: dict[str, Any] = {}
-    for key in ("repository", "commit", "symbol", "symbolKind", "startLine", "endLine"):
+    for key in ("repository", "commit", "symbol", "symbolKind", "section", "startLine", "endLine"):
         if metadata.get(key) is not None:
             location[key] = metadata[key]
     repository_url = metadata.get("repositoryUrl")
@@ -161,6 +161,8 @@ def citation_label(relative_path: str, metadata: dict[str, Any], page_numbers: t
         label += f":{metadata['startLine']}-{metadata.get('endLine') or metadata['startLine']}"
     if metadata.get("symbol"):
         label += f" ({metadata['symbol']})"
+    elif metadata.get("section"):
+        label += f" § {metadata['section'].split(' > ')[-1]}"
     if page_numbers:
         noun = "page" if len(page_numbers) == 1 else "pages"
         label += f"; {noun} {', '.join(str(page) for page in page_numbers)}"

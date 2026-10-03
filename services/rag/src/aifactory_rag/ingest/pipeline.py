@@ -20,7 +20,9 @@ from aifactory_rag.ingest.parsers import (
 )
 from aifactory_rag.config import DEFAULT_INCLUDE
 from aifactory_rag.ingest.chunker import chunk_text
-from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_code, expected_chunker, language_for
+from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_code, language_for
+from aifactory_rag.ingest.code_chunker import expected_chunker as code_chunker_for
+from aifactory_rag.ingest.markdown_chunker import MARKDOWN_CHUNKER, chunk_markdown, is_markdown
 from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
 from aifactory_rag.ingest.git_inputs import GitInputError, RepositoryInput, RepositoryTree, find_scip_index, repository_inputs, sync_repository
 from aifactory_rag.ingest.scip_index import ScipIndex, read_index
@@ -710,12 +712,15 @@ def _ingest_file(
 
 
 def _chunks_for(text: str, relative_path: str, config: RagConfig) -> tuple[list[CodeChunk], bool]:
-    """Symbol chunks for C, C++, TS and JS from any input; size chunks otherwise.
+    """Section chunks for Markdown, symbol chunks for C, C++, TS and JS from any
+    input; size chunks otherwise.
 
     The boolean says that a code file the symbol chunker could not read was
     chunked by size instead.
     """
     size, overlap = config.ingest.chunk_size, config.ingest.chunk_overlap
+    if is_markdown(relative_path):
+        return chunk_markdown(text, relative_path, size), False
     if language_for(relative_path):
         symbols = chunk_code(text, relative_path, size, overlap)
         if symbols is not None:
@@ -764,6 +769,12 @@ def _replace_graph(conn: psycopg.Connection, document_id: int, source_id: str, g
             "UPDATE rag_documents SET metadata = metadata || %s::jsonb WHERE id = %s",
             (json.dumps(patch), document_id),
         )
+
+
+def expected_chunker(relative_path: str) -> str:
+    """The chunker a file gets now: by section for Markdown (RQ-0030), by symbol
+    for C, C++, TS and JS (RQ-0023), by size for everything else."""
+    return MARKDOWN_CHUNKER if is_markdown(relative_path) else code_chunker_for(relative_path)
 
 
 def _input_metadata(relative_path: str, context: InputContext) -> dict[str, Any]:
