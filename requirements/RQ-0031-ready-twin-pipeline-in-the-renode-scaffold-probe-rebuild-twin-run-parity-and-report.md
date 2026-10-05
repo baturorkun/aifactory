@@ -8,6 +8,8 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-05T07:59:46.735Z"
 branch: "factory/RQ-0031"
 createdFromCommit: "5ef943e869df7a47881b587a06bd15eae7171164"
+githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/41"
+githubPullRequestIid: 41
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/40"
 githubIssueIid: 40
 repositoryProvider: github
