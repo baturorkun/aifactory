@@ -1,0 +1,40 @@
+{
+  "runId": "20261005080234-RQ-0031",
+  "requirementId": "RQ-0031",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261005080234-RQ-0031/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-05T08:02:34.791Z",
+  "updatedAt": "2026-10-05T08:09:31.760Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-05T08:02:44.244Z",
+      "finishedAt": "2026-10-05T08:09:31.759Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "packages/agent-factory/src/renode-ci-scripts.test.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/templates/renode/scripts/ci/board-check.mjs",
+    "packages/agent-factory/templates/renode/scripts/ci/ci-env.mjs",
+    "packages/agent-factory/templates/renode/scripts/ci/factory.sh",
+    "packages/agent-factory/templates/renode/scripts/ci/twin-report.mjs",
+    "packages/agent-factory/templates/renode/scripts/ci/twin-requirements.mjs",
+    "requirements/RQ-0031-ready-twin-pipeline-in-the-renode-scaffold-probe-rebuild-twin-run-parity-and-report.md"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
