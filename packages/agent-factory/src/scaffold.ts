@@ -324,7 +324,7 @@ function renodeTwinJobs(projectName: string): string[] {
     '  cache: []',
     '  before_script:',
     '    - node scripts/ci/ci-env.mjs',
-    '    - mkdir -p build',
+    '    - mkdir -p build tests',
     '',
     '# The committed probe ELFs rebuild byte for byte from their sources with the',
     '# pinned toolchain: the image under test is the image in git.',
@@ -1420,6 +1420,9 @@ function writeRenodeTemplate(projectRoot: string, projectName: string): void {
   for (const dir of ['platforms', 'peripherals', 'probes', 'scripts', 'tests']) {
     mkdirSync(resolve(projectRoot, dir), { recursive: true });
   }
+  // tests/ must exist in the checkout: `node --test tests/` on a directory
+  // that is not there exits 1, and a git checkout drops an empty directory.
+  writeFileSync(resolve(projectRoot, 'tests/.gitkeep'), '', 'utf8');
 
   copyTemplateTree('renode', projectRoot);
 
