@@ -625,16 +625,6 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     }
     assert.match(renodeCi, /^\.twin:\n {2}image:\n {4}name: "\$AIFACTORY_RUNNER_IMAGE"\n {4}pull_policy: if-not-present/m);
     assert.match(renodeCi, /- node scripts\/ci\/ci-env\.mjs/);
-    // A fresh checkout has no test files yet; the directory must still exist,
-    // or `node --test tests/` in twin_run exits 1 before any test ran.
-    assert.match(renodeCi, /- mkdir -p build tests/);
-    // No requirement, no twin job: the scaffold's own push creates no pipeline
-    // and does not need the CI image yet. Every twin rule carries the guard,
-    // including the ones report and board re-declare.
-    const twinRules = renodeCi.slice(renodeCi.indexOf('\n.twin:\n'), renodeCi.indexOf('\nai_factory_requirement_branch:'));
-    assert.equal((twinRules.match(/- if:/g) ?? []).length, (twinRules.match(/exists: \[requirements\/RQ-\*\.md\]/g) ?? []).length, 'every twin rule requires a requirement file');
-    assert.equal((twinRules.match(/exists: \[requirements\/RQ-\*\.md\]/g) ?? []).length, 12);
-    assert.ok(existsSync(join(projectRoot, 'tests/.gitkeep')), 'tests/ survives a git checkout');
     assert.match(renodeCi, /bash scripts\/ci\/factory\.sh probe build "\$id"/);
     assert.match(renodeCi, /git diff --stat --exit-code -- probes\//);
     assert.match(renodeCi, /bash scripts\/ci\/factory\.sh probe sim-run "\$id"/);

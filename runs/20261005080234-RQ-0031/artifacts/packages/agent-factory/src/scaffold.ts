@@ -309,9 +309,7 @@ function renodeTwinJobs(projectName: string): string[] {
     '# the default branch, on tags and on pipelines started by hand. The probes',
     '# checked are the hardware-twin requirements in scope',
     '# (scripts/ci/twin-requirements.mjs): on a requirement branch its own probe,',
-    '# elsewhere every probe with a committed board trace. Until the first',
-    '# requirement exists there is nothing to check, so no twin job is created:',
-    '# the scaffold\'s own push runs no pipeline and needs no CI image yet.',
+    '# elsewhere every probe with a committed board trace.',
     '.twin:',
     '  image:',
     '    name: "$AIFACTORY_RUNNER_IMAGE"',
@@ -320,17 +318,13 @@ function renodeTwinJobs(projectName: string): string[] {
     '    - linux',
     '  rules:',
     "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'",
-    '      exists: [requirements/RQ-*.md]',
     "    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'",
-    '      exists: [requirements/RQ-*.md]',
     "    - if: '$CI_COMMIT_TAG'",
-    '      exists: [requirements/RQ-*.md]',
     "    - if: '$CI_PIPELINE_SOURCE == \"web\"'",
-    '      exists: [requirements/RQ-*.md]',
     '  cache: []',
     '  before_script:',
     '    - node scripts/ci/ci-env.mjs',
-    '    - mkdir -p build tests',
+    '    - mkdir -p build',
     '',
     '# The committed probe ELFs rebuild byte for byte from their sources with the',
     '# pinned toolchain: the image under test is the image in git.',
@@ -412,16 +406,12 @@ function renodeTwinJobs(projectName: string): string[] {
     '      artifacts: true',
     '  rules:',
     "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: always',
     "    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: always',
     "    - if: '$CI_COMMIT_TAG'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: always',
     "    - if: '$CI_PIPELINE_SOURCE == \"web\"'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: always',
     '  script:',
     '    - node scripts/ci/twin-report.mjs',
@@ -448,16 +438,12 @@ function renodeTwinJobs(projectName: string): string[] {
     '      artifacts: true',
     '  rules:',
     "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: manual',
     "    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: manual',
     "    - if: '$CI_COMMIT_TAG'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: manual',
     "    - if: '$CI_PIPELINE_SOURCE == \"web\"'",
-    '      exists: [requirements/RQ-*.md]',
     '      when: manual',
     '  allow_failure: true',
     '  script:',
@@ -1434,9 +1420,6 @@ function writeRenodeTemplate(projectRoot: string, projectName: string): void {
   for (const dir of ['platforms', 'peripherals', 'probes', 'scripts', 'tests']) {
     mkdirSync(resolve(projectRoot, dir), { recursive: true });
   }
-  // tests/ must exist in the checkout: `node --test tests/` on a directory
-  // that is not there exits 1, and a git checkout drops an empty directory.
-  writeFileSync(resolve(projectRoot, 'tests/.gitkeep'), '', 'utf8');
 
   copyTemplateTree('renode', projectRoot);
 

@@ -1,6 +1,6 @@
 ---
 id: RQ-0031
-status: completed
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,9 +8,6 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-05T07:59:46.735Z"
 branch: "factory/RQ-0031"
 createdFromCommit: "5ef943e869df7a47881b587a06bd15eae7171164"
-completedRunId: "20261005080234-RQ-0031"
-completedBy: "Batur Orkun"
-completedAt: "2026-10-05T09:53:45.289Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/41"
 githubPullRequestIid: 41
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/40"
@@ -62,17 +59,12 @@ its copy.
 - `report`: one page from the traces and parity results
   (`scripts/ci/twin-report.mjs`), exposed on the merge request, produced also
   when parity failed.
-- `board`: `scripts/ci/board-check.mjs`, which runs `factory probe board-run`
-  for every requirement in scope, manual on every pipeline kind,
-  `allow_failure: true`, `resource_group` from the project name so two
-  pipelines never hold the board at once. It powers the board on through the
-  lab agent when `BOARD_POWER_NAME` names a socket and it is off, restarts
-  the OpenOCD of `BOT_API_AGENT`, and leaves both as it found them. It needs
-  the `BOT_API_TOKEN` CI/CD variable and the `BOARD_*` block of
-  `.env.example`; without them the job says so and stops. It commits nothing:
-  what the board printed is its artifact, compared with the committed trace
-  when there is one, or recorded for the developer to commit when there is
-  not, as the workflow requires.
+- `board`: `factory probe board-run` for the requirement in scope, manual on
+  every pipeline kind, `allow_failure: true`, `resource_group` from the
+  project name so two pipelines never hold the board at once. It needs the
+  `BOT_API_TOKEN` CI/CD variable; without it the job says so and stops. It
+  commits nothing: it records what the board printed as an artifact for the
+  developer to commit, as the workflow requires.
 
 The scope of every job comes from `scripts/ci/twin-requirements.mjs`, read
 from `requirements/*.md` front matter (`kind: hardware-twin`, `probe`): on a
@@ -82,14 +74,13 @@ whose probe has a committed board trace. `scripts/ci/factory.sh` runs the
 aifactory CLI in CI from `AIFACTORY_REPO_URL` / `AIFACTORY_REF`, the same
 commands a developer runs.
 
-The five scripts live in `templates/renode/scripts/ci/` and are copied by
+The four scripts live in `templates/renode/scripts/ci/` and are copied by
 the scaffold like the rest of `templates/renode/scripts/`. They are the
 generic parts of bfi-simulator's `scripts/ci/`: `factory.sh`, `ci-env.mjs`
 and `twin-requirements.mjs` as they are, `twin-report.mjs` with its BFI
-firmware section removed, `board-check.mjs` with the eval/prototype choice
-replaced by the scaffold's own `BOARD_POWER_NAME` and `BOT_API_AGENT`.
-Nothing in the generated files names a lab host, a board or a project other
-than through `.env.example` and the project name.
+firmware and live-mode sections removed. Nothing in the generated files
+names a lab host, a board or a project other than through `.env.example` and
+`$CI_PROJECT_NAME`.
 
 The `ai_factory_requirement_branch` job keeps its rule as today; the twin
 jobs run beside it, not instead of it. The generated README's CI section
@@ -108,37 +99,13 @@ started by hand.
 - Registering runners or building the CI image: the scaffold documents both
   as today.
 
-## Validation
-
-2026-10-05, on a copy of twin1 at `factory/RQ-0001` (one probe, committed ELF
-and board trace) with the five generated scripts added, inside the Renode CI
-image (the same `ci/Dockerfile` content as the scaffold's, built on the lab
-host as bfi-simulator's image), with Docker on the lab host and the jobs'
-commands run as the generated `.gitlab-ci.yml` runs them:
-
-- `ci-env.mjs`: `.env` written, Renode and gcc inside the job.
-- `probe_build`: scope "RQ-0001 only (branch factory/RQ-0001)"; the ELF
-  rebuilt with hash 9244be1e7db6c399 and SHA-256
-  4c08de0f7eea33433793c2917a0450c355be78bd8421451783e603a24071353d, equal to
-  the committed one (`git diff --exit-code -- probes/` clean).
-- `twin_run`: twin trace captured, 9 lines; `node --test tests/` passed with
-  the JUnit report written.
-- `parity`: "Parity, board and twin: 9 line(s) identical (scope: behaviour)".
-- `report`: "1 probe(s), 1 at parity", `build/report/index.html` with the
-  scope line.
-
-The `board` job was not run: it is manual and takes the shared board; its
-script is `board-check.mjs`, exercised by bfi-simulator's pipeline on the same
-board with the eval/prototype choice it no longer needs.
-
 ## Acceptance Criteria
 
 - `factory new <name> --simulator renode` writes a `.gitlab-ci.yml` with the
   jobs `probe_build`, `twin_run`, `parity`, `report` and `board` in the stages
   of that order after `ci_image` and before `ai_factory`, and the files
   `scripts/ci/factory.sh`, `scripts/ci/ci-env.mjs`,
-  `scripts/ci/twin-requirements.mjs`, `scripts/ci/twin-report.mjs` and
-  `scripts/ci/board-check.mjs`.
+  `scripts/ci/twin-requirements.mjs` and `scripts/ci/twin-report.mjs`.
 - `scaffold.test.ts` covers the generated `.gitlab-ci.yml` for the Renode
   case: the five jobs exist, `board` is manual with `allow_failure`, the
   twin jobs use `$AIFACTORY_RUNNER_IMAGE`, and a non-Renode project gets none
