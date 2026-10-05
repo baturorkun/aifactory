@@ -159,6 +159,12 @@ def _embedded_image_text(blobs: Iterable[bytes], seen_hashes: set[str]) -> str:
 
 
 def parse_file(path: Path) -> str:
+    # PostgreSQL text cannot hold NUL, and a source file can: arinc661-studio's
+    # font-file-parsing.ts has raw 0x00 in its strings and failed to ingest.
+    return _parse(path).replace("\x00", "")
+
+
+def _parse(path: Path) -> str:
     extension = path.suffix.lower()
     if extension in PLAIN_TEXT_EXTENSIONS or path.name.lower() in PLAIN_TEXT_FILENAMES:
         return path.read_text(encoding="utf-8", errors="replace")

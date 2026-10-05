@@ -120,3 +120,15 @@ class CodeIngestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NulByteTests(unittest.TestCase):
+    """PostgreSQL text cannot hold NUL; a source file with raw 0x00 still ingests."""
+
+    def test_nul_bytes_are_dropped_from_parsed_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "font-file-parsing.ts"
+            path.write_bytes(b"const magic = 'OTTO\x00\x01\x00\x00';\n")
+            text = parse_file(path)
+        self.assertNotIn("\x00", text)
+        self.assertIn("const magic = 'OTTO", text)
