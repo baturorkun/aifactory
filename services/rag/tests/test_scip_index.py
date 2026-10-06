@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from aifactory_rag.ingest.git_inputs import RepositoryInput, RepositoryTree, find_scip_index
+from aifactory_rag.ingest.git_inputs import RepositoryInput, RepositoryTree, changed_paths, find_scip_index
 from aifactory_rag.ingest.pipeline import _uses_by_line
 from aifactory_rag.ingest.scip_index import read_index
 
@@ -178,8 +179,8 @@ class FindIndexTests(unittest.TestCase):
     def _find(self, routes: dict[str, Response], is_tag: bool = True):
         client = FakeClient(routes)
         with patch("aifactory_rag.ingest.git_inputs.httpx.Client", client):
-            data, origin = find_scip_index(REPOSITORY, tree(is_tag), ENV)
-        return data, origin, client.requested
+            found = find_scip_index(REPOSITORY, tree(is_tag), ENV)
+        return found.data, found.origin, client.requested
 
     def test_a_release_package_holding_index_scip_is_used(self) -> None:
         data, origin, _ = self._find({
@@ -218,6 +219,77 @@ class FindIndexTests(unittest.TestCase):
         data, origin, _ = self._find({"/packages": Response(403)})
         self.assertIsNone(data)
         self.assertIn("RAG_SOURCE_3_REPO_1_TOKEN cannot read the packages (needs read_api)", origin)
+
+
+def _git(worktree: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        cwd=worktree, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+class AncestorIndexTests(unittest.TestCase):
+    """arinc661-studio's main moved to a `[skip ci]` commit whose pipeline was
+    skipped, and every precise edge went back to name-resolved."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.worktree = Path(self.directory.name)
+        _git(self.worktree, "init", "-q")
+        (self.worktree / "a.c").write_text("int a;\n")
+        (self.worktree / "b.c").write_text("int b;\n")
+        _git(self.worktree, "add", ".")
+        _git(self.worktree, "commit", "-q", "-m", "indexed")
+        self.indexed = _git(self.worktree, "rev-parse", "HEAD")
+        (self.worktree / "b.c").write_text("\nint b;\n")
+        _git(self.worktree, "commit", "-q", "-am", "[skip ci] completion")
+        self.head = _git(self.worktree, "rev-parse", "HEAD")
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_the_nearest_ancestor_with_an_index_is_used(self) -> None:
+        indexed = self.indexed
+
+        class ShaClient(FakeClient):
+            def get(self, url: str, params: dict | None = None) -> Response:
+                self.requested.append(url)
+                if url.endswith("/pipelines"):
+                    sha = (params or {}).get("sha")
+                    status = "success" if sha == indexed else "skipped"
+                    return Response(200, [{"id": 1563 if sha == indexed else 1564, "status": status}])
+                if url.endswith("/pipelines/1564/jobs"):
+                    return Response(200, [])
+                if url.endswith("/pipelines/1563/jobs"):
+                    return Response(200, [{"id": 9, "name": "scip_index", "status": "success", "artifacts": [{"file_type": "archive"}]}])
+                if url.endswith("/jobs/9/artifacts/index.scip"):
+                    return Response(200, content=b"SCIP")
+                return Response(404)
+
+        branch = RepositoryTree(worktree=self.worktree, ref="main", commit=self.head, blobs={}, is_tag=False)
+        with patch("aifactory_rag.ingest.git_inputs.httpx.Client", ShaClient({})):
+            found = find_scip_index(REPOSITORY, branch, ENV)
+
+        self.assertEqual(found.data, b"SCIP")
+        self.assertEqual(found.commit, self.indexed)
+        self.assertEqual(found.origin, f"pipeline 1563 job scip_index of {self.indexed[:12]}")
+
+    def test_only_the_files_unchanged_since_keep_the_ancestors_index(self) -> None:
+        self.assertEqual(changed_paths(self.worktree, self.indexed, self.head), {"b.c"})
+        self.assertIsNone(changed_paths(self.worktree, "0" * 40, self.head))
+
+        a_symbol, b_symbol = "cxx . . $ a.", "cxx . . $ b."
+        index = read_index(_index(
+            _document("a.c", _occurrence(0, 4, 5, a_symbol, definition=True), _occurrence(3, 0, 1, b_symbol)),
+            _document("b.c", _occurrence(0, 4, 5, b_symbol, definition=True)),
+            _document("probes/x/b.c", _occurrence(0, 4, 5, b_symbol, definition=True)),
+        )).without({"b.c"})
+
+        self.assertEqual(set(index.documents), {"a.c", "probes/x/b.c"})
+        self.assertEqual(index.definitions, {a_symbol: ("a.c", 1)})
+        # b.c may have moved b's definition, and the untouched candidate alone
+        # would win a use that was a tie: b is dropped whole
+        self.assertIsNone(index.definition_for(b_symbol, "a.c"))
 
 
 if __name__ == "__main__":
