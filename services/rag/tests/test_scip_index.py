@@ -73,15 +73,61 @@ class ReadIndexTests(unittest.TestCase):
     def test_uses_are_keyed_by_line_and_the_text_they_cover(self) -> None:
         index = read_index(INDEX)
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "serialize.c"
+            path = Path(directory) / "src" / "serialize.c"
+            path.parent.mkdir()
             lines = [""] * 12
             lines[9] = "    ReverseLabelBits(word, label);"
             path.write_text("\n".join(lines), encoding="utf-8")
 
-            uses = _uses_by_line(path, index.documents["src/serialize.c"], index)
+            uses = _uses_by_line(Path(directory), "src/serialize.c", index.documents["src/serialize.c"], index)
 
         # the static in this file, not the same-named one in deserialize.c
         self.assertEqual(uses, {(10, "ReverseLabelBits"): ("src/serialize.c", 3)})
+
+
+BOARD_UART_INIT = "cxx . . $ board_uart_init(49f6e7a06ebc5aa8)."
+PROBES = _index(
+    _document("probes/boot-console/board.c", _occurrence(79, 5, 20, BOARD_UART_INIT, definition=True)),
+    _document("probes/a429-lite/board.c", _occurrence(48, 5, 20, BOARD_UART_INIT, definition=True)),
+    _document("probes/a429-lite/main.c", _occurrence(19, 4, 19, BOARD_UART_INIT)),
+    _document("probes/shared/a/board.c", _occurrence(9, 5, 20, BOARD_UART_INIT, definition=True)),
+)
+PROBE_STEPS = "cxx . . $ probe_steps."
+STEPS = _index(
+    _document("probes/a429-lite/probe.h", _occurrence(47, 33, 44, PROBE_STEPS, definition=True)),
+    _document("probes/a429-lite/main.c", _occurrence(34, 18, 29, PROBE_STEPS, definition=True)),
+    _document("probes/boot-console/probe.h", _occurrence(47, 33, 44, PROBE_STEPS, definition=True)),
+    _document("probes/boot-console/main.c", _occurrence(20, 18, 29, PROBE_STEPS, definition=True)),
+)
+
+
+class AmbiguousSymbolTests(unittest.TestCase):
+    """bfi-sumilator's probes are separate programs; scip-clang gives their
+    same-named C functions one symbol."""
+
+    def test_a_symbol_defined_twice_is_not_a_single_definition(self) -> None:
+        index = read_index(PROBES)
+        self.assertNotIn(BOARD_UART_INIT, index.definitions)
+        self.assertEqual(len(index.ambiguous[BOARD_UART_INIT]), 3)
+
+    def test_a_use_reaches_the_definition_in_its_own_directory(self) -> None:
+        index = read_index(PROBES)
+        self.assertEqual(
+            index.definition_for(BOARD_UART_INIT, "probes/a429-lite/main.c"), ("probes/a429-lite/board.c", 49)
+        )
+
+    def test_a_tie_stays_unresolved(self) -> None:
+        index = read_index(PROBES)
+        self.assertIsNone(index.definition_for(BOARD_UART_INIT, "probes/timer-uarts/main.c"))
+
+    def test_a_tie_goes_to_the_source_file_over_its_header_extern(self) -> None:
+        index = read_index(STEPS)
+        self.assertEqual(index.definition_for(PROBE_STEPS, "probes/a429-lite/probe.c"), ("probes/a429-lite/main.c", 35))
+
+    def test_the_same_location_twice_is_one_definition(self) -> None:
+        header = _document("src/regs.h", _occurrence(57, 8, 17, FPGA_BASE, definition=True))
+        index = read_index(_index(header, header))  # two indexes concatenated
+        self.assertEqual(index.definitions[FPGA_BASE], ("src/regs.h", 58))
 
 
 class Response:

@@ -355,7 +355,7 @@ def _overlay_scip(
                 occurrences = index.documents.get(document["relative_path"])
                 if not occurrences:
                     continue
-                uses = _uses_by_line(tree.worktree / document["relative_path"], occurrences, index)
+                uses = _uses_by_line(tree.worktree, document["relative_path"], occurrences, index)
                 if not uses:
                     continue
                 cur.execute(
@@ -374,17 +374,19 @@ def _overlay_scip(
     return len(updates)
 
 
-def _uses_by_line(path: Path, occurrences: list[Any], index: ScipIndex) -> dict[tuple[int, str], tuple[str, int]]:
+def _uses_by_line(
+    worktree: Path, relative_path: str, occurrences: list[Any], index: ScipIndex
+) -> dict[tuple[int, str], tuple[str, int]]:
     """(line, name as written) -> definition, for the uses whose symbol is defined in the index."""
     try:
-        lines = path.read_bytes().split(b"\n")
+        lines = (worktree / relative_path).read_bytes().split(b"\n")
     except OSError:
         return {}
     uses: dict[tuple[int, str], tuple[str, int]] = {}
     for occurrence in occurrences:
         if occurrence.is_definition or occurrence.line > len(lines):
             continue
-        definition = index.definitions.get(occurrence.symbol)
+        definition = index.definition_for(occurrence.symbol, relative_path)
         if definition is None:
             continue
         name = lines[occurrence.line - 1][occurrence.start:occurrence.end].decode("utf-8", errors="replace")
