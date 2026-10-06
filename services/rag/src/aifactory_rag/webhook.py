@@ -60,7 +60,9 @@ def follows(repository: GitRepositoryConfig, event: dict[str, Any]) -> bool:
     """
     if event.get("object_kind") == "pipeline":
         attributes = event.get("object_attributes") or {}
-        if attributes.get("status") != "success":
+        # A finished pipeline, passed or not: an unrelated failing job must not
+        # keep a successful scip_index job's artifact from the corpus.
+        if attributes.get("status") not in {"success", "failed"}:
             return False
         if attributes.get("tag"):
             return repository.ref in REF_SELECTORS

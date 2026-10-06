@@ -250,15 +250,30 @@ def _index_from_packages(client: httpx.Client, api: str, tag: str) -> tuple[byte
     return None
 
 
+# A pipeline is over in any of these; its successful jobs' artifacts are final.
+_FINISHED = {"success", "failed", "canceled", "skipped", "manual"}
+
+
 def _index_from_pipeline(client: httpx.Client, api: str, commit: str) -> tuple[bytes, str] | None:
-    pipelines = _get(client, f"{api}/pipelines", "the pipelines", sha=commit, status="success", order_by="id", sort="desc", per_page=1)
-    if pipelines.status_code != 200 or not pipelines.json():
+    """index.scip from a successful job of the commit's latest finished pipeline.
+
+    The pipeline itself need not have passed: arinc661-studio's main pipeline
+    fails on an unrelated smoke test while its scip_index job succeeds, and that
+    index describes the commit as well as any.
+    """
+    pipelines = _get(client, f"{api}/pipelines", "the pipelines", sha=commit, order_by="id", sort="desc", per_page=10)
+    if pipelines.status_code != 200:
         return None
-    pipeline = pipelines.json()[0]["id"]
+    finished = [item for item in pipelines.json() if item.get("status") in _FINISHED]
+    if not finished:
+        return None
+    pipeline = finished[0]["id"]
     jobs = _get(client, f"{api}/pipelines/{pipeline}/jobs", "the pipeline jobs", per_page=100)
     if jobs.status_code != 200:
         return None
     for job in jobs.json():
+        if job.get("status") != "success":
+            continue
         if not any(item.get("file_type") == "archive" for item in job.get("artifacts") or []):
             continue
         download = _get(client, f"{api}/jobs/{job['id']}/artifacts/{SCIP_INDEX_FILE}", "the job artifacts")

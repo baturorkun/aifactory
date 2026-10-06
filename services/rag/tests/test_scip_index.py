@@ -146,15 +146,19 @@ class FindIndexTests(unittest.TestCase):
     def test_without_a_package_the_commits_pipeline_artifacts_are_searched(self) -> None:
         data, origin, requested = self._find({
             "/packages": Response(200, []),
-            "/pipelines": Response(200, [{"id": 1392}]),
+            "/pipelines": Response(200, [{"id": 1393, "status": "running"}, {"id": 1392, "status": "failed"}]),
             "/pipelines/1392/jobs": Response(200, [
-                {"id": 1, "name": "build-firmware", "artifacts": [{"file_type": "archive"}]},
-                {"id": 2, "name": "scip-index", "artifacts": [{"file_type": "archive"}]},
+                {"id": 1, "name": "build-firmware", "status": "success", "artifacts": [{"file_type": "archive"}]},
+                {"id": 3, "name": "smoke", "status": "failed", "artifacts": [{"file_type": "archive"}]},
+                {"id": 2, "name": "scip-index", "status": "success", "artifacts": [{"file_type": "archive"}]},
             ]),
             "/jobs/2/artifacts/index.scip": Response(200, content=b"SCIP"),
         })
         self.assertEqual((data, origin), (b"SCIP", "pipeline 1392 job scip-index"))
         self.assertTrue(any(url.endswith("/jobs/1/artifacts/index.scip") for url in requested))
+        # a failed job's artifacts are not read, and a running pipeline is not used
+        self.assertFalse(any(url.endswith("/jobs/3/artifacts/index.scip") for url in requested))
+        self.assertFalse(any("/pipelines/1393/" in url for url in requested))
 
     def test_a_branch_skips_the_packages(self) -> None:
         _, _, requested = self._find({"/pipelines": Response(200, [])}, is_tag=False)

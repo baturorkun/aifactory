@@ -76,7 +76,8 @@ class PipelineTests(unittest.TestCase):
     def test_a_successful_pipeline_on_the_followed_branch_starts_an_ingest(self) -> None:
         repository = config().sources[0].repositories[0]
         self.assertTrue(follows(repository, self.pipeline("project-initialization")))
-        self.assertFalse(follows(repository, self.pipeline("project-initialization", status="failed")))
+        # finished but failed on an unrelated job: still worth an ingest
+        self.assertTrue(follows(repository, self.pipeline("project-initialization", status="failed")))
         self.assertFalse(follows(repository, self.pipeline("project-initialization", status="running")))
         self.assertFalse(follows(repository, self.pipeline("a429-driver")))
         self.assertFalse(follows(repository, self.pipeline("1.2.0", tag=True)))

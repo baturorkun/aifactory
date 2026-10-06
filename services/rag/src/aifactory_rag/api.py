@@ -252,7 +252,10 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             return JSONResponse({"detail": "webhook secret token missing or wrong"}, status_code=401)
         sources = sorted({m.source.id for m in trusted if webhook.follows(m.repository, event)})
         if not sources:
-            pushed = event.get("ref") or (event.get("object_attributes") or {}).get("ref")
+            attributes = event.get("object_attributes") or {}
+            if event.get("object_kind") == "pipeline" and attributes.get("status") not in {"success", "failed"}:
+                return JSONResponse({"ignored": f"pipeline {attributes.get('status')}, not finished"}, status_code=200)
+            pushed = event.get("ref") or attributes.get("ref")
             return JSONResponse({"ignored": f"no source follows {pushed}"}, status_code=200)
         return JSONResponse({"queued": {source_id: queue.trigger(source_id) for source_id in sources}}, status_code=202)
 
