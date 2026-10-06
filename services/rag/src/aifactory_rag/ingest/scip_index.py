@@ -61,6 +61,25 @@ class ScipIndex:
             nearest = [candidate for candidate in nearest if not candidate[0].lower().endswith(HEADER_SUFFIXES)]
         return nearest[0] if len(nearest) == 1 else None
 
+    def without(self, paths: set[str]) -> ScipIndex:
+        """The index minus what it says about these paths: an index of an
+        earlier commit is exact only for the files that have not changed since."""
+        if not paths:
+            return self
+        # A symbol with a candidate in a changed file is dropped whole: where
+        # that definition is now is unknown, and the others alone could win a
+        # use that was a tie.
+        ambiguous = {
+            symbol: candidates
+            for symbol, candidates in self.ambiguous.items()
+            if not any(candidate[0] in paths for candidate in candidates)
+        }
+        return ScipIndex(
+            documents={path: occurrences for path, occurrences in self.documents.items() if path not in paths},
+            definitions={symbol: location for symbol, location in self.definitions.items() if location[0] not in paths},
+            ambiguous=ambiguous,
+        )
+
 
 def read_index(data: bytes) -> ScipIndex:
     index = ScipIndex()

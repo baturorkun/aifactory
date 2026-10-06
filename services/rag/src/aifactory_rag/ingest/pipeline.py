@@ -24,7 +24,15 @@ from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_cod
 from aifactory_rag.ingest.code_chunker import expected_chunker as code_chunker_for
 from aifactory_rag.ingest.markdown_chunker import MARKDOWN_CHUNKER, chunk_markdown, is_markdown
 from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
-from aifactory_rag.ingest.git_inputs import GitInputError, RepositoryInput, RepositoryTree, find_scip_index, repository_inputs, sync_repository
+from aifactory_rag.ingest.git_inputs import (
+    GitInputError,
+    RepositoryInput,
+    RepositoryTree,
+    changed_paths,
+    find_scip_index,
+    repository_inputs,
+    sync_repository,
+)
 from aifactory_rag.ingest.scip_index import ScipIndex, read_index
 from aifactory_rag import dataflow
 from aifactory_rag.ingest.parsers import parse_file
@@ -291,13 +299,22 @@ def _apply_scip_index(
     counts: dict[str, Any],
 ) -> psycopg.Connection:
     """Make the input's edges precise where its commit's SCIP index covers them."""
-    data, origin = find_scip_index(repository, tree)
+    found = find_scip_index(repository, tree)
+    origin = found.origin
     index: ScipIndex | None = None
-    if data is not None:
+    if found.data is not None:
         try:
-            index = read_index(data)
+            index = read_index(found.data)
         except Exception as exc:  # noqa: BLE001 - an unreadable index costs precision, not the ingest
             origin = f"unreadable SCIP index from {origin}: {_short_error(exc)}"
+    if index is not None and found.commit and found.commit != tree.commit:
+        # An ancestor's index: trusted only for the files unchanged since.
+        changed = changed_paths(tree.worktree, found.commit, tree.commit)
+        if changed is None:
+            index, origin = None, f"{origin} unusable: git cannot compare it with {tree.commit[:12]}"
+        else:
+            index = index.without(changed)
+            origin = f"{origin}, {len(changed)} files changed since"
     conn, precise = _run_with_database_retries(
         conn,
         config,

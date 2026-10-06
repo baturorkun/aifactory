@@ -188,25 +188,39 @@ def sync_repository(repository: RepositoryInput, mirror_dir: str, environ: dict[
 
 
 SCIP_INDEX_FILE = "index.scip"
+# How far back along the branch an index may come from when the commit itself
+# has none: a `[skip ci]` commit (aifactory's own completion commits) or a
+# pipeline still running when the push webhook arrives.
+SCIP_ANCESTOR_LIMIT = 20
 
 
-def find_scip_index(repository: RepositoryInput, tree: RepositoryTree, environ: dict[str, str] | None = None) -> tuple[bytes | None, str]:
-    """The SCIP index of exactly the commit being ingested, and where it came from.
+@dataclass(frozen=True)
+class ScipIndexFile:
+    data: bytes | None
+    origin: str
+    # The commit the index describes; differs from the ingested one when it
+    # came from an ancestor, and None when there is no index.
+    commit: str | None = None
+
+
+def find_scip_index(repository: RepositoryInput, tree: RepositoryTree, environ: dict[str, str] | None = None) -> ScipIndexFile:
+    """The SCIP index of the commit being ingested, and where it came from.
 
     Looked for in the generic packages whose version is the tag (a release
     publishes it there), then among the job artifacts of the commit's latest
-    successful pipeline. Only the file name is the contract: no package or job
-    name is configured. Every failure is a note, never an error: without an
-    index the input keeps name-resolved edges.
+    finished pipeline, then in those of its nearest first-parent ancestor
+    that has one. Only the file name is the contract: no package or job name
+    is configured. Every failure is a note, never an error: without an index
+    the input keeps name-resolved edges.
     """
     env = os.environ if environ is None else environ
     parts = urlsplit(repository.web_url)
     if parts.scheme not in {"http", "https"}:
-        return None, "no SCIP index: not a GitLab repository"
+        return ScipIndexFile(None, "no SCIP index: not a GitLab repository")
     try:
         token = _token(repository.token_env, env)
     except GitInputError as exc:
-        return None, f"no SCIP index: {exc}"
+        return ScipIndexFile(None, f"no SCIP index: {exc}")
     api = urlunsplit((parts.scheme, parts.netloc, f"/api/v4/projects/{quote(repository.project_path, safe='')}", "", ""))
     headers = {"PRIVATE-TOKEN": token}
     try:
@@ -214,15 +228,47 @@ def find_scip_index(repository: RepositoryInput, tree: RepositoryTree, environ: 
             if tree.is_tag:
                 found = _index_from_packages(client, api, tree.ref)
                 if found:
-                    return found
+                    return ScipIndexFile(*found, tree.commit)
             found = _index_from_pipeline(client, api, tree.commit)
             if found:
-                return found
+                return ScipIndexFile(*found, tree.commit)
+            for ancestor in _ancestors(tree.worktree, tree.commit, SCIP_ANCESTOR_LIMIT):
+                found = _index_from_pipeline(client, api, ancestor)
+                if found:
+                    return ScipIndexFile(found[0], f"{found[1]} of {ancestor[:12]}", ancestor)
     except _NoApiAccess as exc:
-        return None, f"no SCIP index: {repository.token_env} cannot read {exc} (needs read_api)"
+        return ScipIndexFile(None, f"no SCIP index: {repository.token_env} cannot read {exc} (needs read_api)")
     except httpx.HTTPError as exc:
-        return None, f"no SCIP index: GitLab {parts.netloc} is not reachable ({exc.__class__.__name__})"
-    return None, f"no SCIP index for {tree.ref} ({tree.commit[:12]})"
+        return ScipIndexFile(None, f"no SCIP index: GitLab {parts.netloc} is not reachable ({exc.__class__.__name__})")
+    return ScipIndexFile(None, f"no SCIP index for {tree.ref} ({tree.commit[:12]}) or its last {SCIP_ANCESTOR_LIMIT} commits")
+
+
+def _ancestors(worktree: Path, commit: str, limit: int) -> list[str]:
+    """The commit's first-parent ancestors, nearest first; none when git cannot tell."""
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed git subcommand, local only
+            ["git", "rev-list", "--first-parent", f"--max-count={limit + 1}", commit],
+            cwd=worktree, capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if completed.returncode != 0:
+        return []
+    return completed.stdout.split()[1:]
+
+
+def changed_paths(worktree: Path, since: str, commit: str) -> set[str] | None:
+    """Paths added, changed or deleted between two commits; None when git cannot tell."""
+    try:
+        completed = subprocess.run(  # noqa: S603 - fixed git subcommand, local only
+            ["git", "diff", "--name-only", "--no-renames", "-z", since, commit],
+            cwd=worktree, capture_output=True, text=True, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    return {path for path in completed.stdout.split("\0") if path}
 
 
 class _NoApiAccess(Exception):
