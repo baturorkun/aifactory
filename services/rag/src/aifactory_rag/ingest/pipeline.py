@@ -164,12 +164,13 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                 _print_matched(FOLDER_INPUT.label, files)
                 conn = _ingest_input(conn, config, source, FOLDER_INPUT, files, embed_model, force, summary, normalized_subdir)
                 if source.dataflow and normalized_subdir is None:
-                    code = [(f.relative_path, f.size, f.modified_timestamp) for f in files if language_for(f.relative_path) in {"c", "cpp"}]
-                    if code:
-                        conn = _build_dataflow_graph(
-                            conn, config, source.id, "", f"{source.id}-path", str(source.root_path),
-                            dataflow.folder_state(code), summary.inputs[-1],
-                        )
+                    states = {
+                        family: dataflow.folder_state(code)
+                        for family, code in _by_family((f.relative_path, f.size, f.modified_timestamp) for f in files).items()
+                    }
+                    conn = _build_dataflow_graphs(
+                        conn, config, source.id, "", f"{source.id}-path", str(source.root_path), states, summary.inputs[-1],
+                    )
 
             # A subdirectory narrows the folder input; repositories are left alone.
             if normalized_subdir is None and (source.repositories or source.groups):
@@ -196,10 +197,12 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
                         lambda current: _record_input_state_and_commit(current, source.id, repository, tree),
                     )
                     conn = _apply_scip_index(conn, config, source.id, repository, tree, summary.inputs[-1])
-                    if source.dataflow and any(language_for(path) in {"c", "cpp"} for path in tree.blobs):
-                        conn = _build_dataflow_graph(
+                    if source.dataflow:
+                        families = _by_family((path, 0, 0.0) for path in tree.blobs)
+                        conn = _build_dataflow_graphs(
                             conn, config, source.id, repository.key, repository.key, str(tree.worktree),
-                            tree.commit, summary.inputs[-1], ref=tree.ref, repository_url=repository.web_url,
+                            {family: tree.commit for family in families}, summary.inputs[-1],
+                            ref=tree.ref, repository_url=repository.web_url,
                         )
 
             summary.status = "failed" if summary.error_count else "passed"
@@ -231,42 +234,82 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
         _safe_close(conn)
 
 
-def _build_dataflow_graph(
+def _by_family(files: Any) -> dict[str, list[tuple[str, int, float]]]:
+    """Code files grouped by the language family their data-flow graph is built in."""
+    grouped: dict[str, list[tuple[str, int, float]]] = {}
+    for item in files:
+        family = dataflow.family_for(item[0])
+        if family:
+            grouped.setdefault(family, []).append(item)
+    return grouped
+
+
+def _build_dataflow_graphs(
     conn: psycopg.Connection,
     config: RagConfig,
     source_id: str,
     input_key: str,
     graph_key: str,
     input_path: str,
-    state: str,
+    states: dict[str, str],
     counts: dict[str, Any],
     ref: str | None = None,
     repository_url: str | None = None,
 ) -> psycopg.Connection:
-    """Build (or keep) the Joern graph of one code input; a failure stays with that input."""
-    project = dataflow.project_name(graph_key, state)
+    """Build (or keep) one Joern graph per language family of a code input.
+
+    A family's failure stays with that family. A family the input no longer
+    holds loses its record, so no query runs against a graph of files that
+    are gone.
+    """
     client = dataflow.JoernClient(dataflow.JoernSettings(url=config.joern.url, workspace=config.joern.workspace))
-    try:
-        built = client.ensure_project(project, input_path)
-    except dataflow.JoernError as exc:
-        counts["dataflow"] = f"failed: {_short_error(exc)}"
-        print(f"RAG data-flow     : {graph_key}: {exc}", flush=True)
-        return conn
-    counts["dataflow"] = f"{'built' if built else 'up to date'} {project}"
-    print(f"RAG data-flow     : {counts['dataflow']}", flush=True)
+    notes: list[str] = []
+    for family in dataflow.FAMILIES:
+        state = states.get(family)
+        if state is None:
+            continue
+        project = dataflow.project_name(graph_key, state, family)
+        try:
+            built = client.ensure_project(project, input_path, family=family)
+        except dataflow.JoernError as exc:
+            notes.append(f"{family} failed: {_short_error(exc)}")
+            print(f"RAG data-flow     : {graph_key} ({family}): {exc}", flush=True)
+            continue
+        notes.append(f"{'built' if built else 'up to date'} {project}")
+        print(f"RAG data-flow     : {notes[-1]}", flush=True)
+        conn, _ = _run_with_database_retries(
+            conn,
+            config,
+            f"recording the {family} data-flow graph of {graph_key}",
+            lambda current, family=family, project=project, state=state: _record_dataflow_graph_and_commit(
+                current, source_id, input_key, family, project, input_path, ref, state if ref else None, repository_url,
+            ),
+        )
     conn, _ = _run_with_database_retries(
         conn,
         config,
-        f"recording the data-flow graph of {graph_key}",
-        lambda current: _record_dataflow_graph_and_commit(current, source_id, input_key, project, input_path, ref, state if ref else None, repository_url),
+        f"pruning the data-flow graphs of {graph_key}",
+        lambda current: _prune_dataflow_graphs_and_commit(current, source_id, input_key, set(states)),
     )
+    if notes:
+        counts["dataflow"] = "; ".join(notes)
     return conn
+
+
+def _prune_dataflow_graphs_and_commit(conn: psycopg.Connection, source_id: str, input_key: str, families: set[str]) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM rag_dataflow_graphs WHERE source_id = %s AND input_key = %s AND NOT (family = ANY(%s))",
+            (source_id, input_key, sorted(families)),
+        )
+    conn.commit()
 
 
 def _record_dataflow_graph_and_commit(
     conn: psycopg.Connection,
     source_id: str,
     input_key: str,
+    family: str,
     project: str,
     input_path: str,
     ref: str | None,
@@ -276,16 +319,16 @@ def _record_dataflow_graph_and_commit(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO rag_dataflow_graphs(source_id, input_key, project, input_path, ref, commit_sha, repository_url, built_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, now())
-            ON CONFLICT(source_id, input_key) DO UPDATE SET
+            INSERT INTO rag_dataflow_graphs(source_id, input_key, family, project, input_path, ref, commit_sha, repository_url, built_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT(source_id, input_key, family) DO UPDATE SET
               project = EXCLUDED.project, input_path = EXCLUDED.input_path, ref = EXCLUDED.ref,
               commit_sha = EXCLUDED.commit_sha, repository_url = EXCLUDED.repository_url,
               -- an up-to-date graph keeps the time it was built
               built_at = CASE WHEN rag_dataflow_graphs.project = EXCLUDED.project
                               THEN rag_dataflow_graphs.built_at ELSE now() END
             """,
-            (source_id, input_key, project, input_path, ref, commit, repository_url),
+            (source_id, input_key, family, project, input_path, ref, commit, repository_url),
         )
     conn.commit()
 

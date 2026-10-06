@@ -395,8 +395,9 @@ function fillSourceCard(item) {
     block.append(el('div', 'card-section-title', 'Joern data-flow graphs'));
     for (const graph of item.dataflow) {
       const name = graph.input === 'path' ? 'folder' : graph.input.split('/').pop();
+      const language = { c: 'C/C++', js: 'TS/JS', cs: 'C#' }[graph.family] || graph.family || 'C/C++';
       const line = el('div', 'card-when');
-      line.append(el('span', null, `${name} · ${graph.builtAt ? formatStamp(graph.builtAt) : 'unknown'}`),
+      line.append(el('span', null, `${name} (${language}) · ${graph.builtAt ? formatStamp(graph.builtAt) : 'unknown'}`),
         el('span', 'card-ago', graph.builtAt ? ago(graph.builtAt) : ''));
       block.append(line);
     }

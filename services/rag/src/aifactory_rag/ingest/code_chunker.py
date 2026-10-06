@@ -1,4 +1,4 @@
-"""One chunk per symbol for C, C++, TypeScript and JavaScript.
+"""One chunk per symbol for C, C++, C#, TypeScript and JavaScript.
 
 Size-based chunking cuts code wherever the character count runs out: a chunk
 starts in the middle of one function and ends in the next and carries no
@@ -47,12 +47,15 @@ LANGUAGE_BY_EXTENSION = {
     ".mts": "typescript",
     ".cts": "typescript",
     ".tsx": "tsx",
+    # The hardware twin's Renode peripherals (RQ-0032).
+    ".cs": "csharp",
 }
 
 # Nodes whose children are read as if they were at the top level: include
 # guards and conditional blocks, extern "C", namespaces, exports.
 CONTAINERS = {
     "translation_unit",
+    "compilation_unit",
     "program",
     "preproc_ifdef",
     "preproc_if",
@@ -65,6 +68,26 @@ CONTAINERS = {
 }
 
 MACRO_KINDS = {"preproc_def", "preproc_function_def"}
+
+# C# types: each holds its members the way a C++ class does.
+CSHARP_TYPES = {
+    "class_declaration": "class",
+    "struct_declaration": "struct",
+    "record_declaration": "record",
+    "record_struct_declaration": "record",
+    "interface_declaration": "interface",
+}
+# C# members that carry code, chunked like methods; a property is one too
+# when its accessors have bodies.
+CSHARP_MEMBERS = {
+    "method_declaration": "method",
+    "constructor_declaration": "constructor",
+    "destructor_declaration": "method",
+    "operator_declaration": "method",
+    "conversion_operator_declaration": "method",
+    "property_declaration": "property",
+    "indexer_declaration": "property",
+}
 
 
 @dataclass
@@ -146,6 +169,10 @@ def _parser(language: str) -> Any:
         import tree_sitter_javascript as grammar
 
         handle = grammar.language()
+    elif language == "csharp":
+        import tree_sitter_c_sharp as grammar
+
+        handle = grammar.language()
     else:
         import tree_sitter_typescript as grammar
 
@@ -165,7 +192,11 @@ def _collect(node: Any, source: bytes, scope: str, language: str) -> list[_Symbo
         if kind in CONTAINERS:
             symbols.extend(_collect(child, source, scope, language))
             continue
-        if kind == "namespace_definition" or kind in {"internal_module", "module"}:
+        if kind == "file_scoped_namespace_declaration":
+            # `namespace A.B;` scopes the declarations after it, its siblings.
+            scope = _qualify(scope, _field_text(child, source, "name"), language)
+            continue
+        if kind in {"namespace_definition", "namespace_declaration"} or kind in {"internal_module", "module"}:
             name = _field_text(child, source, "name")
             body = child.child_by_field_name("body")
             if body is not None:
@@ -189,6 +220,8 @@ def _collect(node: Any, source: bytes, scope: str, language: str) -> list[_Symbo
 
 def _symbol(node: Any, source: bytes, scope: str, language: str) -> _Symbol | None:
     kind = node.type
+    if language == "csharp":
+        return _csharp_symbol(node, source, scope)
     if kind == "template_declaration":
         inner = next((child for child in node.named_children if child.type in {
             "function_definition", "class_specifier", "struct_specifier", "declaration",
@@ -264,6 +297,70 @@ def _symbol(node: Any, source: bytes, scope: str, language: str) -> _Symbol | No
         return None
 
     return None
+
+
+def _csharp_symbol(node: Any, source: bytes, scope: str) -> _Symbol | None:
+    kind = node.type
+    name = _field_text(node, source, "name")
+    if kind in CSHARP_TYPES:
+        body = node.child_by_field_name("body")
+        symbol = _make(node, source, CSHARP_TYPES[kind], _qualify(scope, name or "(anonymous)", "csharp"), body)
+        if body is not None:
+            symbol.members = _csharp_members(body, source, symbol.name)
+        return symbol
+    if kind == "enum_declaration" and name:
+        return _make(node, source, "enum", _qualify(scope, name, "csharp"), node.child_by_field_name("body"))
+    if kind == "delegate_declaration" and name:
+        return _make(node, source, "delegate", _qualify(scope, name, "csharp"), None)
+    return None
+
+
+def _csharp_members(body: Any, source: bytes, owner: str) -> list[_Symbol]:
+    """Methods, constructors, properties and nested types of a C# type."""
+    members: list[_Symbol] = []
+    children = list(body.named_children)
+    for index, child in enumerate(children):
+        if child.type in CSHARP_TYPES or child.type in {"enum_declaration", "delegate_declaration"}:
+            member = _csharp_symbol(child, source, owner)
+        elif child.type in CSHARP_MEMBERS:
+            member = _csharp_member(child, source, owner)
+        else:
+            member = None
+        if member is not None:
+            members.append(_with_leading_comments(member, children, index, source))
+    return members
+
+
+def _csharp_member(node: Any, source: bytes, owner: str) -> _Symbol | None:
+    kind = node.type
+    if kind == "indexer_declaration":
+        name = "this[]"
+    elif kind == "operator_declaration":
+        operator = node.child_by_field_name("operator")
+        name = f"operator {_node_text(source, operator).strip()}" if operator is not None else "operator"
+    elif kind == "conversion_operator_declaration":
+        name = f"operator {_field_text(node, source, 'type')}"
+    else:
+        name = _field_text(node, source, "name")
+    if not name:
+        return None
+    if kind == "destructor_declaration":
+        name = f"~{name}"
+    body = node.child_by_field_name("body") or node.child_by_field_name("accessors") or node.child_by_field_name("value")
+    if not _has_code(body):
+        # `int X { get; set; }` is a field in all but syntax, and an `extern`
+        # P/Invoke, abstract or interface method a prototype: they stay with
+        # their type, or a vendor wrapper of 731 DllImports is 731 chunks.
+        return None
+    return _make(node, source, CSHARP_MEMBERS[kind], _qualify(owner, name, "csharp"), body)
+
+
+def _has_code(node: Any) -> bool:
+    if node is None:
+        return False
+    if node.type in {"arrow_expression_clause", "block"}:
+        return True
+    return any(_has_code(child) for child in node.named_children)
 
 
 def _members(body: Any, source: bytes, owner: str, language: str) -> list[_Symbol]:

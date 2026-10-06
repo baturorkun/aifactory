@@ -60,9 +60,9 @@ def summarize(
             "lastRun": _run(last) if last else None,
             "inputs": _inputs(source_id, inputs, changes or [], (folders or {}).get(source_id)),
             "dataflow": [
-                {"input": row["input_key"] or "path", "project": row["project"], "ref": row.get("ref"),
-                 "commit": row.get("commit_sha"), "builtAt": _iso(row.get("built_at"))}
-                for row in sorted((r for r in graphs if r["source_id"] == source_id), key=lambda r: r["input_key"])
+                {"input": row["input_key"] or "path", "family": row.get("family") or "c", "project": row["project"],
+                 "ref": row.get("ref"), "commit": row.get("commit_sha"), "builtAt": _iso(row.get("built_at"))}
+                for row in sorted((r for r in graphs if r["source_id"] == source_id), key=lambda r: (r["input_key"], r.get("family") or "c"))
             ],
         })
     return result

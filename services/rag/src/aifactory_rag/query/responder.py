@@ -96,11 +96,12 @@ def _dataflow_findings(
                         for finding in item["findings"]:
                             text, anchor = dataflow.describe(finding)
                             found.append((
-                                f"[data-flow finding by Joern ({kind}), not a qualified tool; input {item['input']}"
+                                f"[data-flow finding by Joern ({kind}, {item.get('language', 'C/C++')}), not a qualified tool; input {item['input']}"
                                 f"{' @ ' + str(item.get('ref')) if item.get('ref') else ''}"
                                 f"{' (' + str(item['commit'])[:8] + ')' if item.get('commit') else ''}]\n{text}",
                                 {
                                     "sourceId": source.id, "relativePath": anchor.get("file", ""), "dataflow": kind,
+                                    "language": item.get("language", "C/C++"),
                                     "symbol": anchor.get("method"), "startLine": anchor.get("line"), "endLine": anchor.get("line"),
                                     **({"webUrl": anchor["webUrl"]} if anchor.get("webUrl") else {}),
                                     **({"repository": item["input"]} if item["input"] != "path" else {}),

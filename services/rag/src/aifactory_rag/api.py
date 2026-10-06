@@ -136,7 +136,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                                 max(updated_at) FILTER (WHERE status = 'deleted')) AS last_change
                 FROM rag_documents WHERE source_id = ANY(%s) GROUP BY source_id, input_key""", (ids,))
             graphs = fetch_all(conn, """
-                SELECT source_id, input_key, project, ref, commit_sha, built_at
+                SELECT source_id, input_key, family, project, ref, commit_sha, built_at
                 FROM rag_dataflow_graphs WHERE source_id = ANY(%s)""", (ids,))
         folders = {source.id: source.root_path for source in factory_config.rag.sources if source.root_path}
         return status.summarize(ids, latest, finished, inputs, graphs, changes=changes, folders=folders)

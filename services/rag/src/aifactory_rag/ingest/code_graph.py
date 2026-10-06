@@ -8,10 +8,12 @@ symbol definitions and the edges that leave it:
   its parameters or locals (a global, an enum constant, a register macro), or
   a struct field / object property; `writes` on the left of an assignment and
   under `++`/`--`;
-* `includes` / `imports` - `#include` paths and ES module sources;
+* `includes` / `imports` - `#include` paths, ES module sources and C# `using`
+  namespaces;
 * `declares` - a function prototype outside any body (a header declaring what
   a `.c` implements);
-* `contains` - a class or struct to its methods.
+* `contains` - a class or struct to its methods (C#: also its constructors,
+  properties with code and nested types).
 
 Edges are resolved by name only (`resolution: name`): a call records the name
 it calls, and the query side links it to every definition of that name in the
@@ -46,9 +48,36 @@ FUNCTION_NODES = {
     "function_expression",
     "function",
     "generator_function",
+    # C# (RQ-0032): a property accessor and a lambda have locals of their own.
+    "method_declaration",
+    "constructor_declaration",
+    "destructor_declaration",
+    "operator_declaration",
+    "conversion_operator_declaration",
+    "property_declaration",
+    "indexer_declaration",
+    "accessor_declaration",
+    "local_function_statement",
+    "lambda_expression",
+    "anonymous_method_expression",
 }
 ASSIGNMENTS = {"assignment_expression", "augmented_assignment_expression"}
-MEMBER_ACCESS = {"field_expression", "member_expression"}
+MEMBER_ACCESS = {"field_expression", "member_expression", "member_access_expression"}
+CALLS = {"call_expression", "new_expression", "invocation_expression", "object_creation_expression"}
+CSHARP_UPDATES = {"postfix_unary_expression", "prefix_unary_expression"}
+# C# nodes whose `name` child declares rather than uses.
+CSHARP_DECLARATIONS = {
+    "method_declaration", "constructor_declaration", "destructor_declaration", "class_declaration",
+    "struct_declaration", "record_declaration", "record_struct_declaration", "interface_declaration",
+    "enum_declaration", "enum_member_declaration", "delegate_declaration", "property_declaration",
+    "parameter", "local_function_statement", "catch_declaration", "declaration_expression",
+    "namespace_declaration", "file_scoped_namespace_declaration", "type_parameter", "using_directive",
+}
+# C# nodes whose identifiers name types or namespaces, never values.
+CSHARP_TYPE_CONTEXTS = {
+    "qualified_name", "generic_name", "type_argument_list", "base_list", "attribute", "array_type",
+    "nullable_type", "pointer_type", "type_parameter_constraints_clause", "explicit_interface_specifier",
+}
 NAME_NODES = {"identifier", "field_identifier", "property_identifier", "shorthand_property_identifier"}
 
 
@@ -101,16 +130,18 @@ def _extract(source: bytes, language: str) -> FileGraph:
     symbols: list[_Symbol] = []
     graph = FileGraph()
     edges: set[GraphEdge] = set()
-    for symbol in top:
+    pending = list(top)
+    while pending:  # C# nests types in types
+        symbol = pending.pop(0)
         symbols.append(symbol)
         for member in symbol.members:
-            symbols.append(member)
+            pending.append(member)
             edges.add(GraphEdge(symbol.name, "contains", short_name(member.name), member.start_line))
     graph.symbols = [GraphSymbol(s.name, s.kind, s.signature, s.start_line, s.end_line) for s in symbols]
     graph.symbols.extend(_globals(root, source))
 
     functions = sorted(
-        (s for s in symbols if s.kind in {"function", "method"}),
+        (s for s in symbols if s.kind in {"function", "method", "constructor", "property"}),
         key=lambda s: s.end_byte - s.start_byte,
     )
 
@@ -133,6 +164,11 @@ def _extract(source: bytes, language: str) -> FileGraph:
             if path is not None:
                 edges.add(GraphEdge(None, "includes", _node_text(source, path).strip('<>"'), line))
             continue
+        if kind == "using_directive":
+            target = [child for child in node.named_children if child.type in {"identifier", "qualified_name"}]
+            if target:
+                edges.add(GraphEdge(None, "imports", _node_text(source, target[-1]), line))
+            continue
         if kind in {"import_statement", "export_statement"} and node.child_by_field_name("source") is not None:
             edges.add(GraphEdge(enclosing(node.start_byte), "imports", _node_text(source, node.child_by_field_name("source")).strip("'\"`"), line))
             if kind == "import_statement":
@@ -140,6 +176,8 @@ def _extract(source: bytes, language: str) -> FileGraph:
 
         if kind in FUNCTION_NODES:
             local_names = set(local_names or ()) | _parameters(node, source)
+            if kind == "accessor_declaration":
+                local_names.add("value")  # a C# setter's implicit parameter
         elif local_names is None and kind in {"declaration", "field_declaration"} and _declares_function(node):
             name = _declarator_name(node.child_by_field_name("declarator"), source)
             if name:
@@ -153,7 +191,11 @@ def _extract(source: bytes, language: str) -> FileGraph:
         if local_names is not None:
             if kind == "declaration" or kind == "variable_declarator":
                 local_names.update(_declared_names(node, source))
-            elif kind in {"call_expression", "new_expression"}:
+            elif kind in {"foreach_statement", "declaration_expression", "catch_declaration"}:
+                declared = node.child_by_field_name("left") or node.child_by_field_name("name")
+                if declared is not None:
+                    local_names.update(_identifiers(declared, source, skip_types=True))
+            if kind in CALLS:
                 callee, name_node = _callee(node, source)
                 if callee == "require":
                     edges.add(GraphEdge(enclosing(node.start_byte), "imports", _first_argument(node, source), line))
@@ -163,7 +205,11 @@ def _extract(source: bytes, language: str) -> FileGraph:
                     skip.add((name_node.start_byte, name_node.end_byte))
             elif kind in NAME_NODES and (node.start_byte, node.end_byte) not in skip:
                 name = _node_text(source, node)
-                is_member = kind in {"field_identifier", "property_identifier"}
+                is_member = kind in {"field_identifier", "property_identifier"} or (
+                    node.parent is not None
+                    and node.parent.type == "member_access_expression"
+                    and node.parent.child_by_field_name("name") == node
+                )
                 if (is_member or name not in local_names) and _is_reference(node):
                     edges.add(GraphEdge(enclosing(node.start_byte), "writes" if writing else "reads", name, line))
 
@@ -171,12 +217,14 @@ def _extract(source: bytes, language: str) -> FileGraph:
         left = node.child_by_field_name("left") if kind in ASSIGNMENTS else None
         base = None
         if kind in MEMBER_ACCESS:
-            base = node.child_by_field_name("argument") or node.child_by_field_name("object")
+            base = node.child_by_field_name("argument") or node.child_by_field_name("object") or node.child_by_field_name("expression")
         for child in reversed(children):
             child_writes = writing
             if left is not None:
                 child_writes = child == left
             elif kind == "update_expression":
+                child_writes = True
+            elif kind in CSHARP_UPDATES and any(token.type in {"++", "--"} for token in node.children):
                 child_writes = True
             if base is not None and child == base:
                 child_writes = False  # `s->field = x` writes the field, reads `s`
@@ -224,13 +272,23 @@ def _globals(root: Any, source: bytes) -> list[GraphSymbol]:
 
 def _callee(node: Any, source: bytes) -> tuple[str, Any]:
     target = node.child_by_field_name("function") or node.child_by_field_name("constructor")
+    if target is None and node.type == "object_creation_expression":
+        target = node.child_by_field_name("type")
     if target is None:
         return "", None
+    if target.type == "generic_name":  # C# `Read<uint>(...)`, `new List<int>()`
+        target = next((child for child in target.named_children if child.type == "identifier"), None)
+        if target is None:
+            return "", None
     if target.type in {"identifier", "field_identifier", "property_identifier"}:
         return _node_text(source, target), target
     if target.type in MEMBER_ACCESS:
-        member = target.child_by_field_name("field") or target.child_by_field_name("property")
+        member = target.child_by_field_name("field") or target.child_by_field_name("property") or target.child_by_field_name("name")
+        if member is not None and member.type == "generic_name":
+            member = next((child for child in member.named_children if child.type == "identifier"), None)
         return (_node_text(source, member), member) if member is not None else ("", None)
+    if target.type == "qualified_name":  # C# `new Peripherals.Uart(...)`
+        return short_name(_node_text(source, target).split("<", 1)[0]), target
     if target.type in {"qualified_identifier", "template_function", "scoped_identifier"}:
         return short_name(_node_text(source, target).split("<", 1)[0]), target
     return "", None
@@ -252,6 +310,11 @@ def _parameters(node: Any, source: bytes) -> set[str]:
             names.add(_node_text(source, parameter))
         return names
     for parameter in parameters.named_children:
+        if parameter.type == "parameter":  # C#: the type is an identifier too
+            named = parameter.child_by_field_name("name")
+            if named is not None:
+                names.add(_node_text(source, named))
+            continue
         declared = parameter.child_by_field_name("declarator")
         if declared is not None:
             name = _declarator_name(declared, source)
@@ -313,6 +376,14 @@ def _is_reference(node: Any) -> bool:
     ):
         return False
     if parent.type in {"field_designator", "pair", "labeled_statement", "goto_statement", "formal_parameters"}:
+        return False
+    if parent.type in CSHARP_DECLARATIONS and parent.child_by_field_name("name") == node:
+        return False
+    if parent.type in CSHARP_TYPE_CONTEXTS:
+        return False
+    if parent.child_by_field_name("type") == node or parent.child_by_field_name("returns") == node:
+        return False  # a C# type position: `Machine machine`, `new Foo()`, `(uint)x`
+    if parent.type == "foreach_statement" and parent.child_by_field_name("left") == node:
         return False
     if parent.type in FUNCTION_NODES or parent.type in CONTAINERS:
         return False

@@ -1,4 +1,4 @@
-"""Joern data-flow queries (RQ-0025): the parts that run without Joern."""
+"""Joern data-flow queries (RQ-0025, RQ-0032): the parts that run without Joern."""
 
 from __future__ import annotations
 
@@ -82,12 +82,49 @@ class ClientTests(unittest.TestCase):
             self.assertTrue(self.client.ensure_project("rag-gitlab-bc-int-aselsan-bfi-sw-d5dc028f53c2", "/srv/x"))
         self.assertIn('n.startsWith("rag-gitlab-bc-int-aselsan-bfi-sw-")', fake.scripts[0])
 
+    def test_each_family_is_built_by_its_frontend_and_replaces_only_its_own_graphs(self) -> None:
+        fake = FakeJoern(self.workspace, {"built": True, "exists": True})
+        with patch("aifactory_rag.dataflow.httpx.post", fake):
+            self.client.ensure_project("rag-gitlab-bcintr-int-hardware-twin-bfi-sumilator-423a7dfd7b48-js", "/srv/x", family="js")
+            self.client.ensure_project("rag-gitlab-bcintr-int-hardware-twin-bfi-sumilator-423a7dfd7b48-cs", "/srv/x", family="cs")
+            self.client.ensure_project("rag-gitlab-bcintr-int-hardware-twin-bfi-sumilator-423a7dfd7b48-c", "/srv/x", family="c")
+        js, cs, c = fake.scripts
+        self.assertIn("importCode.jssrc(", js)
+        self.assertIn("importCode.csharpsrc(", cs)
+        self.assertIn("importCode.c(", c)
+        self.assertIn('n.startsWith("rag-gitlab-bcintr-int-hardware-twin-bfi-sumilator-")', js)
+        self.assertIn('familyOf(n) == "js"', js)
+        # a graph named before families (no suffix) is C, replaced by the first C build
+        self.assertIn('if (n.endsWith("-js")) "js" else if (n.endsWith("-cs")) "cs" else "c"', c)
+
+    def test_a_query_that_means_nothing_for_a_family_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "shared-state does not apply to C# code"):
+            self.client.query("p", "shared-state", family="cs")
+
+    def test_each_family_gets_its_own_query_and_defaults(self) -> None:
+        fake = FakeJoern(self.workspace, {"findings": []})
+        with patch("aifactory_rag.dataflow.httpx.post", fake):
+            self.client.query("p", "unchecked-input", family="js")
+            self.client.query("p", "unchecked-input", {"callbacks": "WithWriteCallback"}, family="cs")
+            self.client.query("p", "unchecked-input")
+        js, cs, c = fake.scripts
+        self.assertIn('val sourceRe = "(?i)(get(U?Int|Float|BigU?Int)\\\\d+', js)
+        self.assertIn("reachableByFlows", js)
+        self.assertIn('cpg.call.name("WithWriteCallback").argument.isMethodRef', cs)
+        self.assertIn('cpg.method.name("Write(Byte|Word|DoubleWord|QuadWord)?")', cs)
+        self.assertIn('val sourceRe = "(?i).*(read|receive|recv|rx).*"', c)  # C as before
+
 
 class NamingTests(unittest.TestCase):
-    def test_one_graph_per_input_and_state(self) -> None:
+    def test_one_graph_per_input_state_and_family(self) -> None:
         name = dataflow.project_name("gitlab.bc.int/aselsan/bfi-sw", "d5dc028f53c2bbac")
-        self.assertEqual(name, "rag-gitlab-bc-int-aselsan-bfi-sw-d5dc028f53c2")
+        self.assertEqual(name, "rag-gitlab-bc-int-aselsan-bfi-sw-d5dc028f53c2-c")
+        self.assertEqual(dataflow.project_name("gitlab.bc.int/aselsan/bfi-sw", "d5dc028f53c2bbac", "cs"), "rag-gitlab-bc-int-aselsan-bfi-sw-d5dc028f53c2-cs")
         self.assertTrue(name.startswith(dataflow.project_prefix("gitlab.bc.int/aselsan/bfi-sw")))
+
+    def test_files_are_grouped_by_the_family_their_graph_is_built_in(self) -> None:
+        families = {path: dataflow.family_for(path) for path in ("a.c", "b.hpp", "c.ts", "d.mjs", "e.tsx", "Uart.cs", "f.py", "g.md")}
+        self.assertEqual(families, {"a.c": "c", "b.hpp": "c", "c.ts": "js", "d.mjs": "js", "e.tsx": "js", "Uart.cs": "cs", "f.py": None, "g.md": None})
 
     def test_a_folders_state_changes_with_its_files(self) -> None:
         files = [("a.c", 10, 1.0), ("b.h", 5, 2.0)]
@@ -104,6 +141,25 @@ class ConfigTests(unittest.TestCase):
         })
         self.assertEqual(values, {"dataflow": True, "dataflowSources": "halArinc429Read|halUartReceive", "dataflowIsr": ".*_IRQHandler"})
         self.assertEqual(dataflow_from_env("RAG_SOURCE_3", {}), {"dataflow": False})
+
+    def test_the_other_families_have_suffixed_patterns(self) -> None:
+        values = dataflow_from_env("RAG_SOURCE_1", {
+            "RAG_SOURCE_1_DATAFLOW": "on",
+            "RAG_SOURCE_1_DATAFLOW_JS_SINKS": "slice|subarray",
+            "RAG_SOURCE_1_DATAFLOW_CS_CALLBACKS": "WithWriteCallback",
+            "RAG_SOURCE_1_DATAFLOW_C_SINKS": "memcpy",
+        })
+        self.assertEqual(values["dataflowFamilies"], {"js": {"sinks": "slice|subarray"}, "cs": {"callbacks": "WithWriteCallback"}})
+        self.assertEqual(values["dataflowSinks"], "memcpy")
+
+        class Source:
+            dataflow_sources = "halRead"
+            dataflow_sinks = dataflow_isr = None
+            dataflow_families = values["dataflowFamilies"]
+
+        self.assertEqual(dataflow.source_params(Source(), "c"), {"sources": "halRead"})
+        self.assertEqual(dataflow.source_params(Source(), "js"), {"sinks": "slice|subarray"})
+        self.assertEqual(dataflow.source_params(Source(), "cs"), {"callbacks": "WithWriteCallback"})
 
 
 class AnswerTests(unittest.TestCase):
@@ -125,6 +181,9 @@ class AnswerTests(unittest.TestCase):
         self.assertEqual(anchor["webUrl"], "http://gitlab.bc.int/aselsan/bfi-sw/-/blob/d5dc028f/Development/IOHandlers/io_handler.c#L129")
         self.assertIn("no bound check", text)
         self.assertIn("io_handler.c:116", text)
+
+        finding["family"] = "js"
+        self.assertTrue(dataflow.describe(finding)[0].startswith("(TypeScript/JavaScript) "))
 
 
 if __name__ == "__main__":

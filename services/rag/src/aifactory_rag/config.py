@@ -153,6 +153,8 @@ class RagSourceConfig(BaseModel):
     dataflow_sources: str | None = Field(default=None, alias="dataflowSources")
     dataflow_sinks: str | None = Field(default=None, alias="dataflowSinks")
     dataflow_isr: str | None = Field(default=None, alias="dataflowIsr")
+    # Patterns of the other language families (RQ-0032): {"js": {"sources": ...}}.
+    dataflow_families: dict[str, dict[str, str]] = Field(default_factory=dict, alias="dataflowFamilies")
     include: list[str] = Field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = Field(
         default_factory=lambda: [
@@ -388,13 +390,26 @@ def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]
 
 
 def dataflow_from_env(prefix: str, environ: Mapping[str, str]) -> dict[str, Any]:
-    """`<prefix>_DATAFLOW=on` and its optional `_SOURCES`, `_SINKS`, `_ISR` patterns."""
+    """`<prefix>_DATAFLOW=on` and its optional patterns.
+
+    `_SOURCES`, `_SINKS`, `_ISR` (or `_C_SOURCES`, ...) are C's; `_JS_SOURCES`,
+    `_JS_SINKS`, `_CS_SOURCES`, `_CS_SINKS` and `_CS_CALLBACKS` the other
+    families' (RQ-0032).
+    """
     flag = (environ.get(f"{prefix}_DATAFLOW") or "").strip().lower()
     values: dict[str, Any] = {"dataflow": flag in {"1", "on", "true", "yes"}}
     for suffix, key in (("SOURCES", "dataflowSources"), ("SINKS", "dataflowSinks"), ("ISR", "dataflowIsr")):
-        value = (environ.get(f"{prefix}_DATAFLOW_{suffix}") or "").strip()
+        value = (environ.get(f"{prefix}_DATAFLOW_{suffix}") or environ.get(f"{prefix}_DATAFLOW_C_{suffix}") or "").strip()
         if value:
             values[key] = value
+    families: dict[str, dict[str, str]] = {}
+    for family, suffixes in (("js", ("SOURCES", "SINKS")), ("cs", ("SOURCES", "SINKS", "CALLBACKS"))):
+        for suffix in suffixes:
+            value = (environ.get(f"{prefix}_DATAFLOW_{family.upper()}_{suffix}") or "").strip()
+            if value:
+                families.setdefault(family, {})[suffix.lower()] = value
+    if families:
+        values["dataflowFamilies"] = families
     return values
 
 

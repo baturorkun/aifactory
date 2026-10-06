@@ -181,6 +181,13 @@ and the web page links it to GitLab. The first ingest after this change
 re-chunks existing C/C++/TS/JS files by symbol on its own; other files are not
 re-embedded, and documents that predate `contentType` gain it in place.
 
+C# (RQ-0032) is chunked the same way: classes, structs, records, interfaces,
+enums and delegates, and in them methods, constructors, operators and the
+properties whose accessors have code (an auto-property `{ get; set; }` stays
+with its type). A Renode peripheral's `WriteDoubleWord` is one chunk named
+`<namespace>.<class>.WriteDoubleWord`. Existing `.cs` documents are
+re-chunked on their next ingest.
+
 Deploying it needs `pip install` of the tree-sitter packages in
 `pyproject.toml` and `db migrate` (migration `003_source_inputs.sql`).
 
@@ -189,7 +196,8 @@ Deploying it needs `pip install` of the tree-sitter packages in
 The same parse records, per code file, its definitions (`rag_symbols`) and the
 edges that leave it (`rag_edges`): `calls`, `reads`/`writes` of globals,
 register macros and struct fields (never a function's own locals),
-`includes`/`imports`, `declares` (prototypes) and `contains` (class members).
+`includes`/`imports` (C# `using` namespaces too), `declares` (prototypes) and
+`contains` (class members; in C# also constructors, properties and nested types).
 Edges are resolved by name (`resolution: name`): a call to `init` reaches every
 function named `init` in the source. The graph lives in the same PostgreSQL
 (migration `004_symbol_graph.sql`); code ingested before it gets its graph on
@@ -225,27 +233,40 @@ CI job produces the index (bfi-sw MR !3).
 ### Data-flow queries (Joern)
 
 A source marked `RAG_SOURCE_N_DATAFLOW=on` gets a Joern code property graph of
-each of its C/C++ inputs at every ingest (a repository per commit, the folder
-per state of its C/C++ files). Joern runs as the `joern` service of
-`infra/rag/compose.yaml` (pinned v4.0.644, `RAG_JOERN_MEMORY` 4g limit,
-`RAG_JOERN_HEAP` 3g, loopback port `RAG_JOERN_PORT` 8090, workspace
-`RAG_JOERN_WORKSPACE`):
+each of its code inputs at every ingest, one per language family the input
+holds: C/C++ (`c2cpg`), TypeScript/JavaScript (`jssrc2cpg`) and C#
+(`csharpsrc2cpg`). A repository's graphs follow its commit, the folder's the
+state of that family's files; each is named `rag-<input>-<state>-<c|js|cs>`.
+Joern runs as the `joern` service of `infra/rag/compose.yaml` (pinned
+v4.0.644, `RAG_JOERN_MEMORY` 4g limit, `RAG_JOERN_HEAP` 3g, loopback port
+`RAG_JOERN_PORT` 8090, workspace `RAG_JOERN_WORKSPACE`):
 
 ```bash
 docker compose --env-file .env -f infra/rag/compose.yaml up -d --build --no-deps joern
 ```
 
 `POST /dataflow {"sourceId", "query", "params"}` runs a prepared query over
-the source's graphs: `unchecked-input` (values from receive/read functions
-reaching an index or a `memcpy`/`memset` size with no dominating bound
-check), `shared-state` (globals written in an interrupt handler and used
-outside it, with `volatile` and critical-section flags) and `coupling`
-(calls and globals between directories, with the conditions of each call;
-`params.component` narrows it). `RAG_SOURCE_N_DATAFLOW_SOURCES`, `_SINKS` and
-`_ISR` override the patterns. A `/query` that reads as a data-flow question
-runs the matching query, cites the most relevant findings and ends with the
-notice that Joern is not a qualified tool (DO-330). The fixture tests in
-`tests/test_dataflow_joern.py` run against a live Joern when
+the source's graphs of the families it applies to:
+
+| Query | C/C++ | TypeScript/JavaScript | C# |
+|---|---|---|---|
+| `unchecked-input` | receive/read results reaching an index or a `memcpy`/`memset` size | numbers read from bytes (`DataView.get*`, `Buffer.read*`, `parseInt`) reaching an index, a `slice`/`subarray`/`copy` offset or length, or an array/buffer size | the parameters of a peripheral's `Write*` methods and of the callbacks given to `With*` register definitions reaching an index or an `Array.Copy`-style argument |
+| `shared-state` | globals written in an interrupt handler and used outside it | - | - |
+| `coupling` | calls and globals between directories | calls and module-level variables between directories | calls between directories |
+
+A finding is reported only when no bound check dominating the sink mentions
+every value reaching it. `params.component` narrows `coupling`. Patterns are
+overridden per family: `RAG_SOURCE_N_DATAFLOW_SOURCES`, `_SINKS`, `_ISR` (or
+`_C_SOURCES`, ...) for C, `_JS_SOURCES` / `_JS_SINKS`, and `_CS_SOURCES`
+(method names), `_CS_SINKS`, `_CS_CALLBACKS`. Every finding names its
+family. Two limits of the pinned frontends are worked around: jssrc2cpg
+carries flows to the identifiers of an expression, not to the expression, so
+those are the sink points; csharpsrc2cpg does not link `var x = ...` to its
+local and numbers lines from 0, so a C# bus value is followed by name within
+its method and its lines are shifted by one. A `/query` that reads as a
+data-flow question runs the matching query, cites the most relevant findings
+and ends with the notice that Joern is not a qualified tool (DO-330). The
+fixture tests in `tests/test_dataflow_joern.py` run against a live Joern when
 `RAG_JOERN_URL` and `RAG_JOERN_WORKSPACE` are set.
 
 Set secrets in `.env`:
