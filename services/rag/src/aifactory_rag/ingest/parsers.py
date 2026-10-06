@@ -298,7 +298,9 @@ def _parse_pptx(path: Path) -> str:
         for shape in slide.shapes:
             if hasattr(shape, "text") and shape.text.strip():
                 texts.append(shape.text.strip())
-            if hasattr(shape, "table"):
+            # Every graphic frame has a `table` attribute, and on a chart or an
+            # embedded object it raises instead of being absent, so ask has_table.
+            if getattr(shape, "has_table", False):
                 for row in shape.table.rows:
                     cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
                     if cells:
