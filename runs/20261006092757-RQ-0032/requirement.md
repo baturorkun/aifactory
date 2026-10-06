@@ -1,6 +1,6 @@
 ---
 id: RQ-0032
-status: completed
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,9 +8,6 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-06T09:24:29.984Z"
 branch: "factory/RQ-0032"
 createdFromCommit: "20adf1c0100db5445dcca082b270847dc030be46"
-completedRunId: "20261006092757-RQ-0032"
-completedBy: "Batur Orkun"
-completedAt: "2026-10-06T15:11:49.505Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/43"
 githubPullRequestIid: 43
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/42"
@@ -60,31 +57,23 @@ the 4 GB memory limit apply to every frontend.
 **Each family runs the queries that mean something for it.**
 
 - C/C++: `unchecked-input`, `shared-state`, `coupling`, unchanged.
-- TypeScript/JavaScript, `unchecked-input`: numbers read from external bytes
+- TypeScript/JavaScript, `unchecked-input`: values read from external bytes
   or text reaching an index, an offset or a size without a bound check on
-  the path. Default sources: `DataView.get*`, `Buffer.read*`, `parseInt` and
-  `parseFloat` (a whole buffer from `readFile*` is not a number: it would flag
-  every `new Uint8Array(bytes)`). Default sinks: element access,
-  `slice`/`subarray`/`copy`/`fill` offsets and lengths, `DataView`/`Buffer`
-  read and write offsets, `new ArrayBuffer`/typed-array/`Array`/`DataView`
-  arguments.
+  the path. Default sources: `DataView.get*`, `Buffer.read*`, typed-array and
+  `Uint8Array` element reads, `readFile*`/`arrayBuffer()`/`text()` results,
+  `JSON.parse` and `parseInt`/`Number` of such values. Default sinks: element
+  access, `slice`/`subarray`/`copy`/`set` offsets and lengths,
+  `new ArrayBuffer`/typed-array/`Array` sizes, `DataView` offsets.
 - TypeScript/JavaScript and C#, `coupling`: calls and shared module-level
   state across directories, as for C.
-- C#, `unchecked-input`: values written by the bus (the parameters of
-  Renode `Write`, `WriteByte`/`Word`/`DoubleWord`/`QuadWord` methods and of
-  the lambdas given to `With*` register definitions) reaching an array or
-  collection index or an `Array.Copy`/`Buffer.BlockCopy`-style argument
-  without a bound check. The pinned csharpsrc2cpg does not link `var x = ...`
-  to its local, so Joern's own data-flow stops at every declaration: the
-  value is followed by name, through assignments, within the method it
-  arrives in. It also numbers lines from 0; reported lines are shifted to
-  match the file.
+- C#, `unchecked-input`: values written by the bus (the `value` and `offset`
+  arguments of Renode `Write*` methods and register `writeCallback`s)
+  reaching an array or collection index, an allocation size or
+  `Array.Copy`/`Buffer.BlockCopy` without a bound check.
 
 `shared-state` stays C only (ISRs). `_SOURCES`/`_SINKS` overrides apply per
-family as `RAG_SOURCE_N_DATAFLOW_<C|JS|CS>_SOURCES` / `_SINKS` (and
-`_CS_CALLBACKS`); the existing unsuffixed variables keep meaning C. A sink is
-reported unless a dominating bound check mentions every value reaching it:
-`i < count` bounds the loop counter, not the `table` added to it. The answer's data-flow findings and the
+family as `RAG_SOURCE_N_DATAFLOW_<C|JS|CS>_SOURCES` / `_SINKS`; the existing
+unsuffixed variables keep meaning C. The answer's data-flow findings and the
 `/dataflow` endpoint name the family of each finding, and the DO-330 notice
 is unchanged.
 
