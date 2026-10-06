@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-06T15:12:39.887Z"
 branch: "factory/RQ-0033"
 createdFromCommit: "57c66734195fe1faea81d1146a2563292a6f0a0d"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/44"
+githubIssueIid: 44
+repositoryProvider: github
 ---
 # RQ-0033 - Local embeddings with Qwen3-Embedding on Ollama and passive sources
 
