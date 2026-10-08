@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from collections.abc import Iterable
 from io import StringIO
 from pathlib import Path
@@ -210,6 +211,30 @@ def _parse_html(path: Path) -> str:
     return soup.get_text(separator="\n", strip=True)
 
 
+# The IHS licence stamp printed on every page of the ARINC standards. It is
+# not content: it crowded the vector space (2114 arinc chunks carried it) and
+# a reranker put stamp-only chunks first for "ARINC-665'i özetle".
+PDF_STAMP_PATTERNS = [
+    re.compile(pattern + r"\n?", re.MULTILINE)  # the line and its line break
+    for pattern in (
+        r"^[ \t]*Copyright Aeronautical Radio,? Inc\.?[ \t]*$",
+        r"^[ \t]*Provided by IHS under license with ARINC.*$",
+        r"^[ \t]*Order Number:[ \t]*\S*[ \t]*$",
+        r"^[ \t]*Sold to:.*$",
+        r"^[ \t]*Not for Resale,?.*$",
+        r"^[ \t]*No reproduction or networking permitted without license from IHS[ \t]*$",
+        r"^[ \t]*[-`,]{6,}[ \t]*$",  # the guilloche line the stamp ends with
+    )
+]
+
+
+def strip_page_stamps(text: str) -> str:
+    """A page's text without the licence stamp lines; blank runs collapsed."""
+    for pattern in PDF_STAMP_PATTERNS:
+        text = pattern.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 def _parse_pdf(path: Path) -> str:
     try:
         from pypdf import PdfReader
@@ -227,8 +252,9 @@ def _parse_pdf(path: Path) -> str:
             # A malformed font on one page (DO-330: a Type0 font with no
             # /DescendantFonts, 17 of 138 pages) must not drop the other pages.
             text = ""
-        if text.strip():
-            parts.append(text.strip())
+        text = strip_page_stamps(text)
+        if text:
+            parts.append(text)
         image_text = _embedded_image_text(_pdf_page_blobs(page), seen_hashes)
         if image_text:
             parts.append(f"(image) {image_text}")
