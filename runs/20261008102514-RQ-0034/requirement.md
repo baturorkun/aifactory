@@ -1,6 +1,6 @@
 ---
 id: RQ-0034
-status: completed
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,9 +8,6 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-08T10:23:13.834Z"
 branch: "factory/RQ-0034"
 createdFromCommit: "fb3cf913f47826a41c963b7749cc7a0977139040"
-completedRunId: "20261008102514-RQ-0034"
-completedBy: "Batur Orkun"
-completedAt: "2026-10-08T11:03:14.696Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/47"
 githubPullRequestIid: 47
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/46"
@@ -54,7 +51,5 @@ RQ-0044 decide" is a fair question there.
 - The grounding request of a requirement carries the project's requirements,
   handoffs and runs paths as `excludePaths`; `rag.grounding.excludePaths`
   overrides them; `factory rag query` sends none.
-- Grounding a requirement of arinc661-studio returns no `requirements/`
-  file: RQ-0086 (two-state buttons) gets the project's ARINC 661 notes, the
-  standard's sections and the button code; RQ-0110 (project tabs, no ARINC
-  content) gets the code of its feature.
+- Grounding RQ-0110 of arinc661-studio returns ARINC 661 standard passages
+  and no `requirements/` file.
