@@ -197,5 +197,47 @@ class IngestLockTests(unittest.TestCase):
         self.assertEqual(lock.statements, ["pg_try_advisory_lock", "pg_advisory_unlock"])
 
 
+class FakeHousekeepingConnection:
+    """Two sources with running runs: arinc's lock is held (live), simics's is free."""
+
+    def __init__(self) -> None:
+        self.updated: list[str] = []
+        self.unlocked: list[str] = []
+
+    def __enter__(self) -> "FakeHousekeepingConnection":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, statement: str, params: tuple = ()) -> "FakeHousekeepingConnection":
+        self.statement, self.params = statement, params
+        if "UPDATE" in statement:
+            self.updated.append(params[0])
+        if "pg_advisory_unlock" in statement:
+            self.unlocked.append(params[0])
+        return self
+
+    def fetchall(self) -> list[tuple]:
+        if "DISTINCT source_id" in self.statement:
+            return [("arinc",), ("simics",)]
+        return [(183,), (160,)] if self.params[0] == "simics" else []
+
+    def fetchone(self) -> tuple:
+        return (self.params[0] != "aifactory-rag-ingest:arinc",)
+
+
+class InterruptedRunTests(unittest.TestCase):
+    def test_runs_of_sources_nobody_ingests_are_closed_and_live_ones_kept(self) -> None:
+        from aifactory_rag.ingest.pipeline import close_interrupted_runs
+
+        fake = FakeHousekeepingConnection()
+        with patch("aifactory_rag.ingest.pipeline.psycopg.connect", return_value=fake):
+            closed = close_interrupted_runs("postgresql://test")
+        self.assertEqual(closed, [183, 160])
+        self.assertEqual(fake.updated, ["simics"])  # arinc's lock is held: a live ingest
+        self.assertEqual(fake.unlocked, ["aifactory-rag-ingest:simics"])
+
+
 if __name__ == "__main__":
     unittest.main()

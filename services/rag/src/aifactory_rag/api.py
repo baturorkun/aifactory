@@ -11,7 +11,7 @@ from aifactory_rag import build_info
 from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config, searchable_source_ids
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
-from aifactory_rag.ingest.pipeline import PassiveSourceError, ingest_source
+from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source
 from aifactory_rag import dataflow, status, webhook
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
@@ -60,6 +60,12 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     factory_config = load_factory_config(config_path)
     running = build_info.capture()
     require_schema(factory_config.rag.database.connection_string)
+    try:
+        interrupted = close_interrupted_runs(factory_config.rag.database.connection_string)
+        if interrupted:
+            print(f"RAG closed {len(interrupted)} interrupted ingest run(s): {interrupted}", flush=True)
+    except Exception as exc:  # noqa: BLE001 - housekeeping must not stop the service
+        print(f"RAG could not check for interrupted ingest runs: {exc}", flush=True)
     app = FastAPI(title="AI Factory RAG", version=running.version)
 
     def auth_claims(request: Request) -> dict[str, Any]:

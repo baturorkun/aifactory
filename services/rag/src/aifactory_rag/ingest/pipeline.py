@@ -140,6 +140,39 @@ def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir
         return _ingest_source(config, source_id, force, subdir)
 
 
+def _lock_key(source_id: str) -> str:
+    return f"aifactory-rag-ingest:{source_id}"
+
+
+def close_interrupted_runs(connection_string: str) -> list[int]:
+    """Close the `running` runs of sources nobody is ingesting.
+
+    A service restart kills the webhook ingest in flight and its run stays
+    `running` for good, shown as "Updating now" until the next ingest. A live
+    ingest holds the source's advisory lock, so a source whose lock is free
+    has no ingest: its running runs were interrupted. Called at startup.
+    """
+    closed: list[int] = []
+    with psycopg.connect(connection_string, autocommit=True) as conn:
+        sources = [row[0] for row in conn.execute(
+            "SELECT DISTINCT source_id FROM rag_ingest_runs WHERE status = 'running' AND source_id IS NOT NULL"
+        ).fetchall()]
+        for source_id in sources:
+            key = _lock_key(source_id)
+            if not conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (key,)).fetchone()[0]:
+                continue  # an ingest of this source is running somewhere
+            try:
+                closed.extend(row[0] for row in conn.execute(
+                    "UPDATE rag_ingest_runs SET status = 'failed', finished_at = now(), "
+                    "error = 'interrupted: no ingest of this source was running when the service started' "
+                    "WHERE source_id = %s AND status = 'running' RETURNING id",
+                    (source_id,),
+                ).fetchall())
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (key,))
+    return closed
+
+
 @contextmanager
 def _source_lock(config: RagConfig, source_id: str) -> Iterator[None]:
     """One ingest of a source at a time, across processes (RQ-0033).
@@ -149,7 +182,7 @@ def _source_lock(config: RagConfig, source_id: str) -> Iterator[None]:
     push arriving meanwhile would ingest the same documents at the same time
     and leave them half replaced. The second one waits for the first.
     """
-    key = f"aifactory-rag-ingest:{source_id}"
+    key = _lock_key(source_id)
     with psycopg.connect(config.database.connection_string, autocommit=True) as lock:
         taken = lock.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (key,)).fetchone()[0]
         if not taken:
