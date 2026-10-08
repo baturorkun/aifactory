@@ -6,6 +6,7 @@ import test from 'node:test';
 import { FactoryConfigSchema, loadConfig } from '../config';
 import {
   formatGroundingContext,
+  groundingExcludePaths,
   queryConfiguredRag,
   shouldQueryGrounding,
 } from './grounding-client';
@@ -205,6 +206,42 @@ test('remote query forwards the configured content-type exclusion', async () => 
     question: 'Reset value?',
     sourceIds: ['source-a'],
   });
+});
+
+test('a requirement grounding leaves the project records out; other questions do not (RQ-0034)', async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ answer: 'ok', sources: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const projectConfig = config();
+
+  // Grounding RQ-0110 returned RQ-0110's own file as all twelve sources.
+  assert.deepEqual(groundingExcludePaths(projectConfig), ['requirements/**', 'handoffs/**', 'runs/**']);
+  await queryConfiguredRag(projectConfig, 'Analyze RQ-0110', fetchImpl, {
+    excludePaths: groundingExcludePaths(projectConfig),
+  });
+  await queryConfiguredRag(projectConfig, 'What did RQ-0044 decide?', fetchImpl);
+
+  assert.deepEqual(bodies[0].excludePaths, ['requirements/**', 'handoffs/**', 'runs/**']);
+  assert.equal('excludePaths' in bodies[1], false);
+});
+
+test('grounding exclusions follow the project paths or the configured list', () => {
+  const custom = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements: './docs/rq/', handoffs: '../outside/handoffs', runs: '/abs/runs' },
+    rag: { grounding: { enabled: true, chatUrl: 'http://rag.example/query' } },
+  });
+  // A path outside the project is not in its repository either.
+  assert.deepEqual(groundingExcludePaths(custom), ['docs/rq/**']);
+  assert.deepEqual(groundingExcludePaths(config({ excludePaths: 'requirements/**, notes/**' })), [
+    'requirements/**',
+    'notes/**',
+  ]);
 });
 
 test('grounding context is bounded and only emitted for selected agents', () => {

@@ -19,6 +19,7 @@ import {
 } from './manifest';
 import {
   buildGroundingQuestion,
+  groundingExcludePaths,
   formatGroundingReference,
   queryConfiguredRag,
   shouldQueryGrounding,
@@ -330,6 +331,7 @@ async function createImplementationPackage(
         config,
         buildGroundingQuestion(config, requirement),
         fetchImpl,
+        { excludePaths: groundingExcludePaths(config) },
       );
       writeFileSync(
         join(handoffDir, 'rag-context.json'),

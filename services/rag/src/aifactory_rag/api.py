@@ -21,6 +21,8 @@ class QueryRequest(BaseModel):
     question: str
     sourceIds: list[str] = Field(default_factory=list)
     excludeContentTypes: list[str] = Field(default_factory=list)
+    # Globs of paths inside an input left out, e.g. `requirements/**` (RQ-0034).
+    excludePaths: list[str] = Field(default_factory=list)
     # Add the callers and callees of the functions found (RQ-0024).
     expandGraph: bool = True
 
@@ -92,6 +94,7 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             source_ids=payload.sourceIds,
             exclude_content_types=payload.excludeContentTypes,
             expand_graph=payload.expandGraph,
+            exclude_paths=payload.excludePaths,
         )
 
     @app.post("/ingest-runs")

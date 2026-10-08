@@ -57,6 +57,7 @@ import { runAgent } from './runner';
 import { runAllGates, type GateReport } from '@aifactory/quality-gates';
 import {
   buildGroundingQuestion,
+  groundingExcludePaths,
   formatGroundingContext,
   queryConfiguredRag,
   shouldQueryGrounding,
@@ -552,7 +553,9 @@ export async function runPipeline(
     if (!opts.dryRun && shouldQueryGrounding(config, requirement.rawMarkdown)) {
       console.log('  ▸ Project RAG grounding...');
       try {
-        ragGrounding = await queryConfiguredRag(config, buildGroundingQuestion(config, requirement));
+        ragGrounding = await queryConfiguredRag(config, buildGroundingQuestion(config, requirement), fetch, {
+          excludePaths: groundingExcludePaths(config),
+        });
         writeFileSync(
           join(runDir, 'rag-context.json'),
           JSON.stringify(ragGrounding, null, 2) + '\n',

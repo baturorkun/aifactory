@@ -34,10 +34,38 @@ export function buildGroundingQuestion(config: FactoryConfig, requirement: Requi
   ].join('\n');
 }
 
+/**
+ * The paths a requirement's grounding leaves out (RQ-0034): the project's
+ * requirements, handoffs and runs, unless `rag.grounding.excludePaths` says
+ * otherwise. Grounding RQ-0110 otherwise returned RQ-0110's own file as all of
+ * its sources.
+ */
+export function groundingExcludePaths(config: FactoryConfig): string[] {
+  const configured = config.rag.grounding.excludePaths;
+  if (configured) return configured;
+  return [config.paths.requirements, config.paths.handoffs, config.paths.runs]
+    .map(projectRelativeGlob)
+    .filter((glob): glob is string => glob !== null);
+}
+
+function projectRelativeGlob(path: string): string | null {
+  const trimmed = path.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+  if (!trimmed || trimmed === '.' || trimmed.startsWith('/') || trimmed.startsWith('..') || /^[A-Za-z]:/.test(trimmed)) {
+    return null; // outside the project, so not in its repository either
+  }
+  return `${trimmed}/**`;
+}
+
+export interface QueryRagOptions {
+  /** Globs of paths inside a source's inputs to leave out of the search. */
+  excludePaths?: string[];
+}
+
 export async function queryConfiguredRag(
   config: FactoryConfig,
   question: string,
   fetchImpl: typeof fetch = fetch,
+  options: QueryRagOptions = {},
 ): Promise<RagGroundingResponse> {
   const grounding = config.rag.grounding;
   if (!grounding.enabled) throw new Error('RAG grounding is disabled for this project.');
@@ -56,6 +84,9 @@ export async function queryConfiguredRag(
         // chunks. Only send the filter when the project configured one.
         ...(grounding.excludeContentTypes.length > 0
           ? { excludeContentTypes: grounding.excludeContentTypes }
+          : {}),
+        ...(options.excludePaths && options.excludePaths.length > 0
+          ? { excludePaths: options.excludePaths }
           : {}),
       }),
       signal: controller.signal,

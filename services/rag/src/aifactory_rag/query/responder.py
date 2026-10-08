@@ -17,6 +17,7 @@ from aifactory_rag.config import RagConfig, require_query_config
 from aifactory_rag.db import connect
 from aifactory_rag import dataflow
 from aifactory_rag.query import graph
+from aifactory_rag.query.path_filter import excluded, exclusion_regexes
 from aifactory_rag.query.retriever import RetrievedChunk, retrieve
 
 
@@ -27,6 +28,7 @@ def answer_question(
     source_ids: list[str] | None = None,
     exclude_content_types: list[str] | None = None,
     expand_graph: bool = True,
+    exclude_paths: list[str] | None = None,
 ) -> dict:
     require_query_config(config)
     chunks = retrieve(
@@ -34,9 +36,10 @@ def answer_question(
         question,
         source_ids=source_ids,
         exclude_content_types=exclude_content_types,
+        exclude_paths=exclude_paths,
     )
     if expand_graph:
-        chunks = _expand_with_graph(config, chunks)
+        chunks = _expand_with_graph(config, chunks, exclude_paths)
     findings = _dataflow_findings(config, question, source_ids, chunks)
     answer = _generate_answer(config, question, chunks, [text for text, _ in findings])
     if findings and dataflow.NOTICE not in answer:
@@ -112,7 +115,9 @@ def _dataflow_findings(
     return sorted(found, key=relevance, reverse=True)[:MAX_DATAFLOW_FINDINGS]
 
 
-def _expand_with_graph(config: RagConfig, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+def _expand_with_graph(
+    config: RagConfig, chunks: list[RetrievedChunk], exclude_paths: list[str] | None = None,
+) -> list[RetrievedChunk]:
     """Add the callers and callees of the functions found, within the top-k budget.
 
     A third of the budget (at least two) goes to the graph; the weakest
@@ -127,6 +132,8 @@ def _expand_with_graph(config: RagConfig, chunks: list[RetrievedChunk]) -> list[
     except Exception as exc:  # noqa: BLE001 - e.g. a database not yet migrated
         print(f"Graph expansion skipped: {exc}", flush=True)
         return chunks
+    regexes = exclusion_regexes(exclude_paths)
+    neighbors = [chunk for chunk in neighbors if not excluded(chunk.relative_path, regexes)]
     if not neighbors:
         return chunks
     return chunks[: max(1, top_k - len(neighbors))] + neighbors

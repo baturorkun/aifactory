@@ -7,6 +7,7 @@ from typing import Any
 from aifactory_rag.config import RagConfig, require_ingest_config
 from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import create_embedding_adapter
+from aifactory_rag.query.path_filter import exclusion_regexes
 
 PAGE_MARKER = re.compile(r"\[page\s+(\d+)\]", re.IGNORECASE)
 
@@ -45,6 +46,7 @@ def retrieve(
     question: str,
     source_ids: list[str] | None = None,
     exclude_content_types: list[str] | None = None,
+    exclude_paths: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     require_ingest_config(config)
     require_schema(config.database.connection_string)
@@ -62,11 +64,17 @@ def retrieve(
                 if exclude_content_types
                 else ""
             )
+            # Paths left out (RQ-0034): a requirement's grounding must not find
+            # the requirement's own file.
+            path_regexes = exclusion_regexes(exclude_paths)
+            path_filter = " AND NOT (d.relative_path ~ ANY(%s))" if path_regexes else ""
             params: list[Any] = [vector_literal(embedding), len(embedding)]
             if source_ids:
                 params.append(source_ids)
             if exclude_content_types:
                 params.append(exclude_content_types)
+            if path_regexes:
+                params.append(path_regexes)
             params.extend([vector_literal(embedding), config.retrieval.top_k])
             dims = len(embedding)
             cur.execute(
@@ -100,7 +108,7 @@ def retrieve(
                   -- is what makes it possible to change models one corpus at a
                   -- time, or to leave a corpus behind on the old one.
                   AND vector_dims(c.embedding) = %s
-                  {source_filter}{content_filter}
+                  {source_filter}{content_filter}{path_filter}
                 -- Written against the same expression the HNSW index is built
                 -- on, because a plain `c.embedding <=> ...` cannot use it: the
                 -- column is dimensionless, so the index is on the cast. The

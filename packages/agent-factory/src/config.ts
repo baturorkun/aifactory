@@ -246,6 +246,18 @@ const RagGroundingSchema = z.object({
       z.array(z.string().min(1)),
     )
     .default([]),
+  // Globs of paths left out of a requirement's grounding (RQ-0034). Unset, the
+  // project's requirements, handoffs and runs paths: the requirement's own file
+  // is otherwise the closest match to its own text.
+  excludePaths: z
+    .preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value.split(',').map((item) => item.trim()).filter(Boolean)
+          : value,
+      z.array(z.string().min(1)),
+    )
+    .optional(),
   agents: z
     .array(RagGroundingAgentSchema)
     .default(['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard']),
