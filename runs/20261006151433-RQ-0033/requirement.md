@@ -1,6 +1,6 @@
 ---
 id: RQ-0033
-status: completed
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,9 +8,6 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-06T15:12:39.887Z"
 branch: "factory/RQ-0033"
 createdFromCommit: "57c66734195fe1faea81d1146a2563292a6f0a0d"
-completedRunId: "20261006151433-RQ-0033"
-completedBy: "Batur Orkun"
-completedAt: "2026-10-08T15:17:28.030Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/45"
 githubPullRequestIid: 45
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/44"
@@ -61,19 +58,6 @@ embedding provider, model and width, and one that differs is embedded again
 on the next ingest without `--force`; the width's HNSW index is built at the
 start of the first ingest. Nothing else changes for the switch.
 
-**One ingest of a source at a time.** A re-embedding runs for hours from the
-CLI while the service's webhook may start an ingest of the same source; two
-ingests replacing the same documents leave them half written. A PostgreSQL
-advisory lock per source makes the second wait for the first, across
-processes.
-
-**A filtered search finds what the filter keeps.** pgvector's HNSW scan takes
-the nearest 40 chunks of the whole index and filters them afterwards. Asked of
-arinc, "kac tip container var" came back empty: its 40 nearest were all Ballard
-C# examples in aselsan-bfi. The search runs with `hnsw.iterative_scan =
-strict_order`, so the scan goes on until the source, status and content
-filters leave enough rows.
-
 **A source can be passive.** `RAG_SOURCE_N_ENABLED=off` keeps a source's
 documents, chunks, graphs and runs as they are and leaves the source out:
 an ingest of it (CLI, `/ingest-runs`, webhook) is refused with a message
@@ -93,10 +77,6 @@ re-ingest beyond what its own state asks for. simics is made passive.
 - After switching the model, the next ingest re-embeds every document of the
   source without `--force` and builds the new width's index; the old
   vectors stop being searched.
-- A search filtered to one source returns its top-k even when the nearest
-  chunks of the whole index belong to other sources.
-- A second ingest of a source, from another process, waits until the first
-  has finished.
 - With `RAG_SOURCE_2_ENABLED=off`, simics keeps all its rows, cannot be
   ingested, is not searched by `/query`, the graph endpoints or `/dataflow`,
   and shows as passive on the web page; `=on` brings it back.
