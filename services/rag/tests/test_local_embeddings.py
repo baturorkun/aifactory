@@ -239,5 +239,32 @@ class InterruptedRunTests(unittest.TestCase):
         self.assertEqual(fake.unlocked, ["aifactory-rag-ingest:simics"])
 
 
+class DutyCycleTests(unittest.TestCase):
+    """A bulk re-embed by day leaves the GPU free for questions half the time."""
+
+    def test_pause_follows_the_duty_cycle(self) -> None:
+        from aifactory_rag.ingest.pipeline import duty_cycle_pause
+
+        self.assertEqual(duty_cycle_pause(12.0, 1.0), 0.0)
+        self.assertAlmostEqual(duty_cycle_pause(12.0, 0.5), 12.0)
+        self.assertAlmostEqual(duty_cycle_pause(12.0, 0.25), 36.0)
+
+    def test_the_environment_sets_batch_size_and_duty_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "factory.config.json"
+            path.write_text(json.dumps({"rag": {
+                "database": {"connectionString": "postgresql://test"},
+                "ingest": {"batchSize": "${RAG_INGEST_BATCH_SIZE:-50}", "dutyCycle": "${RAG_INGEST_DUTY_CYCLE:-1}"},
+            }}), encoding="utf-8")
+            with patch.dict(os.environ, {"RAG_INGEST_BATCH_SIZE": "10", "RAG_INGEST_DUTY_CYCLE": "0.5"}):
+                ingest = load_factory_config(path).rag.ingest
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("RAG_INGEST_BATCH_SIZE", None)
+                os.environ.pop("RAG_INGEST_DUTY_CYCLE", None)
+                default = load_factory_config(path).rag.ingest
+        self.assertEqual((ingest.batch_size, ingest.duty_cycle), (10, 0.5))
+        self.assertEqual((default.batch_size, default.duty_cycle), (50, 1.0))
+
+
 if __name__ == "__main__":
     unittest.main()

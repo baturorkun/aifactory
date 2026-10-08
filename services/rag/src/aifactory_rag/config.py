@@ -205,6 +205,10 @@ class RagIngestConfig(BaseModel):
     chunk_size: int = Field(default=1200, alias="chunkSize")
     chunk_overlap: int = Field(default=150, alias="chunkOverlap")
     batch_size: int = Field(default=50, alias="batchSize")
+    # Share of time spent embedding (0-1]. Below 1 every batch is followed by a
+    # pause, so a bulk re-embed leaves the embedding GPU free for questions
+    # part of the time: 0.5 rests as long as each batch took.
+    duty_cycle: float = Field(default=1.0, gt=0, le=1, alias="dutyCycle")
     database_reconnect_retries: int = Field(default=12, ge=0, alias="databaseReconnectRetries")
     database_reconnect_delay_seconds: float = Field(default=5.0, gt=0, alias="databaseReconnectDelaySeconds")
 

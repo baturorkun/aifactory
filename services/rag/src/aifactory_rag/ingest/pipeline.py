@@ -835,7 +835,10 @@ def _ingest_file(
     if not resume:
         _reset_chunk_checkpoints(conn, document_id)
     conn.commit()
-    _replace_chunks(conn, document_id, source.id, file.relative_path, chunks, embed_model, config.ingest.batch_size, resume, context)
+    _replace_chunks(
+        conn, document_id, source.id, file.relative_path, chunks, embed_model, config.ingest.batch_size, resume, context,
+        config.ingest.duty_cycle,
+    )
     if language_for(file.relative_path):
         _replace_graph(conn, document_id, source.id, extract_graph(text, file.relative_path))
     _activate_document(conn, document_id)
@@ -943,6 +946,11 @@ def _backfill_metadata(
         )
 
 
+def duty_cycle_pause(elapsed: float, duty_cycle: float) -> float:
+    """Seconds to rest after a batch that took `elapsed`, to embed only `duty_cycle` of the time."""
+    return elapsed * (1 / duty_cycle - 1) if 0 < duty_cycle < 1 else 0.0
+
+
 def _replace_chunks(
     conn: psycopg.Connection,
     document_id: int,
@@ -953,6 +961,7 @@ def _replace_chunks(
     batch_size: int,
     resume: bool,
     context: InputContext = FOLDER_INPUT,
+    duty_cycle: float = 1.0,
 ) -> None:
     completed: set[int] = set()
     if resume:
@@ -968,6 +977,7 @@ def _replace_chunks(
         indices = pending[start:start + batch_size]
         batch_chunks = [chunks[index].text for index in indices]
         print(f"  EMBED [{batch_number}/{total_batches}] {relative_path}: chunks {indices[0] + 1}-{indices[-1] + 1}/{len(chunks)}", flush=True)
+        batch_started = perf_counter()
         embeddings = embed_model.embed_documents(batch_chunks)
         if len(embeddings) != len(batch_chunks):
             raise RuntimeError(f"Embedding provider returned {len(embeddings)} vectors for {len(batch_chunks)} chunks")
@@ -995,6 +1005,9 @@ def _replace_chunks(
                 )
         conn.commit()
         print(f"  EMBED [{batch_number}/{total_batches}] checkpointed in DB", flush=True)
+        pause = duty_cycle_pause(perf_counter() - batch_started, duty_cycle)
+        if pause:
+            sleep(pause)
 
 
 def _can_resume(existing: dict[str, Any] | None, content_hash: str, config: RagConfig, relative_path: str) -> bool:
