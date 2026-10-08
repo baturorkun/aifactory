@@ -114,6 +114,13 @@
         "rootPath": "${RAG_SOURCE_5_PATH:-}",
         "envPrefix": "RAG_SOURCE_5",
         "excludeAdditions": "${RAG_SOURCE_5_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_6_ID:-source-6}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_6_PATH:-}",
+        "envPrefix": "RAG_SOURCE_6",
+        "excludeAdditions": "${RAG_SOURCE_6_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "git": {
