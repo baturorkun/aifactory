@@ -111,6 +111,7 @@ button { color: inherit; }
 .status-dot.file-errors { background: #d4a84f; }
 .status-dot.updating { background: #d4a84f; animation: status-pulse 1.2s ease-in-out infinite; }
 .status-dot.failed, .status-dot.stale { background: var(--danger); }
+.status-dot.passive { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
 @keyframes status-pulse { 50% { opacity: 0.3; } }
 .source-skeleton { height: 42px; border-radius: 10px; background: linear-gradient(90deg, #10231f, #18302b, #10231f); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
 .source-skeleton.short { width: 76%; }

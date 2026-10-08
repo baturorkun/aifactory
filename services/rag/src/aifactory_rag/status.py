@@ -24,6 +24,7 @@ def summarize(
     now: datetime | None = None,
     changes: list[dict[str, Any]] | None = None,
     folders: dict[str, str] | None = None,
+    passive: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """One entry per source.
 
@@ -42,7 +43,9 @@ def summarize(
         last = finished.get(source_id)
         running = bool(current and current["status"] == "running" and current.get("finished_at") is None)
         stale = running and _aware(current["started_at"]) < now - STALE_AFTER
-        if running and not stale:
+        if source_id in (passive or set()):
+            state = "passive"  # kept, neither ingested nor searched (RQ-0033)
+        elif running and not stale:
             state = "updating"
         elif last is None:
             state = "never"

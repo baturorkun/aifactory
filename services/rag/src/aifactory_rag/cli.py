@@ -10,7 +10,7 @@ import uvicorn
 from aifactory_rag.api import create_app
 from aifactory_rag.config import load_factory_config
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
-from aifactory_rag.ingest.pipeline import ingest_source
+from aifactory_rag.ingest.pipeline import PassiveSourceError, ingest_source
 from aifactory_rag.query.responder import answer_question
 
 
@@ -56,7 +56,11 @@ def _main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "ingest":
-        summary = ingest_source(config.rag, args.source, force=args.force, subdir=args.subdir)
+        try:
+            summary = ingest_source(config.rag, args.source, force=args.force, subdir=args.subdir)
+        except PassiveSourceError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         print_json(summary.__dict__)
         return 0 if summary.status == "passed" else 2
 

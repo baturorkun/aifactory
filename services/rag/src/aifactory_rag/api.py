@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 
 from aifactory_rag import build_info
 from aifactory_rag.auth.entra import user_from_claims, validate_request
-from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config
+from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config, searchable_source_ids
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
-from aifactory_rag.ingest.pipeline import ingest_source
+from aifactory_rag.ingest.pipeline import PassiveSourceError, ingest_source
 from aifactory_rag import dataflow, status, webhook
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
@@ -96,7 +96,10 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
 
     @app.post("/ingest-runs")
     def create_ingest_run(payload: IngestRunRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:
-        summary = ingest_source(factory_config.rag, payload.sourceId, force=payload.force, subdir=payload.subdir)
+        try:
+            summary = ingest_source(factory_config.rag, payload.sourceId, force=payload.force, subdir=payload.subdir)
+        except PassiveSourceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return summary.__dict__
 
     @app.get("/ingest-runs/{run_id}")
@@ -139,7 +142,8 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 SELECT source_id, input_key, family, project, ref, commit_sha, built_at
                 FROM rag_dataflow_graphs WHERE source_id = ANY(%s)""", (ids,))
         folders = {source.id: source.root_path for source in factory_config.rag.sources if source.root_path}
-        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes, folders=folders)
+        passive = {source.id for source in factory_config.rag.sources if not source.enabled}
+        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes, folders=folders, passive=passive)
 
     @app.get("/documents")
     def documents(sourceId: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
@@ -191,7 +195,9 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         )
 
     def _source_list(sourceIds: str | None) -> list[str] | None:
-        return [item.strip() for item in sourceIds.split(",") if item.strip()] if sourceIds else None
+        """The sources asked for, less the passive ones (RQ-0033); empty searches none."""
+        requested = [item.strip() for item in sourceIds.split(",") if item.strip()] if sourceIds else None
+        return searchable_source_ids(factory_config.rag, requested)
 
     def _graph(query: Any, *args: Any) -> Any:
         with connect(factory_config.rag.database.connection_string) as conn:
@@ -226,6 +232,8 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             source = find_source(factory_config.rag, payload.sourceId)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if not source.enabled:
+            raise HTTPException(status_code=409, detail=f"RAG source {source.id} is passive; its graphs are not queried")
         settings = dataflow.JoernSettings(url=factory_config.rag.joern.url, workspace=factory_config.rag.joern.workspace)
         try:
             with connect(factory_config.rag.database.connection_string) as conn:
@@ -250,7 +258,10 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         trusted = [m for m in matches if webhook.authentic(m.repository, token)]
         if not trusted:
             return JSONResponse({"detail": "webhook secret token missing or wrong"}, status_code=401)
-        sources = sorted({m.source.id for m in trusted if webhook.follows(m.repository, event)})
+        following = {m.source.id for m in trusted if webhook.follows(m.repository, event)}
+        sources = sorted(source_id for source_id in following if find_source(factory_config.rag, source_id).enabled)
+        if following and not sources:
+            return JSONResponse({"ignored": f"source {', '.join(sorted(following))} is passive"}, status_code=200)
         if not sources:
             attributes = event.get("object_attributes") or {}
             if event.get("object_kind") == "pipeline" and attributes.get("status") not in {"success", "failed"}:

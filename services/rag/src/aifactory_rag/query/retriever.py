@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from aifactory_rag.config import RagConfig, require_ingest_config
+from aifactory_rag.config import RagConfig, require_ingest_config, searchable_source_ids
 from aifactory_rag.db import connect, require_schema, vector_literal
 from aifactory_rag.embeddings import create_embedding_adapter
 
@@ -48,6 +48,10 @@ def retrieve(
 ) -> list[RetrievedChunk]:
     require_ingest_config(config)
     require_schema(config.database.connection_string)
+    # Passive sources are never searched; asking only for them finds nothing.
+    source_ids = searchable_source_ids(config, source_ids)
+    if source_ids == []:
+        return []
     embed_model = create_embedding_adapter(config.embedding)
     embedding = embed_model.embed_query(question)
 
@@ -69,6 +73,12 @@ def retrieve(
                 params.append(exclude_content_types)
             params.extend([vector_literal(embedding), config.retrieval.top_k])
             dims = len(embedding)
+            # The HNSW scan finds the nearest ef_search (40) chunks of the whole
+            # index and filters them afterwards. "kac tip container var" asked
+            # of arinc came back empty: its 40 nearest were all Ballard C#
+            # examples in aselsan-bfi. An iterative scan keeps walking the graph
+            # until the filters leave enough rows (pgvector 0.8+).
+            cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
             cur.execute(
                 f"""
                 SELECT

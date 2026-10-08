@@ -23,7 +23,8 @@ class FakeCursor:
     def __exit__(self, *_: object) -> None:
         return None
 
-    def execute(self, statement: str, params: tuple[object, ...]) -> None:
+    def execute(self, statement: str, params: tuple[object, ...] = ()) -> None:
+        self.statements = [*getattr(self, "statements", []), statement]
         self.statement = statement
         self.params = params
 
@@ -75,6 +76,14 @@ class SourceFilterTests(unittest.TestCase):
         self.assertIn("c.source_id = ANY(%s)", cursor.statement)
         # params: query vector, embedding width, the source list, vector again, limit
         self.assertEqual(cursor.params[2], ["source-a"])
+
+    def test_a_filtered_search_scans_until_the_filters_leave_enough_rows(self) -> None:
+        """The HNSW scan stops at its 40 nearest chunks of the whole index and
+        filters them afterwards: a question to arinc whose 40 nearest were all
+        in aselsan-bfi returned nothing."""
+        cursor = self.run_retrieve(["source-a"])
+
+        self.assertEqual(cursor.statements[0], "SET LOCAL hnsw.iterative_scan = strict_order")
 
     def test_retrieval_has_no_source_clause_without_filter(self) -> None:
         cursor = self.run_retrieve(None)

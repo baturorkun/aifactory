@@ -157,29 +157,98 @@ class GeminiEmbeddingAdapter(EmbeddingAdapter):
         return values
 
 
+# Qwen3-Embedding is trained to embed a query after a one-line task and a
+# document as it is; without the instruction its retrieval is measurably worse.
+QWEN3_QUERY_INSTRUCTION = (
+    "Given a question about an engineering project, retrieve the documentation, "
+    "standard text or source code that answers it"
+)
+
+
+def query_instruction_for(config: RagEmbeddingConfig) -> str | None:
+    if config.query_instruction:
+        return config.query_instruction
+    return QWEN3_QUERY_INSTRUCTION if "qwen3-embedding" in config.model.lower() else None
+
+
+def fit_dimensions(vector: list[float], dimensions: int) -> list[float]:
+    """Cut a Matryoshka vector to the configured width and normalise it again."""
+    if len(vector) < dimensions:
+        raise RuntimeError(f"Embedding dimension mismatch: expected {dimensions}, received {len(vector)}")
+    if len(vector) == dimensions:
+        return vector
+    cut = vector[:dimensions]
+    norm = sum(value * value for value in cut) ** 0.5 or 1.0
+    return [value / norm for value in cut]
+
+
+class OllamaEncodingError(RuntimeError):
+    """Ollama computed a vector it could not encode (NaN) for some input of a batch."""
+
+
 class OllamaEmbeddingAdapter(EmbeddingAdapter):
+    """Ollama's `/api/embed`: one request per batch (RQ-0033).
+
+    The Ollama runs on a lab machine, so a refused or dropped connection (the
+    machine restarting) is retried with backoff instead of failing the ingest.
+    """
+
     def __init__(self, config: RagEmbeddingConfig):
         self.model = config.model
+        self.dimensions = config.dimensions
         self.base_url = (config.base_url or "http://localhost:11434").rstrip("/")
+        self.instruction = query_instruction_for(config)
+        self.max_retries = config.max_retries
+        self.retry_base_seconds = config.retry_base_seconds
+        self.retry_max_seconds = config.retry_max_seconds
+        self._client = httpx.Client(timeout=config.timeout_seconds)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._embed(text) for text in texts]
+        return self._embed_isolating(texts) if texts else []
 
     def embed_query(self, text: str) -> list[float]:
-        return self._embed(text)
+        prompt = f"Instruct: {self.instruction}\nQuery: {text}" if self.instruction else text
+        return self._embed([prompt])[0]
 
-    def _embed(self, text: str) -> list[float]:
-        response = httpx.post(
-            f"{self.base_url}/api/embeddings",
-            json={"model": self.model, "prompt": text},
-            timeout=120,
-        )
-        response.raise_for_status()
-        data = response.json()
-        embedding = data.get("embedding")
-        if not embedding:
-            raise RuntimeError("Ollama embedding response did not include embedding values.")
-        return [float(value) for value in embedding]
+    def _embed_isolating(self, texts: list[str]) -> list[list[float]]:
+        """A batch Ollama cannot encode is halved until the text it fails on is alone.
+
+        Qwen3-Embedding 8B returns NaN for an odd input now and then, and Ollama
+        then fails the whole batch ("json: unsupported value: NaN"): one bad
+        chunk must not cost the other 49. A text that fails alone is retried
+        with its whitespace collapsed, then reported.
+        """
+        try:
+            return self._embed(texts)
+        except OllamaEncodingError:
+            if len(texts) == 1:
+                cleaned = " ".join(texts[0].split())
+                if cleaned and cleaned != texts[0]:
+                    return self._embed([cleaned])
+                raise
+            middle = len(texts) // 2
+            return self._embed_isolating(texts[:middle]) + self._embed_isolating(texts[middle:])
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        attempt = 0
+        while True:
+            try:
+                response = self._client.post(f"{self.base_url}/api/embed", json={"model": self.model, "input": texts})
+            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
+                if attempt >= self.max_retries:
+                    raise RuntimeError(f"Ollama at {self.base_url} is not reachable: {exc.__class__.__name__}") from None
+                delay = min(self.retry_max_seconds, self.retry_base_seconds * (2 ** attempt))
+                print(f"Ollama at {self.base_url} unreachable ({exc.__class__.__name__}); retrying in {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                attempt += 1
+                continue
+            if response.status_code >= 400:
+                error = OllamaEncodingError if "NaN" in response.text else RuntimeError
+                raise error(f"Ollama embedding failed: HTTP {response.status_code}: {response.text[:300]}")
+            embeddings = response.json().get("embeddings")
+            if not embeddings or len(embeddings) != len(texts):
+                raise RuntimeError("Ollama embedding response did not include one embedding per input.")
+            return [fit_dimensions([float(value) for value in vector], self.dimensions) for vector in embeddings]
 
 
 class LocalEmbeddingAdapter(EmbeddingAdapter):

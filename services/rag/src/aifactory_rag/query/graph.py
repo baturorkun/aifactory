@@ -29,7 +29,8 @@ _LOCATION = """
 
 
 def _sources_filter(alias: str, source_ids: list[str] | None) -> tuple[str, list[Any]]:
-    if not source_ids:
+    """None searches every source; an empty list (only passive ones asked for) none."""
+    if source_ids is None:
         return "", []
     return f" AND {alias}.source_id = ANY(%s)", [source_ids]
 

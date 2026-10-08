@@ -257,6 +257,7 @@ const STATE_BADGES = {
   failed: ['Ingest failed', 'red'],
   stale: ['Ingest stopped', 'red'],
   never: ['Never ingested', 'grey'],
+  passive: ['Passive: kept, not searched', 'grey'],
 };
 
 function renderSourceStatus(item) {

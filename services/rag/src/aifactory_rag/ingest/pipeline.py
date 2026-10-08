@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -125,7 +127,41 @@ def _content_type_metadata(relative_path: str) -> dict[str, str]:
     return {}
 
 
+class PassiveSourceError(ValueError):
+    """An ingest of a source that is turned off (RQ-0033)."""
+
+
 def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir: str | None = None) -> IngestSummary:
+    if not find_source(config, source_id).enabled:
+        raise PassiveSourceError(
+            f"RAG source {source_id} is passive: its rows are kept but it is not ingested; set its ENABLED=on to ingest it"
+        )
+    with _source_lock(config, source_id):
+        return _ingest_source(config, source_id, force, subdir)
+
+
+@contextmanager
+def _source_lock(config: RagConfig, source_id: str) -> Iterator[None]:
+    """One ingest of a source at a time, across processes (RQ-0033).
+
+    The webhook queue orders the service's own ingests, but a CLI ingest (a
+    re-embedding of the whole corpus runs for hours) is another process: a
+    push arriving meanwhile would ingest the same documents at the same time
+    and leave them half replaced. The second one waits for the first.
+    """
+    key = f"aifactory-rag-ingest:{source_id}"
+    with psycopg.connect(config.database.connection_string, autocommit=True) as lock:
+        taken = lock.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (key,)).fetchone()[0]
+        if not taken:
+            print(f"RAG ingest waits  : another ingest of {source_id} is running", flush=True)
+            lock.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", (key,))
+        try:
+            yield
+        finally:
+            lock.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (key,))
+
+
+def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str | None) -> IngestSummary:
     run_started = perf_counter()
     # A corpus is only useful once it can be searched quickly, and the index has
     # to match the width this run writes, so it is ensured here rather than left

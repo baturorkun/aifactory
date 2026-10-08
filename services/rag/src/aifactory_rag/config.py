@@ -140,6 +140,9 @@ DEFAULT_INCLUDE = [
 class RagSourceConfig(BaseModel):
     id: str
     type: Literal["filesystem"] = "filesystem"
+    # A passive source (`RAG_SOURCE_N_ENABLED=off`, RQ-0033) keeps its rows but
+    # is neither ingested nor searched.
+    enabled: bool = True
     # The folder input. Optional: a source may hold only repositories.
     root_path: str | None = Field(default=None, alias="rootPath")
     # The slot's variable prefix (`RAG_SOURCE_3`); its numbered REPO_<k> and
@@ -220,6 +223,10 @@ class RagEmbeddingConfig(BaseModel):
     retry_base_seconds: float = Field(default=2.0, gt=0, alias="retryBaseSeconds")
     retry_max_seconds: float = Field(default=60.0, gt=0, alias="retryMaxSeconds")
     min_request_interval_seconds: float = Field(default=1.0, ge=0, alias="minRequestIntervalSeconds")
+    # How long one batch may take (Ollama on a lab machine: minutes for a large one).
+    timeout_seconds: float = Field(default=600.0, gt=0, alias="timeoutSeconds")
+    # Prefixed to questions, never to documents (Qwen3-Embedding is trained so).
+    query_instruction: str | None = Field(default=None, alias="queryInstruction")
 
 
 class RagLlmConfig(BaseModel):
@@ -333,6 +340,9 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
             if isinstance(source, dict) and source.get("envPrefix"):
                 source.update(git_entries_from_env(str(source["envPrefix"]), str(source.get("id", "")), os.environ))
                 source.update(dataflow_from_env(str(source["envPrefix"]), os.environ))
+                flag = (os.environ.get(f"{source['envPrefix']}_ENABLED") or "").strip().lower()
+                if flag:
+                    source["enabled"] = flag not in {"0", "off", "false", "no"}
     config = FactoryConfig.model_validate({"rag": expanded_rag})
     # A slot that names neither a folder nor a repository is an unused template
     # slot, not a source.
@@ -423,6 +433,16 @@ def _json_glob_list(value: str | None, name: str) -> list[str]:
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
         raise ValueError(f"{name} must be a JSON array of glob strings")
     return parsed
+
+
+def searchable_source_ids(config: RagConfig, requested: list[str] | None = None) -> list[str] | None:
+    """The sources a question or a graph query searches: those asked for, less
+    the passive ones (RQ-0033). None searches everything, as before, when none
+    is asked for and none is passive; an empty list searches nothing."""
+    passive = {source.id for source in config.sources if not source.enabled}
+    if not requested:
+        return [source.id for source in config.sources if source.enabled] if passive else None
+    return [source_id for source_id in requested if source_id not in passive]
 
 
 def find_source(config: RagConfig, source_id: str) -> RagSourceConfig:

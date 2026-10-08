@@ -76,7 +76,7 @@ def _dataflow_findings(
     kinds = dataflow.classify(question)
     if not kinds:
         return []
-    candidates = [s for s in config.sources if s.dataflow and (not source_ids or s.id in source_ids)]
+    candidates = [s for s in config.sources if s.dataflow and s.enabled and (not source_ids or s.id in source_ids)]
     settings = dataflow.JoernSettings(url=config.joern.url, workspace=config.joern.workspace)
     found: list[tuple[str, dict[str, Any]]] = []
     retrieved = {chunk.relative_path for chunk in chunks or []}
