@@ -249,6 +249,22 @@ class DutyCycleTests(unittest.TestCase):
         self.assertAlmostEqual(duty_cycle_pause(12.0, 0.5), 12.0)
         self.assertAlmostEqual(duty_cycle_pause(12.0, 0.25), 36.0)
 
+    def test_smallest_files_first_when_asked(self) -> None:
+        from aifactory_rag.ingest.pipeline import ordered_files
+        from aifactory_rag.ingest.sources import SourceFile
+
+        files = [
+            SourceFile(Path("/s/doc/reference-manual.pdf"), "doc/reference-manual.pdf", 9_000_000, 1.0),
+            SourceFile(Path("/s/doc/a.html"), "doc/a.html", 2_000, 1.0),
+            SourceFile(Path("/s/src/b.c"), "src/b.c", 2_000, 1.0),
+            SourceFile(Path("/s/README.txt"), "README.txt", 300, 1.0),
+        ]
+        self.assertEqual([f.relative_path for f in ordered_files(files, "path")], [f.relative_path for f in files])
+        self.assertEqual(
+            [f.relative_path for f in ordered_files(files, "size")],
+            ["README.txt", "doc/a.html", "src/b.c", "doc/reference-manual.pdf"],
+        )
+
     def test_the_environment_sets_batch_size_and_duty_cycle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "factory.config.json"

@@ -542,6 +542,7 @@ def _ingest_input(
     summary: IngestSummary,
     subdir: str | None,
 ) -> psycopg.Connection:
+    files = ordered_files(files, config.ingest.order)
     counts: dict[str, Any] = {
         "input": context.label,
         "scanned": len(files),
@@ -944,6 +945,13 @@ def _backfill_metadata(
             "UPDATE rag_chunks SET metadata = metadata || %s::jsonb WHERE document_id = %s AND status = 'active'",
             (patch, existing["id"]),
         )
+
+
+def ordered_files(files: list[SourceFile], order: str) -> list[SourceFile]:
+    """The files in ingest order: as scanned (by path), or smallest first."""
+    if order == "size":
+        return sorted(files, key=lambda file: (file.size, file.relative_path))
+    return files
 
 
 def duty_cycle_pause(elapsed: float, duty_cycle: float) -> float:
