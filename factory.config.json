@@ -135,7 +135,7 @@
       "chunkOverlap": 150,
       "batchSize": "${RAG_INGEST_BATCH_SIZE:-50}",
       "dutyCycle": "${RAG_INGEST_DUTY_CYCLE:-1}",
-      "order": "${RAG_INGEST_ORDER:-path}",
+      "order": "${RAG_INGEST_ORDER:-size}",
       "databaseReconnectRetries": 12,
       "databaseReconnectDelaySeconds": 5
     },

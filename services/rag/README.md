@@ -297,6 +297,14 @@ pnpm factory rag ingest --source source-2 --subdir "standards"
 
 The filter is recursive. Document identities remain relative to the configured source root, and deletion detection is limited to the selected subdirectory.
 
+An input's files are ingested smallest first, so most documents are searchable
+early and the few huge manuals come last; `RAG_INGEST_ORDER=path` restores the
+scan order. Two more variables shape a long re-embed that shares the embedding
+GPU with questions: `RAG_INGEST_BATCH_SIZE` (default 50 chunks per request) and
+`RAG_INGEST_DUTY_CYCLE` (default 1; 0.5 rests after each batch as long as the
+batch took). One ingest of a source runs at a time: a second one, from the CLI
+or a webhook, waits for the first.
+
 Gemini document embeddings use `batchEmbedContents`, the configured `rag.ingest.batchSize`, and bounded retry/backoff for transient rate-limit and service errors. The optional tuning fields are:
 
 ```json

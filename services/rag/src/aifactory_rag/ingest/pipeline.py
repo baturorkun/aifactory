@@ -948,7 +948,7 @@ def _backfill_metadata(
 
 
 def ordered_files(files: list[SourceFile], order: str) -> list[SourceFile]:
-    """The files in ingest order: as scanned (by path), or smallest first."""
+    """The files in ingest order: smallest first (the default), or as scanned (by path)."""
     if order == "size":
         return sorted(files, key=lambda file: (file.size, file.relative_path))
     return files

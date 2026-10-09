@@ -249,7 +249,7 @@ class DutyCycleTests(unittest.TestCase):
         self.assertAlmostEqual(duty_cycle_pause(12.0, 0.5), 12.0)
         self.assertAlmostEqual(duty_cycle_pause(12.0, 0.25), 36.0)
 
-    def test_smallest_files_first_when_asked(self) -> None:
+    def test_smallest_files_first_unless_path_order_is_asked(self) -> None:
         from aifactory_rag.ingest.pipeline import ordered_files
         from aifactory_rag.ingest.sources import SourceFile
 
@@ -280,6 +280,7 @@ class DutyCycleTests(unittest.TestCase):
                 default = load_factory_config(path).rag.ingest
         self.assertEqual((ingest.batch_size, ingest.duty_cycle), (10, 0.5))
         self.assertEqual((default.batch_size, default.duty_cycle), (50, 1.0))
+        self.assertEqual(default.order, "size")  # smallest first is the default
 
 
 if __name__ == "__main__":

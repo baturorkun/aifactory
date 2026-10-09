@@ -209,10 +209,11 @@ class RagIngestConfig(BaseModel):
     # pause, so a bulk re-embed leaves the embedding GPU free for questions
     # part of the time: 0.5 rests as long as each batch took.
     duty_cycle: float = Field(default=1.0, gt=0, le=1, alias="dutyCycle")
-    # The order an input's files are ingested in. `size` takes the smallest
-    # first: a long re-embed then makes most documents searchable early and
-    # leaves the few huge manuals for the end (the total time is the same).
-    order: Literal["path", "size"] = "path"
+    # The order an input's files are ingested in. `size`, the default, takes
+    # the smallest first: most documents become searchable early and the few
+    # huge manuals come last (the total time is the same). `path` is the
+    # order they are scanned in.
+    order: Literal["path", "size"] = "size"
     database_reconnect_retries: int = Field(default=12, ge=0, alias="databaseReconnectRetries")
     database_reconnect_delay_seconds: float = Field(default=5.0, gt=0, alias="databaseReconnectDelaySeconds")
 
