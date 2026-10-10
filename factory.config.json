@@ -145,6 +145,7 @@
       "dimensions": "${RAG_EMBEDDING_DIMENSIONS:-384}",
       "apiKey": "${RAG_API_KEY:-}",
       "baseUrl": "${RAG_EMBEDDING_BASE_URL:-}",
+      "hostRetrySeconds": "${RAG_EMBEDDING_HOST_RETRY_SECONDS:-60}",
       "timeoutSeconds": "${RAG_EMBEDDING_TIMEOUT_SECONDS:-600}",
       "queryInstruction": "${RAG_EMBEDDING_QUERY_INSTRUCTION:-}",
       "cacheDir": "${RAG_EMBEDDING_CACHE_DIR:-./.cache/fastembed}",

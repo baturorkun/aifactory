@@ -223,7 +223,10 @@ class RagEmbeddingConfig(BaseModel):
     model: str = "text-embedding-3-small"
     dimensions: int = 1536
     api_key: str | None = Field(default=None, alias="apiKey")
+    # Ollama: one address, or several separated by commas (RQ-0035).
     base_url: str | None = Field(default=None, alias="baseUrl")
+    # How long an Ollama host that did not answer is left out before it is tried again.
+    host_retry_seconds: float = Field(default=60.0, ge=0, alias="hostRetrySeconds")
     cache_dir: str | None = Field(default=None, alias="cacheDir")
     model_path: str | None = Field(default=None, alias="modelPath")
     local_files_only: bool = Field(default=False, alias="localFilesOnly")

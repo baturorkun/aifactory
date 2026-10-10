@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import random
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -182,26 +184,109 @@ def fit_dimensions(vector: list[float], dimensions: int) -> list[float]:
     return [value / norm for value in cut]
 
 
+# A host that does not accept a connection within this time is away: a question
+# must not wait for a switched-off machine the way a batch waits for its vectors.
+OLLAMA_CONNECT_TIMEOUT_SECONDS = 5.0
+# Requests smaller than this (a question) say nothing about a host's speed.
+OLLAMA_MEASURED_CHARACTERS = 2000
+_CONNECTION_ERRORS = (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException)
+
+
+class OllamaHost:
+    """What is known about one Ollama address (RQ-0035).
+
+    Kept for the life of the process and shared by every adapter: the API makes
+    a new adapter for each question, and a question must not rediscover that a
+    host is switched off.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+        self.rate: float | None = None  # characters a second, recent average
+        self.away_until = 0.0  # monotonic time before which it is not tried
+        self.digest: str | None = None  # the model's digest once checked; "" when the host lacks the model
+        self.why: str | None = None  # why it is left out, short
+        self.said: str | None = None  # the same as printed, so each change is printed once
+
+    def measured(self, characters: int, seconds: float) -> None:
+        if characters < OLLAMA_MEASURED_CHARACTERS or seconds <= 0:
+            return
+        rate = characters / seconds
+        self.rate = rate if self.rate is None else 0.7 * self.rate + 0.3 * rate
+
+
+_OLLAMA_HOSTS: dict[tuple[str, str], OllamaHost] = {}
+# model -> (digest, the host that set it)
+_OLLAMA_MODEL_DIGESTS: dict[str, tuple[str, str]] = {}
+_OLLAMA_HOSTS_LOCK = threading.Lock()
+
+
+def ollama_host(url: str, model: str) -> OllamaHost:
+    with _OLLAMA_HOSTS_LOCK:
+        return _OLLAMA_HOSTS.setdefault((url, model), OllamaHost(url))
+
+
+def ollama_urls(base_url: str | None) -> list[str]:
+    """`baseUrl` is one address or several separated by commas, in order of preference."""
+    urls = [part.strip().rstrip("/") for part in (base_url or "").split(",") if part.strip()]
+    return list(dict.fromkeys(urls)) or ["http://localhost:11434"]
+
+
+def share_out(count: int, hosts: list[OllamaHost]) -> list[tuple[OllamaHost, int, int]]:
+    """Split `count` texts between hosts in proportion to their measured speed.
+
+    Returns `(host, start, end)` slices in the order of the hosts. A host that
+    has not been measured counts as an average one, so with no measurement at
+    all the split is equal. A single text goes to the fastest host, the first
+    listed one among equals.
+    """
+    known = [host.rate for host in hosts if host.rate]
+    average = sum(known) / len(known) if known else 1.0
+    weights = [host.rate or average for host in hosts]
+    total = sum(weights)
+    exact = [count * weight / total for weight in weights]
+    shares = [int(value) for value in exact]
+    # The texts left over by rounding down go to the largest remainders, the
+    # faster host first among equal ones.
+    order = sorted(range(len(hosts)), key=lambda i: (-(exact[i] - shares[i]), -weights[i], i))
+    for i in order[: count - sum(shares)]:
+        shares[i] += 1
+    slices, start = [], 0
+    for host, share in zip(hosts, shares):
+        if share:
+            slices.append((host, start, start + share))
+            start += share
+    return slices
+
+
 class OllamaEncodingError(RuntimeError):
     """Ollama computed a vector it could not encode (NaN) for some input of a batch."""
 
 
-class OllamaEmbeddingAdapter(EmbeddingAdapter):
-    """Ollama's `/api/embed`: one request per batch (RQ-0033).
+class _OllamaHostsAway(RuntimeError):
+    """No listed host took the request; carries the last reason."""
 
-    The Ollama runs on a lab machine, so a refused or dropped connection (the
-    machine restarting) is retried with backoff instead of failing the ingest.
+
+class OllamaEmbeddingAdapter(EmbeddingAdapter):
+    """Ollama's `/api/embed`: one request per batch and host (RQ-0033, RQ-0035).
+
+    The Ollamas run on lab machines. With one address a refused or dropped
+    connection (the machine restarting) is retried with backoff instead of
+    failing the ingest. With several, a batch is shared out between the hosts
+    that answer, in proportion to their speed; a host that is away is stepped
+    over and tried again later, and the backoff starts only when none answers.
     """
 
     def __init__(self, config: RagEmbeddingConfig):
         self.model = config.model
         self.dimensions = config.dimensions
-        self.base_url = (config.base_url or "http://localhost:11434").rstrip("/")
+        self.hosts = [ollama_host(url, config.model) for url in ollama_urls(config.base_url)]
         self.instruction = query_instruction_for(config)
         self.max_retries = config.max_retries
         self.retry_base_seconds = config.retry_base_seconds
         self.retry_max_seconds = config.retry_max_seconds
-        self._client = httpx.Client(timeout=config.timeout_seconds)
+        self.host_retry_seconds = config.host_retry_seconds
+        self._client = httpx.Client(timeout=httpx.Timeout(config.timeout_seconds, connect=OLLAMA_CONNECT_TIMEOUT_SECONDS))
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self._embed_isolating(texts) if texts else []
@@ -230,25 +315,141 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
             return self._embed_isolating(texts[:middle]) + self._embed_isolating(texts[middle:])
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
+        names = ", ".join(host.url for host in self.hosts)
         attempt = 0
         while True:
             try:
-                response = self._client.post(f"{self.base_url}/api/embed", json={"model": self.model, "input": texts})
-            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
+                return self._embed_shared(texts)
+            except _OllamaHostsAway as exc:
                 if attempt >= self.max_retries:
-                    raise RuntimeError(f"Ollama at {self.base_url} is not reachable: {exc.__class__.__name__}") from None
+                    raise RuntimeError(f"Ollama at {names} is not reachable: {exc}") from None
                 delay = min(self.retry_max_seconds, self.retry_base_seconds * (2 ** attempt))
-                print(f"Ollama at {self.base_url} unreachable ({exc.__class__.__name__}); retrying in {delay:.0f}s", flush=True)
+                print(f"Ollama at {names} unreachable ({exc}); retrying in {delay:.0f}s", flush=True)
                 time.sleep(delay)
                 attempt += 1
+
+    def _embed_shared(self, texts: list[str]) -> list[list[float]]:
+        """One pass over the hosts: every text is embedded, or no host is left."""
+        vectors: list[list[float] | None] = [None] * len(texts)
+        pending = list(range(len(texts)))
+        failed: set[str] = set()
+        # When every host is in its pause there is nothing to step over to: all
+        # of them are tried again, which is the single-host retry of RQ-0033.
+        hosts = self._ready_hosts() or self._ready_hosts(ignore_pause=True)
+        while pending:
+            if not hosts:
+                raise _OllamaHostsAway("; ".join(dict.fromkeys(host.why for host in self.hosts if host.why)) or "no host")
+            parts = [(host, pending[start:end]) for host, start, end in share_out(len(pending), hosts)]
+            pending = []
+            for host, indices, outcome in self._send(parts, texts):
+                if isinstance(outcome, Exception):
+                    if not self._host_failed(outcome):
+                        raise outcome
+                    self._away(host, outcome)
+                    failed.add(host.url)
+                    pending.extend(indices)
+                    continue
+                for index, vector in zip(indices, outcome):
+                    vectors[index] = vector
+            pending.sort()
+            hosts = [host for host in self._ready_hosts() if host.url not in failed] if pending else []
+        return vectors  # type: ignore[return-value]
+
+    def _send(self, parts: list[tuple[OllamaHost, list[int]]], texts: list[str]) -> list[tuple[OllamaHost, list[int], Any]]:
+        def one(host: OllamaHost, indices: list[int]) -> Any:
+            try:
+                return self._request(host, [texts[index] for index in indices])
+            except Exception as exc:  # noqa: BLE001 - sorted out by the caller
+                return exc
+
+        if len(parts) == 1:
+            return [(host, indices, one(host, indices)) for host, indices in parts]
+        with ThreadPoolExecutor(max_workers=len(parts)) as pool:
+            futures = [pool.submit(one, host, indices) for host, indices in parts]
+            return [(host, indices, future.result()) for (host, indices), future in zip(parts, futures)]
+
+    def _request(self, host: OllamaHost, texts: list[str]) -> list[list[float]]:
+        started = time.monotonic()
+        response = self._client.post(f"{host.url}/api/embed", json={"model": self.model, "input": texts})
+        if response.status_code >= 400:
+            message = f"Ollama embedding failed: HTTP {response.status_code}: {response.text[:300]}"
+            if "NaN" in response.text:
+                raise OllamaEncodingError(message)
+            raise _OllamaServerError(message) if response.status_code >= 500 else RuntimeError(message)
+        embeddings = response.json().get("embeddings")
+        if not embeddings or len(embeddings) != len(texts):
+            raise RuntimeError("Ollama embedding response did not include one embedding per input.")
+        host.measured(sum(len(text) for text in texts), time.monotonic() - started)
+        host.away_until, host.why = 0.0, None
+        return [fit_dimensions([float(value) for value in vector], self.dimensions) for vector in embeddings]
+
+    def _host_failed(self, error: Exception) -> bool:
+        """Whether an error means the host is away, not that the texts are wrong.
+
+        A server error (the model does not fit the GPU any more) counts only
+        when another host is listed to take the texts.
+        """
+        return isinstance(error, _CONNECTION_ERRORS) or (isinstance(error, _OllamaServerError) and len(self.hosts) > 1)
+
+    def _away(self, host: OllamaHost, error: Exception) -> None:
+        why = error.__class__.__name__ if isinstance(error, _CONNECTION_ERRORS) else str(error)
+        self._leave_out(host, why, f"Ollama at {host.url} is away ({why})")
+
+    def _leave_out(self, host: OllamaHost, why: str, message: str) -> None:
+        host.away_until = time.monotonic() + self.host_retry_seconds
+        host.why = why
+        host.digest = None  # checked again when it is tried again
+        # With one host the retry loop reports it; with several each change is said once.
+        if len(self.hosts) > 1 and host.said != message:
+            print(f"{message}; tried again every {self.host_retry_seconds:.0f}s", flush=True)
+        host.said = message
+
+    def _ready_hosts(self, ignore_pause: bool = False) -> list[OllamaHost]:
+        now = time.monotonic()
+        ready = [host for host in self.hosts if ignore_pause or host.away_until <= now]
+        if len(self.hosts) == 1:
+            return ready
+        # Vectors of two models must never share an index: with several hosts
+        # each one shows the digest of the model before it gets a text. The
+        # first listed host that answers sets the digest for the process.
+        for host in ready:
+            if host.digest is None:
+                self._check_model(host)
+        with _OLLAMA_HOSTS_LOCK:
+            first = next((host for host in ready if host.digest), None)
+            if first is not None:
+                _OLLAMA_MODEL_DIGESTS.setdefault(self.model, (first.digest or "", first.url))
+            wanted, wanted_url = _OLLAMA_MODEL_DIGESTS.get(self.model, ("", ""))
+        usable = []
+        for host in ready:
+            if host.digest is None:
                 continue
-            if response.status_code >= 400:
-                error = OllamaEncodingError if "NaN" in response.text else RuntimeError
-                raise error(f"Ollama embedding failed: HTTP {response.status_code}: {response.text[:300]}")
-            embeddings = response.json().get("embeddings")
-            if not embeddings or len(embeddings) != len(texts):
-                raise RuntimeError("Ollama embedding response did not include one embedding per input.")
-            return [fit_dimensions([float(value) for value in vector], self.dimensions) for vector in embeddings]
+            if host.digest != wanted:
+                has = f"has {self.model} {host.digest[:12]}" if host.digest else f"does not have {self.model}"
+                against = f", {wanted_url} has {wanted[:12]}" if wanted else ""
+                self._leave_out(host, f"{host.url} {has}", f"Ollama at {host.url} refused: it {has}{against}")
+                continue
+            if host.said:
+                print(f"Ollama at {host.url} is back", flush=True)
+                host.said = None
+            usable.append(host)
+        return usable
+
+    def _check_model(self, host: OllamaHost) -> None:
+        try:
+            response = self._client.get(f"{host.url}/api/tags")
+        except _CONNECTION_ERRORS as exc:
+            self._away(host, exc)
+            return
+        if response.status_code >= 400:
+            self._away(host, _OllamaServerError(f"HTTP {response.status_code} from /api/tags"))
+            return
+        name = self.model if ":" in self.model else f"{self.model}:latest"
+        host.digest = next((str(model.get("digest") or "") for model in response.json().get("models") or [] if model.get("name") == name), "")
+
+
+class _OllamaServerError(RuntimeError):
+    """Ollama answered with a 5xx that is not about the texts."""
 
 
 class LocalEmbeddingAdapter(EmbeddingAdapter):

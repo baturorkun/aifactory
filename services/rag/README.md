@@ -397,6 +397,46 @@ After that, set `RAG_EMBEDDING_LOCAL_FILES_ONLY=true` to prohibit network
 access. For an air-gapped installation, pre-stage the compatible ONNX model and
 set `RAG_EMBEDDING_MODEL_PATH` to that directory.
 
+## Embeddings On Ollama
+
+Embeddings can come from an Ollama in the lab, with no API key and no text
+leaving the network:
+
+```dotenv
+RAG_EMBEDDING_PROVIDER=ollama
+RAG_EMBEDDING_MODEL=qwen3-embedding:8b
+RAG_EMBEDDING_DIMENSIONS=2000
+RAG_EMBEDDING_BASE_URL=http://192.168.1.57:11434,http://192.168.1.3:11434
+RAG_EMBEDDING_TIMEOUT_SECONDS=900
+```
+
+A wider vector is cut to `RAG_EMBEDDING_DIMENSIONS` and normalised again.
+Questions to a Qwen3-Embedding model carry its retrieval instruction
+(`RAG_EMBEDDING_QUERY_INSTRUCTION` replaces it); documents never do.
+
+`RAG_EMBEDDING_BASE_URL` is one address or several separated by commas, the
+preferred one first:
+
+- An ingest batch is split between the hosts that answer, in proportion to the
+  speed measured for each (an unmeasured host gets an equal share), and the
+  parts are sent at the same time. A fast and a slow host finish together.
+- A question goes to the fastest host that answers, the first listed one until
+  speeds are known.
+- A host that refuses or drops the connection, does not accept one within five
+  seconds, or answers with a server error is stepped over: its texts go to the
+  other hosts in the same batch and it is tried again after
+  `RAG_EMBEDDING_HOST_RETRY_SECONDS` (default 60). Only when no host answers is
+  the request retried with backoff, and it fails after `maxRetries`.
+- With several hosts each one is asked for the digest of the model
+  (`/api/tags`) before it gets a text, and again after it was away. The first
+  listed host that answers sets the digest for the process; a host with another
+  digest, or without the model, is refused. Pull the same tag on every host and
+  compare `ollama list`: two quantisations of one model do not share an index.
+
+Going away, coming back and a refusal are each printed once in the ingest log.
+Every host must serve the model with a context long enough for a chunk; a
+smaller GPU can run a shorter context (`OLLAMA_CONTEXT_LENGTH`) than the others.
+
 ## Project-Configured Grounding
 
 The AI Factory root config holds shared connection settings:
