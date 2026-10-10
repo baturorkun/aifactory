@@ -1,0 +1,189 @@
+{
+  "model": {
+    "provider": "${AI_PROVIDER}",
+    "name": "${AI_MODEL}",
+    "reviewerName": "${AI_REVIEWER_MODEL}",
+    "baseUrl": "${AI_BASE_URL:-}",
+    "apiKey": "${AI_API_KEY:-}",
+    "executable": "${AI_CODEX_EXECUTABLE:-codex}",
+    "reasoningEffort": "${AI_CODEX_REASONING_EFFORT:-medium}",
+    "timeoutMs": 180000,
+    "maxTokens": 32768,
+    "temperature": 0.2
+  },
+  "pipeline": {
+    "maxRetries": 3,
+    "timeboxMs": 180000,
+    "maxFixIterations": 3
+  },
+  "paths": {
+    "requirements": "./requirements",
+    "constraints": "./constraints",
+    "runs": "./runs",
+    "templates": "./templates",
+    "prompts": "./packages/agent-factory/prompts"
+  },
+  "targetProject": {
+    "applyArtifacts": false,
+    "allowedPaths": [
+      "src",
+      "app",
+      "components",
+      "lib",
+      "tests"
+    ],
+    "commands": {
+      "typeCheck": "pnpm typecheck",
+      "lint": "pnpm lint",
+      "test": "pnpm test"
+    }
+  },
+  "repositoryPlatforms": {
+    "gitlab": {
+      "baseUrl": "${GITLAB_URL:-}",
+      "projectId": "${GITLAB_PROJECT_ID:-}",
+      "token": "${GITLAB_TOKEN:-}",
+      "targetBranch": "main",
+      "removeSourceBranchOnMerge": true,
+      "labels": {
+        "draft": "factory::draft",
+        "ready": "factory::ready",
+        "running": "factory::running",
+        "needsFix": "factory::needs-fix",
+        "passed": "factory::passed"
+      }
+    }
+  },
+  "domain": {
+    "rules": []
+  },
+  "requirementBranches": {
+    "enabled": true,
+    "branchPrefix": "factory/",
+    "baseBranch": "main",
+    "remote": "origin"
+  },
+  "rag": {
+    "database": {
+      "connectionString": "${RAG_DATABASE_URL:-postgresql://aifactory_rag:aifactory_rag@localhost:5432/aifactory_rag}"
+    },
+    "sources": [
+      {
+        "id": "${RAG_SOURCE_1_ID:-source-1}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_1_PATH:-}",
+        "envPrefix": "RAG_SOURCE_1",
+        "excludeAdditions": "${RAG_SOURCE_1_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_2_ID:-source-2}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_2_PATH:-}",
+        "envPrefix": "RAG_SOURCE_2",
+        "excludeAdditions": "${RAG_SOURCE_2_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_3_ID:-source-3}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_3_PATH:-}",
+        "envPrefix": "RAG_SOURCE_3",
+        "excludeAdditions": "${RAG_SOURCE_3_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_4_ID:-source-4}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_4_PATH:-}",
+        "envPrefix": "RAG_SOURCE_4",
+        "include": [
+          "**/*.md",
+          "**/*.rst",
+          "**/*.txt",
+          "**/*.repl",
+          "**/*.resc",
+          "**/*.cs",
+          "**/*.h",
+          "**/*.c",
+          "**/*.pdf",
+          "**/*.xlsx"
+        ],
+        "excludeAdditions": "${RAG_SOURCE_4_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_5_ID:-source-5}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_5_PATH:-}",
+        "envPrefix": "RAG_SOURCE_5",
+        "excludeAdditions": "${RAG_SOURCE_5_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_6_ID:-source-6}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_6_PATH:-}",
+        "envPrefix": "RAG_SOURCE_6",
+        "excludeAdditions": "${RAG_SOURCE_6_EXCLUDE_ADDITIONS:-[]}"
+      }
+    ],
+    "git": {
+      "mirrorDir": "${RAG_GIT_MIRROR_DIR:-/srv/rag-sources/git}"
+    },
+    "joern": {
+      "url": "${RAG_JOERN_URL:-http://127.0.0.1:8090}",
+      "workspace": "${RAG_JOERN_WORKSPACE:-/srv/rag-sources/joern}"
+    },
+    "ingest": {
+      "chunkSize": 1200,
+      "chunkOverlap": 150,
+      "batchSize": "${RAG_INGEST_BATCH_SIZE:-50}",
+      "dutyCycle": "${RAG_INGEST_DUTY_CYCLE:-1}",
+      "order": "${RAG_INGEST_ORDER:-size}",
+      "databaseReconnectRetries": 12,
+      "databaseReconnectDelaySeconds": 5
+    },
+    "embedding": {
+      "provider": "${RAG_EMBEDDING_PROVIDER:-local}",
+      "model": "${RAG_EMBEDDING_MODEL:-BAAI/bge-small-en-v1.5}",
+      "dimensions": "${RAG_EMBEDDING_DIMENSIONS:-384}",
+      "apiKey": "${RAG_API_KEY:-}",
+      "baseUrl": "${RAG_EMBEDDING_BASE_URL:-}",
+      "hostRetrySeconds": "${RAG_EMBEDDING_HOST_RETRY_SECONDS:-60}",
+      "timeoutSeconds": "${RAG_EMBEDDING_TIMEOUT_SECONDS:-600}",
+      "queryInstruction": "${RAG_EMBEDDING_QUERY_INSTRUCTION:-}",
+      "cacheDir": "${RAG_EMBEDDING_CACHE_DIR:-./.cache/fastembed}",
+      "modelPath": "${RAG_EMBEDDING_MODEL_PATH:-}",
+      "localFilesOnly": "${RAG_EMBEDDING_LOCAL_FILES_ONLY:-false}",
+      "threads": "${RAG_EMBEDDING_THREADS:-4}",
+      "maxRetries": 6,
+      "retryBaseSeconds": 2,
+      "retryMaxSeconds": 60,
+      "minRequestIntervalSeconds": 1
+    },
+    "llm": {
+      "provider": "${RAG_LLM_PROVIDER:-gemini}",
+      "model": "${RAG_LLM_MODEL:-gemini-2.5-flash}",
+      "apiKey": "${RAG_API_KEY:-}",
+      "temperature": 0.1,
+      "effort": "${RAG_LLM_EFFORT:-}",
+      "timeoutSeconds": "${RAG_LLM_TIMEOUT_SECONDS:-300}"
+    },
+    "retrieval": {
+      "topK": "${RAG_TOP_K:-12}"
+    },
+    "auth": {
+      "provider": "none",
+      "enabled": false,
+      "tenantId": "${ENTRA_TENANT_ID:-}",
+      "audience": "${ENTRA_AUDIENCE:-}"
+    },
+    "grounding": {
+      "enabled": false,
+      "chatUrl": "${RAG_CHAT_URL}",
+      "timeoutMs": 120000,
+      "failOpen": true,
+      "maxContextChars": 12000
+    },
+    "api": {
+      "host": "127.0.0.1",
+      "port": 8765
+    }
+  }
+}
