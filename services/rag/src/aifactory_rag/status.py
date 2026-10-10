@@ -6,7 +6,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-# A run still marked running after this long died without finishing.
+# A run still marked running after this long died without finishing, unless
+# an ingest of its source is known to be alive: a re-embedding of a large
+# source runs for days (simics, 39M tokens, showed "Ingest stopped" at hour 6).
 STALE_AFTER = timedelta(hours=6)
 
 RUN_COLUMNS = (
@@ -25,6 +27,7 @@ def summarize(
     changes: list[dict[str, Any]] | None = None,
     folders: dict[str, str] | None = None,
     passive: set[str] | None = None,
+    live: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """One entry per source.
 
@@ -42,7 +45,7 @@ def summarize(
         current = latest.get(source_id)
         last = finished.get(source_id)
         running = bool(current and current["status"] == "running" and current.get("finished_at") is None)
-        stale = running and _aware(current["started_at"]) < now - STALE_AFTER
+        stale = running and source_id not in (live or set()) and _aware(current["started_at"]) < now - STALE_AFTER
         if source_id in (passive or set()):
             state = "passive"  # kept, neither ingested nor searched (RQ-0033)
         elif running and not stale:

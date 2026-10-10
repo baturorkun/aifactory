@@ -35,6 +35,14 @@ class SummaryTests(unittest.TestCase):
             "updating": "updating", "stale": "stale", "never": "never",
         })
 
+    def test_a_long_run_whose_ingest_is_alive_is_updating_not_stale(self) -> None:
+        """simics re-embedded for two days and showed "Ingest stopped" from hour 6."""
+        long_run = [run(7, "simics", "running", NOW - timedelta(hours=30), None)]
+        [alive] = summarize(["simics"], long_run, [], [], [], NOW, live={"simics"})
+        [dead] = summarize(["simics"], long_run, [], [], [], NOW, live=set())
+        self.assertEqual((alive["state"], alive["running"]["id"]), ("updating", 7))
+        self.assertEqual((dead["state"], dead["running"]), ("stale", None))
+
     def test_a_running_source_keeps_its_last_finished_update(self) -> None:
         done = NOW - timedelta(hours=1)
         [item] = summarize(["s"], [run(9, "s", "running", NOW, None)], [run(8, "s", "passed", done, done)], [], [], NOW)

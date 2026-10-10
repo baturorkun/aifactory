@@ -227,6 +227,17 @@ class FakeHousekeepingConnection:
         return (self.params[0] != "aifactory-rag-ingest:arinc",)
 
 
+class LiveIngestTests(unittest.TestCase):
+    def test_a_source_whose_lock_is_held_is_being_ingested(self) -> None:
+        from aifactory_rag.ingest.pipeline import sources_being_ingested
+
+        fake = FakeHousekeepingConnection()  # arinc's lock is held, simics's is free
+        with patch("aifactory_rag.ingest.pipeline.psycopg.connect", return_value=fake):
+            live = sources_being_ingested("postgresql://test", ["arinc", "simics"])
+        self.assertEqual(live, {"arinc"})
+        self.assertEqual(fake.unlocked, ["aifactory-rag-ingest:simics"])  # the probe gives its lock back
+
+
 class InterruptedRunTests(unittest.TestCase):
     def test_runs_of_sources_nobody_ingests_are_closed_and_live_ones_kept(self) -> None:
         from aifactory_rag.ingest.pipeline import close_interrupted_runs

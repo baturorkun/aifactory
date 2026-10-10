@@ -173,6 +173,19 @@ def close_interrupted_runs(connection_string: str) -> list[int]:
     return closed
 
 
+def sources_being_ingested(connection_string: str, source_ids: list[str]) -> set[str]:
+    """The sources whose ingest lock is held: an ingest of them is alive, in any process."""
+    live: set[str] = set()
+    with psycopg.connect(connection_string, autocommit=True) as conn:
+        for source_id in source_ids:
+            key = _lock_key(source_id)
+            if conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (key,)).fetchone()[0]:
+                conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (key,))
+            else:
+                live.add(source_id)
+    return live
+
+
 @contextmanager
 def _source_lock(config: RagConfig, source_id: str) -> Iterator[None]:
     """One ingest of a source at a time, across processes (RQ-0033).

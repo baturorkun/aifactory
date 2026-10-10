@@ -11,7 +11,7 @@ from aifactory_rag import build_info
 from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config, searchable_source_ids
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
-from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source
+from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source, sources_being_ingested
 from aifactory_rag import dataflow, status, webhook
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question
@@ -152,7 +152,13 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 FROM rag_dataflow_graphs WHERE source_id = ANY(%s)""", (ids,))
         folders = {source.id: source.root_path for source in factory_config.rag.sources if source.root_path}
         passive = {source.id for source in factory_config.rag.sources if not source.enabled}
-        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes, folders=folders, passive=passive)
+        # Only a run that looks running needs the question "is it alive?".
+        running = [row["source_id"] for row in latest if row["status"] == "running"]
+        try:
+            live = sources_being_ingested(factory_config.rag.database.connection_string, running) if running else set()
+        except Exception:  # noqa: BLE001 - the status page must not fail on a lock probe
+            live = set()
+        return status.summarize(ids, latest, finished, inputs, graphs, changes=changes, folders=folders, passive=passive, live=live)
 
     @app.get("/documents")
     def documents(sourceId: str | None = None, _: dict[str, Any] = Depends(auth_claims)) -> list[dict]:
