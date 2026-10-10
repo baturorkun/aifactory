@@ -1,0 +1,48 @@
+{
+  "runId": "20261010215738-RQ-0035",
+  "requirementId": "RQ-0035",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261010215738-RQ-0035/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-10T21:57:38.271Z",
+  "updatedAt": "2026-10-10T22:25:26.360Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-10T21:57:42.416Z",
+      "finishedAt": "2026-10-10T22:04:59.954Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    ".ruff_cache/.gitignore",
+    ".ruff_cache/0.16.10/12613866657622272541",
+    ".ruff_cache/0.16.10/13549339773376111376",
+    ".ruff_cache/0.16.10/16648158301630994442",
+    ".ruff_cache/0.16.10/17088938272575661312",
+    ".ruff_cache/0.16.10/7026750713621207618",
+    ".ruff_cache/CACHEDIR.TAG",
+    "factory.config.json",
+    "services/rag/.pytest_cache/v/cache/nodeids",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/embeddings.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/embeddings.py",
+    "services/rag/tests/__pycache__/test_embedding_hosts.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/test_embedding_hosts.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-10-10T22:25:26.364Z",
+  "approvedBy": "Batur Orkun"
+}
