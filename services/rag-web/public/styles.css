@@ -138,6 +138,12 @@ button { color: inherit; }
 .build-facts dt { color: var(--muted); font-size: 10px; }
 .build-facts dd { overflow: hidden; margin: 0; color: var(--text); font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .build-warning { margin: 2px 0 0; color: var(--danger); font-size: 10px; }
+.model-details summary { width: fit-content; color: var(--accent-strong); font-size: 10px; cursor: pointer; }
+.model-details summary:hover { color: #a1f4d8; }
+.model-facts { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line-soft); }
+.model-facts dt { overflow: hidden; flex: none; max-width: 60%; text-overflow: ellipsis; white-space: nowrap; }
+.model-facts dd.ready { color: var(--accent-strong); }
+.model-facts dd.problem { color: var(--danger); }
 .build-card.pending .model-indicator { background: #d4a84f; box-shadow: 0 0 0 3px rgba(212, 168, 79, 0.1); }
 
 .sidebar-footer { display: flex; align-items: center; gap: 9px; margin-top: auto; color: var(--muted); font-size: 12px; }

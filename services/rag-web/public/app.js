@@ -9,14 +9,13 @@ const sendButton = document.querySelector('#send-button');
 const clearButton = document.querySelector('#clear-chat');
 const newChatButton = document.querySelector('#new-chat');
 const sessionList = document.querySelector('#session-list');
-const modelCard = document.querySelector('.model-card');
-const llmModel = document.querySelector('#llm-model');
-const llmProvider = document.querySelector('#llm-provider');
 const buildCard = document.querySelector('.build-card');
 const buildVersion = document.querySelector('#build-version');
 const buildId = document.querySelector('#build-id');
 const buildUpdated = document.querySelector('#build-updated');
 const buildWarning = document.querySelector('#build-warning');
+const modelDetails = document.querySelector('#models');
+const modelFacts = document.querySelector('#model-facts');
 
 let busy = false;
 const SESSION_STORAGE_KEY = 'aifactory-rag-chat-sessions-v1';
@@ -430,21 +429,50 @@ async function loadRuntimeInfo() {
   try {
     const response = await fetch('/api/runtime-info');
     if (!response.ok) throw new Error(`API returned ${response.status}`);
-    const info = await response.json();
-    if (!info.llm?.provider || !info.llm?.model) throw new Error('LLM configuration is missing');
-    llmModel.textContent = info.llm.model;
-    llmModel.title = info.llm.model;
-    llmProvider.textContent = `${info.llm.provider} provider`;
-    modelCard.classList.remove('unavailable');
-    renderBuildInfo(info.build);
+    renderBuildInfo((await response.json()).build);
   } catch {
-    llmModel.textContent = 'Unavailable';
-    llmModel.removeAttribute('title');
-    llmProvider.textContent = 'Runtime information unavailable';
-    modelCard.classList.add('unavailable');
     renderBuildInfo(null);
   }
 }
+
+// The answer model and the embedding model with its hosts. Read each time the
+// list is opened, not with the page: the API asks every embedding host then,
+// and a switched-off one takes two seconds to say nothing.
+async function loadModels() {
+  renderModelFacts([['Models', 'Reading…']]);
+  try {
+    const response = await fetch('/api/models');
+    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    const { answer, embedding } = await response.json();
+    const rows = [
+      ['Answer', answer.model, `${answer.provider} provider`],
+      ['Embedding', embedding.model, `${embedding.provider} provider, ${embedding.dimensions} dimensions`],
+    ];
+    for (const host of embedding.hosts || []) {
+      const detail = host.digest ? `model digest ${host.digest}` : '';
+      rows.push([host.address, host.state, detail, host.state === 'ready' ? 'ready' : 'problem']);
+    }
+    renderModelFacts(rows);
+  } catch {
+    renderModelFacts([['Models', 'Unavailable', '', 'problem']]);
+  }
+}
+
+function renderModelFacts(rows) {
+  modelFacts.replaceChildren(...rows.map(([label, value, title, state]) => {
+    const row = document.createElement('div');
+    const term = document.createElement('dt');
+    const fact = document.createElement('dd');
+    term.textContent = label;
+    fact.textContent = value;
+    if (title) fact.title = title;
+    if (state) fact.classList.add(state);
+    row.append(term, fact);
+    return row;
+  }));
+}
+
+modelDetails.addEventListener('toggle', () => { if (modelDetails.open) void loadModels(); });
 
 // Local date and time, minutes precision; the full ISO timestamp is the tooltip.
 function formatStamp(iso) {

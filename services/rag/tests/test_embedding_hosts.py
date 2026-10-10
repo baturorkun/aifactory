@@ -22,6 +22,7 @@ from aifactory_rag.config import RagEmbeddingConfig
 from aifactory_rag.embeddings import (
     OllamaEmbeddingAdapter,
     OllamaHost,
+    embedding_report,
     ollama_urls,
     share_out,
 )
@@ -257,6 +258,38 @@ class SeveralHostsTests(unittest.TestCase):
         client = self.adapter(Lab(FAST, SLOW), FAST, SLOW, timeoutSeconds=900)
         self.assertEqual(client._client.timeout.connect, 5.0)
         self.assertEqual(client._client.timeout.read, 900)
+
+
+class ModelListTests(unittest.TestCase):
+    """What the web page shows when its model list is opened."""
+
+    def report(self, lab: Lab, *urls: str) -> dict:
+        config = RagEmbeddingConfig.model_validate({"provider": "ollama", "model": MODEL, "dimensions": 2000, "baseUrl": ",".join(urls)})
+        with patch("aifactory_rag.embeddings.httpx.get", lambda url, timeout: lab.get(url)):
+            return embedding_report(config)
+
+    def test_every_host_is_asked_now_and_named_without_its_scheme(self) -> None:
+        lab = Lab(FAST, SLOW)
+        report = self.report(lab, FAST, SLOW)
+        self.assertEqual((report["provider"], report["model"], report["dimensions"]), ("ollama", MODEL, 2000))
+        self.assertEqual(report["hosts"], [
+            {"address": "rtx:11434", "state": "ready", "digest": DIGEST[:12]},
+            {"address": "builder:11434", "state": "ready", "digest": DIGEST[:12]},
+        ])
+        self.assertEqual(sorted(lab.asked_for_tags), sorted([FAST, SLOW]))
+
+    def test_a_host_that_is_away_lacks_the_model_or_has_another_one_says_so(self) -> None:
+        lab = Lab(FAST, SLOW, THIRD)
+        lab.down.add(FAST)
+        lab.digests[THIRD] = OTHER_DIGEST
+        self.assertEqual([host["state"] for host in self.report(lab, FAST, SLOW, THIRD)["hosts"]], ["away", "ready", "other model"])
+        lab.down.clear()
+        lab.digests[THIRD] = None
+        self.assertEqual([host["state"] for host in self.report(lab, FAST, SLOW, THIRD)["hosts"]], ["ready", "ready", "no model"])
+
+    def test_another_provider_has_no_hosts(self) -> None:
+        report = embedding_report(RagEmbeddingConfig.model_validate({"provider": "local", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384}))
+        self.assertEqual(report, {"provider": "local", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384})
 
 
 if __name__ == "__main__":

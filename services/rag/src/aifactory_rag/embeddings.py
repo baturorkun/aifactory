@@ -259,6 +259,42 @@ def share_out(count: int, hosts: list[OllamaHost]) -> list[tuple[OllamaHost, int
     return slices
 
 
+def ollama_hosts_report(config: RagEmbeddingConfig, timeout_seconds: float = 2.0) -> list[dict[str, str]]:
+    """Ask every listed Ollama, now, whether it answers and which model it has.
+
+    For the web page's model list: `ready`, `away`, `no model` or `other model`
+    per host, judged like the adapter does (the first listed host that answers
+    sets the digest). It only reports; the adapter keeps its own view.
+    """
+    urls = ollama_urls(config.base_url)
+    name = config.model if ":" in config.model else f"{config.model}:latest"
+
+    def ask(url: str) -> str | None:
+        try:
+            response = httpx.get(f"{url}/api/tags", timeout=timeout_seconds)
+        except httpx.HTTPError:
+            return None
+        if response.status_code >= 400:
+            return None
+        return next((str(model.get("digest") or "") for model in response.json().get("models") or [] if model.get("name") == name), "")
+
+    with ThreadPoolExecutor(max_workers=len(urls)) as pool:
+        digests = list(pool.map(ask, urls))
+    wanted = next((digest for digest in digests if digest), "")
+    report = []
+    for url, digest in zip(urls, digests):
+        state = "away" if digest is None else "no model" if not digest else "ready" if digest == wanted else "other model"
+        report.append({"address": url.split("://", 1)[-1], "state": state, "digest": (digest or "")[:12]})
+    return report
+
+
+def embedding_report(config: RagEmbeddingConfig) -> dict[str, Any]:
+    report: dict[str, Any] = {"provider": config.provider, "model": config.model, "dimensions": config.dimensions}
+    if config.provider == "ollama":
+        report["hosts"] = ollama_hosts_report(config)
+    return report
+
+
 class OllamaEncodingError(RuntimeError):
     """Ollama computed a vector it could not encode (NaN) for some input of a batch."""
 

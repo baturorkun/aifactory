@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from aifactory_rag import build_info
 from aifactory_rag.auth.entra import user_from_claims, validate_request
 from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, load_factory_config, searchable_source_ids
+from aifactory_rag.embeddings import embedding_report
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source, sources_being_ingested
 from aifactory_rag import dataflow, status, webhook
@@ -88,6 +89,18 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             # Which code is running and since when, so a deployment and a
             # restart can be confirmed from the web page (build_info.py).
             "build": running.as_dict(),
+        }
+
+    @app.get("/models")
+    def models(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, dict[str, Any]]:
+        """The answer model and the embedding model with its hosts, asked now.
+
+        Kept apart from `/runtime-info`: the page reads this only when the
+        model list is opened, because a switched-off host takes two seconds.
+        """
+        return {
+            "answer": {"provider": factory_config.rag.llm.provider, "model": factory_config.rag.llm.model},
+            "embedding": embedding_report(factory_config.rag.embedding),
         }
 
     @app.post("/query")

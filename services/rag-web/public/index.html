@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Chat with AI Factory RAG sources">
     <title>AI Factory · RAG Chat</title>
-    <link rel="stylesheet" href="/styles.css?v=20260819-1">
+    <link rel="stylesheet" href="/styles.css?v=20261011-1">
   </head>
   <body>
     <div class="app-shell">
@@ -38,16 +38,6 @@
           </div>
         </section>
 
-        <!-- Hidden for now; remove `hidden` to show the answer model again. -->
-        <section class="model-card" aria-labelledby="model-title" hidden>
-          <div class="model-card-heading">
-            <h2 id="model-title">Answer model</h2>
-            <span class="model-indicator" aria-hidden="true"></span>
-          </div>
-          <strong id="llm-model">Loading…</strong>
-          <span id="llm-provider">Reading runtime configuration</span>
-        </section>
-
         <section class="model-card build-card" aria-labelledby="build-title">
           <div class="model-card-heading">
             <h2 id="build-title">RAG service</h2>
@@ -59,6 +49,11 @@
             <div><dt>Updated</dt><dd id="build-updated">…</dd></div>
           </dl>
           <p id="build-warning" class="build-warning" hidden>Code updated on disk; restart pending</p>
+          <!-- The answer and embedding models, read when the list is opened. -->
+          <details id="models" class="model-details">
+            <summary>Models</summary>
+            <dl id="model-facts" class="build-facts model-facts"></dl>
+          </details>
         </section>
 
         <div class="sidebar-footer">
@@ -103,7 +98,7 @@
         </div>
       </main>
     </div>
-    <script src="/app.js?v=20260819-1" defer></script>
+    <script src="/app.js?v=20261011-1" defer></script>
     <div id="source-card" class="source-card" role="tooltip" hidden></div>
   </body>
 </html>
