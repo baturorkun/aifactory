@@ -121,7 +121,17 @@ test('the source hash ignores the ELF, the trace, the run budget and build outpu
     assert.equal(computeProbeSourceHash(location).full, before.full);
 
     writeFileSync(join(probeDir, 'main.c'), 'int main(void) { return 1; }\n');
-    assert.notEqual(computeProbeSourceHash(location).full, before.full);
+    const changed = computeProbeSourceHash(location);
+    assert.notEqual(changed.full, before.full);
+
+    // The project's toolchain builds every probe, so it is in the hash: a flag
+    // change is an image change, and the board must run the probe again.
+    writeFileSync(join(root, 'probes', 'toolchain.json'), '{ "prefix": "arm-none-eabi-", "cflags": ["-mcpu=cortex-m3"] }\n');
+    const withToolchain = computeProbeSourceHash(location);
+    assert.notEqual(withToolchain.full, changed.full);
+    assert.deepEqual(withToolchain.files, ['main.c', 'probe.json', '../toolchain.json']);
+    writeFileSync(join(root, 'probes', 'toolchain.json'), '{ "prefix": "arm-none-eabi-", "cflags": ["-mcpu=cortex-m4"] }\n');
+    assert.notEqual(computeProbeSourceHash(location).full, withToolchain.full);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

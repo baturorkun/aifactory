@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -453,10 +453,12 @@ test('simics template scaffolds the hardware-twin probe workflow without naming 
     });
     const read = (file: string) => readFileSync(join(projectRoot, file), 'utf8');
 
-    for (const file of ['probes/README.md', 'probes/_template/probe.h', 'probes/_template/probe.c',
-      'probes/_template/main.c', 'probes/_template/board.c', 'probes/_template/linker.ld', 'probes/_template/probe.json']) {
+    for (const file of ['probes/README.md', 'probes/toolchain.json', 'probes/_template/probe.h', 'probes/_template/probe.c',
+      'probes/_template/main.c', 'probes/_template/board.c', 'probes/_template/cpu.c', 'probes/_template/linker.ld',
+      'probes/_template/probe.json']) {
       assert.ok(existsSync(join(projectRoot, file)), `${file} is generated`);
     }
+    assertCoreAgnosticProbeTemplate(projectRoot);
     // The runtime reads first and prints later; the marker the build gate looks for is embedded.
     const runtime = read('probes/_template/probe.c');
     assert.ok(runtime.indexOf('captured[i] = ') < runtime.indexOf('board_uart_init();'));
@@ -587,6 +589,17 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
       'probes/_template/probe.c', 'probes/README.md', 'README.md']) {
       assert.ok(existsSync(join(projectRoot, file)), `${file} is generated`);
     }
+    assertCoreAgnosticProbeTemplate(projectRoot);
+    // The build refuses before any compiler runs while the project has not
+    // chosen its core, and says where the choice is made.
+    const unfilled = spawnSync(process.execPath, ['scripts/build-probe.mjs'], {
+      cwd: projectRoot, encoding: 'utf8',
+      env: { ...process.env, PROBE_NAME: 'x', PROBE_ELF: join(projectRoot, 'build/x.elf'), PROBE_SOURCE_HASH: '0123456789abcdef', SIMULATOR_REMOTE_HOST: '', SIMULATOR_TOOLCHAIN_BIN: join(projectRoot, 'no-such-bin') },
+    });
+    assert.equal(unfilled.status, 2, unfilled.stderr);
+    assert.match(unfilled.stderr, /probes\/toolchain\.json/);
+    assert.match(unfilled.stderr, /probes\/README\.md/);
+    assert.doesNotMatch(unfilled.stderr, /no-such-bin/, 'no compiler was looked for');
     // The runner reaches a remote Renode over the common axis and hands the
     // .resc its inputs as Monitor variables, which Renode does not read from
     // the environment.
@@ -607,15 +620,24 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     const renodeCi = read('.gitlab-ci.yml');
     assert.match(renodeCi, /AIFACTORY_RUNNER_IMAGE: "[a-z0-9-]+-ci:renode-1\.17\.0-armgnu-15\.2\.rel1"/);
     assert.match(renodeCi, /^build_ci_image:\n {2}stage: ci_image/m);
-    assert.match(renodeCi, /- docker build -t "\$AIFACTORY_RUNNER_IMAGE" ci\//);
+    assert.match(renodeCi, /^ {6}docker build --build-arg "ARM_GNU_TARGET=\$target" -t "\$AIFACTORY_RUNNER_IMAGE" ci\/$/m);
+    assert.match(renodeCi, /armGnuTarget/, 'the image is built for the toolchain probes/toolchain.json names');
     assert.match(renodeCi, /\$CI_PIPELINE_SOURCE == "web"'\n {6}when: manual/);
     const dockerfile = read('ci/Dockerfile');
     assert.match(dockerfile, /^FROM node:20-bookworm$/m);
     assert.match(dockerfile, /ARG RENODE_VERSION=1\.17\.0/);
     assert.match(dockerfile, /ARG ARM_GNU_VERSION=15\.2\.rel1/);
+    assert.match(dockerfile, /ARG ARM_GNU_TARGET=/);
+    assert.match(dockerfile, /ARG ARM_GNU_SHA256_arm_none_eabi=[0-9a-f]{64}/);
+    assert.match(dockerfile, /ARG ARM_GNU_SHA256_aarch64_none_elf=[0-9a-f]{64}/);
+    assert.match(dockerfile, /x86_64-\$\{ARM_GNU_TARGET\}\.tar\.xz/);
+    assert.match(dockerfile, /No SHA-256 pinned for ARM_GNU_TARGET/);
     assert.match(dockerfile, /sha256sum -c -/);
+    assert.doesNotMatch(dockerfile, /arm-none-eabi-gcc/, 'the image check uses the chosen target');
     assert.match(dockerfile, /SIMULATOR_REMOTE_HOST=""/);
     assert.match(read('ci/build-image.sh'), /AIFACTORY_RUNNER_IMAGE/);
+    assert.match(read('ci/build-image.sh'), /armGnuTarget/);
+    assert.match(read('ci/build-image.sh'), /--build-arg 'ARM_GNU_TARGET=\$TARGET'/);
 
     // The twin pipeline: every proof the hardware-twin workflow produces, as
     // jobs in the CI image, between the image build and the passive factory job.
@@ -704,6 +726,116 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     for (const file of ['factory.config.json', 'AGENTS.md', 'README.md', 'scripts/renode-run.mjs']) {
       assert.doesNotMatch(read(file), /\b(?!127\.)\d{1,3}(\.\d{1,3}){3}\b|Administrator|C:\\\\Windriver|\/dev\/tty\.usbserial-[A-Z]/, `${file} names no machine`);
     }
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+// The scaffold does not know the board's core: the probe runtime is the same
+// on every core, the core-specific files arrive as placeholders, and no
+// generated file names a core as the default.
+function assertCoreAgnosticProbeTemplate(projectRoot: string): void {
+  const read = (file: string) => readFileSync(join(projectRoot, file), 'utf8');
+  for (const file of ['probes/_template/probe.c', 'probes/_template/probe.h']) {
+    const text = read(file);
+    for (const token of ['0xE000', 'cortex', 'thumb', 'msp', 'wfi', 'isr_vector']) {
+      assert.ok(!text.toLowerCase().includes(token.toLowerCase()), `${file} does not depend on a core (${token})`);
+    }
+  }
+  const header = read('probes/_template/probe.h');
+  for (const symbol of ['void probe_cpu_idle(void);', 'void probe_cpu_barrier(void);',
+    'int probe_fault_in_mem_step(uintptr_t fault_address);', 'void probe_fault_stop(uintptr_t pc,']) {
+    assert.ok(header.includes(symbol), `probe.h declares ${symbol}`);
+  }
+  const runtime = read('probes/_template/probe.c');
+  assert.match(runtime, /probe_cpu_barrier\(\);/, 'the MEM step uses the core barrier hook');
+  assert.match(runtime, /int probe_fault_in_mem_step\(uintptr_t address\)/);
+  assert.match(runtime, /void probe_fault_stop\(/);
+  const main = read('probes/_template/main.c');
+  assert.doesNotMatch(main, /vector_table|reset_handler|__stack_top__/, 'main.c is the step list only');
+  const cpu = read('probes/_template/cpu.c');
+  assert.match(cpu, /#error/, 'the template does not pretend to know the core');
+  assert.match(cpu, /void probe_cpu_idle\(void\)/);
+  assert.match(cpu, /void probe_cpu_barrier\(void\)/);
+  assert.match(cpu, /probe_fault_in_mem_step/);
+  const linker = read('probes/_template/linker.ld');
+  assert.match(linker, /^ASSERT\(0, "probes\/_template\/linker\.ld: set ORIGIN, LENGTH and ENTRY/m, 'an unfilled linker script stops the link');
+  assert.doesNotMatch(linker, /isr_vector/);
+  const toolchain = JSON.parse(read('probes/toolchain.json'));
+  assert.equal(toolchain.prefix, '');
+  assert.deepEqual(toolchain.cflags, []);
+  assert.deepEqual(toolchain.ldflags, []);
+  assert.equal(toolchain.ci.armGnuTarget, '');
+  const probesReadme = read('probes/README.md');
+  assert.match(probesReadme, /templates\/probe-cpu\/<core>\//, 'the README names where verified core files live');
+  assert.match(probesReadme, /toolchain\.json/);
+  assert.match(read('AGENTS.md'), /probes\/toolchain\.json/, 'AGENTS.md says the core is the project\'s choice');
+
+  // No generated file names a core as the default: cortex-m3 appears only in
+  // the README as the example; arm-none-eabi only where it is one of the
+  // choices beside aarch64-none-elf, or in the README and the Dockerfile.
+  const walk = (dir: string): string[] => readdirSync(join(projectRoot, dir), { withFileTypes: true }).flatMap((entry) => {
+    const rel = dir ? `${dir}/${entry.name}` : entry.name;
+    if (entry.name === 'node_modules' || entry.name === '.git') return [];
+    return entry.isDirectory() ? walk(rel) : [rel];
+  });
+  for (const file of walk('')) {
+    const text = read(file);
+    const allowedExample = file === 'probes/README.md' || file === 'ci/Dockerfile';
+    if (!allowedExample) {
+      assert.ok(!/cortex-m3/i.test(text), `${file} names no default core`);
+      for (const line of text.split('\n')) {
+        if (/arm-none-eabi|mthumb/.test(line)) {
+          assert.ok(/aarch64-none-elf|-mcpu=\.\.\./.test(line), `${file}: "${line.trim()}" lists a choice, not a default`);
+        }
+      }
+    }
+  }
+}
+
+test('the cortex-m3 example carries what the template used to assume, and builds with the new runtime', () => {
+  const example = join(__dirname, '..', 'templates', 'probe-cpu', 'cortex-m3');
+  for (const file of ['cpu.c', 'linker.ld', 'toolchain.json', 'README.md']) {
+    assert.ok(existsSync(join(example, file)), `${file} is shipped`);
+  }
+  const cpu = readFileSync(join(example, 'cpu.c'), 'utf8');
+  assert.match(cpu, /0xE000ED28u/, 'CFSR');
+  assert.match(cpu, /probe_fault_in_mem_step\(\(cfsr & 0x8000u\) \? bfar : 0u\)/);
+  assert.match(cpu, /probe_fault_stop\(frame\[6\], "cfsr", cfsr, "bfar", bfar\)/);
+  assert.match(cpu, /__asm volatile\("wfi"\)/);
+  assert.match(cpu, /__asm volatile\("dsb" ::: "memory"\)/);
+  const toolchain = JSON.parse(readFileSync(join(example, 'toolchain.json'), 'utf8'));
+  assert.equal(toolchain.prefix, 'arm-none-eabi-');
+  assert.deepEqual(toolchain.cflags, ['-mcpu=cortex-m3', '-mthumb']);
+  assert.equal(toolchain.ci.armGnuTarget, 'arm-none-eabi');
+
+  const gcc = spawnSync('arm-none-eabi-gcc', ['--version'], { encoding: 'utf8' });
+  if (gcc.error || gcc.status !== 0) {
+    console.log('  (arm-none-eabi-gcc is not on PATH: the example build is skipped here; CI and the lab host run it)');
+    return;
+  }
+  const parent = mkdtempSync(join(tmpdir(), 'aifactory-cortex-m3-'));
+  try {
+    const { projectRoot } = createTargetProject('m3', { dir: parent, simulator: 'renode', codexHome: join(parent, 'codex-home') });
+    const probe = join(projectRoot, 'probes', 'demo');
+    cpSync(join(projectRoot, 'probes', '_template'), probe, { recursive: true });
+    for (const file of ['cpu.c', 'linker.ld']) copyFileSync(join(example, file), join(probe, file));
+    copyFileSync(join(example, 'toolchain.json'), join(projectRoot, 'probes', 'toolchain.json'));
+    writeFileSync(join(probe, 'main.c'), readFileSync(join(probe, 'main.c'), 'utf8').replace('"_template"', '"demo"'));
+    writeFileSync(join(probe, 'board.c'), [
+      '#include "probe.h"',
+      '#define TX (*(volatile uint32_t *)0x40010000u)',
+      'void board_uart_init(void) { }',
+      'void board_uart_putc(char value) { TX = (uint32_t)value; }',
+      '',
+    ].join('\n'));
+    const elf = join(projectRoot, 'build', 'demo.elf');
+    const build = spawnSync(process.execPath, ['scripts/build-probe.mjs'], {
+      cwd: projectRoot, encoding: 'utf8',
+      env: { ...process.env, PROBE_NAME: 'demo', PROBE_ELF: elf, PROBE_SOURCE_HASH: '0123456789abcdef', SIMULATOR_REMOTE_HOST: '', SIMULATOR_TOOLCHAIN_BIN: '' },
+    });
+    assert.equal(build.status, 0, build.stderr);
+    assert.ok(readFileSync(elf).includes('PROBE_SOURCE=0123456789abcdef'));
   } finally {
     rmSync(parent, { recursive: true, force: true });
   }

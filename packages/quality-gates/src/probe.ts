@@ -26,6 +26,11 @@ export const BOARD_TRACE_FILE = 'board-trace.txt';
 // needs a bigger budget than one that prints and stops, and raising it must
 // not invalidate the trace.
 export const PROBE_RUN_FILE = 'run.json';
+// The project's toolchain: which compiler prefix and core flags build every
+// probe. Committed at probes/toolchain.json, beside the probe directories,
+// and part of every probe's source hash: a changed flag is a changed image,
+// so the board must run it again, exactly as for a changed source.
+export const PROBE_TOOLCHAIN_FILE = 'toolchain.json';
 export const SIMULATOR_TRACE_FILE = 'simulator-trace.txt';
 
 /**
@@ -94,7 +99,8 @@ function walk(dir: string, prefix = ''): string[] {
 
 /**
  * Hashes the committed probe sources: every file in the probe directory
- * except the ELF, the board trace and build output. The digest covers each
+ * except the ELF, the board trace and build output, plus the project's
+ * probes/toolchain.json when it exists. The digest covers each
  * relative path and the SHA-256 of its content, so the same sources give the
  * same hash on every host. The first 16 hex digits are what the firmware
  * prints in its trace header.
@@ -111,6 +117,16 @@ export function computeProbeSourceHash(location: ProbeLocation): ProbeSourceHash
   for (const file of files) {
     const content = createHash('sha256').update(readFileSync(join(location.dir, file))).digest('hex');
     digest.update(`${file}\n${content}\n`);
+  }
+  // probes/toolchain.json, when the project has one, hashed under its path
+  // relative to the probe directory. A project without it (one scaffolded
+  // before the file existed) keeps the hash its traces were taken with.
+  const toolchainPath = join(location.targetRoot, PROBES_DIR, PROBE_TOOLCHAIN_FILE);
+  if (existsSync(toolchainPath) && statSync(toolchainPath).isFile()) {
+    const file = `../${PROBE_TOOLCHAIN_FILE}`;
+    const content = createHash('sha256').update(readFileSync(toolchainPath)).digest('hex');
+    digest.update(`${file}\n${content}\n`);
+    files.push(file);
   }
   const full = digest.digest('hex');
   return { full, short: full.slice(0, 16), files };

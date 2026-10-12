@@ -4,16 +4,15 @@
 // a `Memory` region or a tag; one that needs behaviour is a C# peripheral
 // under peripherals/ referenced here.
 //
-// This is a starter: replace with the real board. Example shape:
+// This is a starter: replace with the real board. The core is the project's
+// choice (probes/toolchain.json, probes/_template/cpu.c); Renode's own
+// platforms/cpus/*.repl show the CPU, interrupt controller and memory shape
+// for each family. Example shape, with the board's names and addresses:
 //
-// cpu: CPU.CortexM @ sysbus
-//     cpuType: "cortex-m3"
-//     nvic: nvic
+// cpu: CPU.<Family> @ sysbus
+//     cpuType: "<core>"
 //
-// nvic: IRQControllers.NVIC @ sysbus 0xE000E000
-//     -> cpu@0
+// uart1: UART.<Model> @ sysbus <address>      the console the probe prints on
 //
-// mmuart1: UART.NS16550 @ sysbus 0x40010000
-//
-// envm: Memory.MappedMemory @ sysbus 0x60000000
-//     size: 0x80000
+// flash: Memory.MappedMemory @ sysbus <address>
+//     size: <bytes>
