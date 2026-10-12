@@ -105,7 +105,7 @@ def retrieve(
                     ORDER BY previous.chunk_index DESC
                     LIMIT 1
                   ) AS previous_page_text,
-                  1 - ((c.embedding::vector({dims})) <=> %s::vector({dims})) AS score
+                  1 - ((c.embedding::halfvec({dims})) <=> %s::halfvec({dims})) AS score
                 FROM rag_chunks c
                 JOIN rag_documents d ON d.id = c.document_id
                 WHERE c.status = 'active'
@@ -120,11 +120,12 @@ def retrieve(
                   AND vector_dims(c.embedding) = %s
                   {source_filter}{content_filter}{path_filter}
                 -- Written against the same expression the HNSW index is built
-                -- on, because a plain `c.embedding <=> ...` cannot use it: the
-                -- column is dimensionless, so the index is on the cast. The
-                -- difference is a sequential scan over every chunk versus an
-                -- index lookup, measured at 555 ms against 1.9 ms.
-                ORDER BY (c.embedding::vector({dims})) <=> %s::vector({dims})
+                -- on (db.ensure_vector_index: the halfvec cast), because a
+                -- plain `c.embedding <=> ...` cannot use it: the column is
+                -- dimensionless, so the index is on the cast. The difference
+                -- is a sequential scan over every chunk versus an index
+                -- lookup, measured at 555 ms against 1.9 ms.
+                ORDER BY (c.embedding::halfvec({dims})) <=> %s::halfvec({dims})
                 LIMIT %s
                 """,
                 tuple(params),

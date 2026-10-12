@@ -71,9 +71,17 @@ def ensure_vector_index(connection_string: str, dimensions: int) -> bool:
     Without it every question is a sequential scan of every chunk: measured at
     555 ms against 1.9 ms on a quarter of a million rows.
 
+    The cast is to halfvec: the vectors are stored with 16-bit components
+    already (Qwen3 2000-wide), so a full-precision index only doubles the
+    bytes per row. Measured on 285k rows of width 2000: 3.8 GB as vector,
+    about half as halfvec, same neighbours. The earlier full-precision index
+    of the same width is dropped once the halfvec one exists, so a database
+    built before this change migrates on the next start.
+
     Returns True when an index was created, False when one already existed.
     """
-    name = f"idx_rag_chunks_embedding_hnsw_{dimensions}"
+    name = f"idx_rag_chunks_embedding_hnsw_half_{dimensions}"
+    previous = f"idx_rag_chunks_embedding_hnsw_{dimensions}"
     # CREATE INDEX CONCURRENTLY cannot run inside a transaction, and it lets the
     # ingest keep writing while the index is built.
     with psycopg.connect(connection_string, autocommit=True) as conn:
@@ -81,6 +89,10 @@ def ensure_vector_index(connection_string: str, dimensions: int) -> bool:
             cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (name,))
             row = cur.fetchone()
             if row and row[0]:
+                # The halfvec index is there; the full-precision one of the
+                # same width, if a database built earlier still has it, is
+                # dead weight.
+                cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {previous}")
                 return False
             # A parallel build allocates a shared-memory segment, and a
             # container's /dev/shm is 64 MB whatever the host has. One worker
@@ -90,10 +102,11 @@ def ensure_vector_index(connection_string: str, dimensions: int) -> bool:
             cur.execute(
                 f"""
                 CREATE INDEX CONCURRENTLY IF NOT EXISTS {name}
-                ON rag_chunks USING hnsw ((embedding::vector({dimensions})) vector_cosine_ops)
+                ON rag_chunks USING hnsw ((embedding::halfvec({dimensions})) halfvec_cosine_ops)
                 WHERE status = 'active' AND vector_dims(embedding) = {dimensions}
                 """
             )
+            cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {previous}")
     return True
 
 
