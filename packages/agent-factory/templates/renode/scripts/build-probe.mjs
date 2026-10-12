@@ -1,24 +1,32 @@
 #!/usr/bin/env node
-// Builds one probe with the ARM toolchain and embeds the source hash AI Factory
-// passes, so the board gate can confirm the committed image came from the
-// committed sources.
+// Builds one probe with the project's toolchain and embeds the source hash AI
+// Factory passes, so the board gate can confirm the committed image came from
+// the committed sources.
+//
+// Which compiler and which core: probes/toolchain.json, committed beside the
+// probes, names the tool prefix (arm-none-eabi-, aarch64-none-elf-, ...) and
+// the core flags (-mcpu=..., -mthumb, ...). They are a property of the project,
+// not of the machine: the committed ELFs were built with them, and the file is
+// part of the probe source hash. A scaffolded project has them empty, and this
+// script refuses to run a compiler until they are filled. SIMULATOR_TOOLCHAIN_BIN
+// says where that toolchain's bin directory is on the machine that builds;
+// empty means the tools are on PATH there.
 //
 // The build follows the same SIMULATOR_REMOTE_* axis as the simulator run: with
 // SIMULATOR_REMOTE_HOST empty it compiles on this machine, set, it rsyncs the
 // probe sources to that host, compiles there over SSH and pulls the ELF back.
 // One shared toolchain on one host is the point: every developer's probe image
 // then comes out of the same compiler, whatever their own machine has.
-// SIMULATOR_TOOLCHAIN_BIN names the arm-none-eabi bin directory on whichever
-// machine does the building; empty means the tools are on PATH there.
 //
 // The compiler arguments are built once and used by both paths, so an image
 // does not depend on where it was compiled.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const TOOLCHAIN_FILE = 'probes/toolchain.json';
 const need = (name) => {
   const v = process.env[name];
   if (!v) { console.error(`${name} is not set; it is provided by "factory probe build".`); process.exit(2); }
@@ -31,33 +39,62 @@ const elfOut = need('PROBE_ELF');
 const sourceHash = need('PROBE_SOURCE_HASH');
 const dir = resolve(PROJECT_ROOT, 'probes', name);
 
+// The core and its compiler are the project's choice, recorded in
+// probes/toolchain.json. Refuse before any compiler runs when the project has
+// not made it yet.
+function readToolchain() {
+  const path = resolve(PROJECT_ROOT, TOOLCHAIN_FILE);
+  const refuse = (why) => {
+    console.error(`${TOOLCHAIN_FILE}: ${why}`);
+    console.error('The core, its compiler prefix and its flags are this project\'s choice: fill "prefix" and "cflags" there, with probes/_template/cpu.c and linker.ld for the same core. probes/README.md names the verified examples.');
+    process.exit(2);
+  };
+  if (!existsSync(path)) refuse('missing');
+  let parsed;
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { refuse(`not valid JSON (${error.message})`); }
+  const prefix = typeof parsed.prefix === 'string' ? parsed.prefix.trim() : '';
+  if (prefix === '') refuse('"prefix" is empty; the project has not chosen its core and toolchain yet');
+  const list = (key) => {
+    const value = parsed[key] ?? [];
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) refuse(`"${key}" must be an array of strings`);
+    return value;
+  };
+  return { prefix, cflags: list('cflags'), ldflags: list('ldflags') };
+}
+const toolchain = readToolchain();
+
 const sourceNames = readdirSync(dir).filter((f) => f.endsWith('.c')).sort();
 if (sourceNames.length === 0) { console.error(`No .c sources in ${dir}`); process.exit(2); }
 const hasLinker = existsSync(join(dir, 'linker.ld'));
 
 // The probe stringifies PROBE_SOURCE_HASH into PROBE_SOURCE=<hash> so the gate
 // can find it in the ELF without reproducing the build.
-// `-nostdlib` with `-fno-builtin` is what makes this a genuinely freestanding
-// build: without them GCC links against libc and may turn plain C into implicit
-// memcpy/memset calls, so the probe stops building the moment a toolchain ships
-// without newlib. `--gc-sections` with per-function sections keeps only what the
-// probe reaches, and `--build-id=none` keeps the image byte-reproducible. These
-// are the flags the committed images were built with.
+// The core flags come first, from toolchain.json. The flags after them are
+// the probe contract's and stay here: `-nostdlib` with `-fno-builtin` is what
+// makes this a genuinely freestanding build: without them GCC links against
+// libc and may turn plain C into implicit memcpy/memset calls, so the probe
+// stops building the moment a toolchain ships without newlib. `--gc-sections`
+// with per-function sections keeps only what the probe reaches, and
+// `--build-id=none` keeps the image byte-reproducible. toolchain.json
+// "ldflags" are passed to the link as given (write them as -Wl,... for ld).
 const compilerArgs = (probeDir, outPath) => [
-  '-mcpu=cortex-m3', '-mthumb', '-Os', '-ffreestanding', '-fno-builtin',
+  ...toolchain.cflags,
+  '-Os', '-ffreestanding', '-fno-builtin',
   '-fdata-sections', '-ffunction-sections',
   '-Wall', '-Wextra', '-Werror', '-nostdlib',
   `-I${probeDir}`,
   `-DPROBE_SOURCE_HASH=${sourceHash}`,
   ...(hasLinker ? [`-Wl,-T,${probeDir}/linker.ld`] : []),
   '-Wl,--gc-sections', '-Wl,--build-id=none',
+  ...toolchain.ldflags,
   ...sourceNames.map((f) => `${probeDir}/${f}`),
   '-o', outPath,
 ];
 
 function gccPath() {
   const bin = opt('SIMULATOR_TOOLCHAIN_BIN');
-  return bin ? `${bin.replace(/\/+$/, '')}/arm-none-eabi-gcc` : 'arm-none-eabi-gcc';
+  const tool = `${toolchain.prefix}gcc`;
+  return bin ? `${bin.replace(/\/+$/, '')}/${tool}` : tool;
 }
 
 function buildLocally() {

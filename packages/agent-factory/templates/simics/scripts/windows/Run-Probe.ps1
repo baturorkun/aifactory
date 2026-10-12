@@ -65,7 +65,8 @@ $simics = & (Join-Path $PSScriptRoot 'Build-Modules.ps1') -ProjectRoot $root -Si
 
 # Simics loads a raw image, not an ELF: the ELF carries load addresses the
 # target would have to interpret, and the board ran these exact bytes.
-$objcopy = Resolve-ArmTool -Name 'arm-none-eabi-objcopy.exe' -ToolchainBin $ToolchainBin
+$toolchain = Read-ProbeToolchain -ProjectRoot $root
+$objcopy = Resolve-ArmTool -Name "$($toolchain.Prefix)objcopy.exe" -ToolchainBin $ToolchainBin
 $binary = Join-Path $output "$ProbeName.bin"
 Invoke-CheckedCommand -Executable $objcopy -Arguments @('-O', 'binary', $elf, $binary) `
     -Description 'Creating ignored physical-load probe image'

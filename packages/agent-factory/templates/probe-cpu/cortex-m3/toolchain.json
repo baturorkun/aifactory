@@ -1,0 +1,13 @@
+{
+  "$comment": [
+    "Arm GNU Toolchain (arm-none-eabi), the one that built the committed probe",
+    "ELFs of the SmartFusion2 projects: 15.2.Rel1. prefix names the tools",
+    "(<prefix>gcc, <prefix>objcopy, <prefix>size); cflags are the core's;",
+    "ldflags are passed to the link as given; ci.armGnuTarget is the tarball",
+    "the CI image installs."
+  ],
+  "prefix": "arm-none-eabi-",
+  "cflags": ["-mcpu=cortex-m3", "-mthumb"],
+  "ldflags": [],
+  "ci": { "armGnuTarget": "arm-none-eabi" }
+}

@@ -23,11 +23,15 @@ mach create "board"
 machine LoadPlatformDescription $ORIGIN/../platforms/board.repl
 
 sysbus LoadELF $PROBE_ELF
-# LoadELF guesses the vector table from the ELF (often wrongly), so a Cortex-M
-# probe pins it: 0x0 for a board that boots with VTOR = 0 through its code
-# window, or the probe's own table for one loaded into RAM over a debugger
-# (probe.json "vectorTable"). Uncomment for a Cortex-M CPU:
+# Where the core starts is the core's business (probes/_template/cpu.c). A core
+# that boots from a vector table at a fixed address has LoadELF guess that
+# table from the ELF (often wrongly), so the probe pins it: 0x0 for a board
+# that boots through its code window, or the probe's own table for one loaded
+# into RAM over a debugger (probe.json "vectorTable"). Uncomment for such a
+# core (Cortex-M VTOR):
 # cpu VectorTableOffset $PROBE_VECTOR_TABLE
+# A core that starts at the ELF entry point needs nothing here; one that
+# starts at a fixed reset address needs `cpu PC` set to where the probe sits.
 
 # TODO: name the console UART the probe prints on, as declared in the .repl.
 uart1 CreateFileBackend $PROBE_UART_LOG true

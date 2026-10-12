@@ -56,6 +56,25 @@ function Resolve-Executable {
     throw "$Name was not found. Configure $EnvironmentVariable or pass its explicit script parameter."
 }
 
+# The core and its compiler are the project's choice, recorded in
+# probes\toolchain.json ("prefix": arm-none-eabi-, aarch64-none-elf-, ...;
+# "cflags": the core flags; "ldflags": passed to the link as given). A
+# scaffolded project has them empty: refuse before any compiler runs.
+function Read-ProbeToolchain {
+    param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+
+    $path = Join-Path $ProjectRoot 'probes\toolchain.json'
+    $hint = 'The core, its compiler prefix and its flags are this project''s choice: fill "prefix" and "cflags" there, with probes\_template\cpu.c and linker.ld for the same core. probes\README.md names the verified examples.'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "probes\toolchain.json: missing. $hint" }
+    try { $parsed = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+    catch { throw "probes\toolchain.json: not valid JSON ($($_.Exception.Message)). $hint" }
+    $prefix = if ($null -eq $parsed.prefix) { '' } else { ([string]$parsed.prefix).Trim() }
+    if ([string]::IsNullOrWhiteSpace($prefix)) { throw "probes\toolchain.json: ""prefix"" is empty; the project has not chosen its core and toolchain yet. $hint" }
+    $cflags = @(); if ($null -ne $parsed.cflags) { $cflags = @($parsed.cflags | ForEach-Object { [string]$_ }) }
+    $ldflags = @(); if ($null -ne $parsed.ldflags) { $ldflags = @($parsed.ldflags | ForEach-Object { [string]$_ }) }
+    return [pscustomobject]@{ Prefix = $prefix; CFlags = $cflags; LdFlags = $ldflags }
+}
+
 function Resolve-ArmTool {
     param(
         [Parameter(Mandatory = $true)][string]$Name,

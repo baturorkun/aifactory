@@ -30,13 +30,14 @@ $elf = Join-Path $output "$ProbeName.elf"
 $binary = Join-Path $output "$ProbeName.bin"
 $map = Join-Path $output "$ProbeName.map"
 
-$gcc = Resolve-ArmTool -Name 'arm-none-eabi-gcc.exe' -ToolchainBin $ToolchainBin
-$objcopy = Resolve-ArmTool -Name 'arm-none-eabi-objcopy.exe' -ToolchainBin $ToolchainBin
-$size = Resolve-ArmTool -Name 'arm-none-eabi-size.exe' -ToolchainBin $ToolchainBin
+# Which compiler and which core: probes\toolchain.json, part of the probe
+# source hash. The flags after the core flags are the probe contract's.
+$toolchain = Read-ProbeToolchain -ProjectRoot $root
+$gcc = Resolve-ArmTool -Name "$($toolchain.Prefix)gcc.exe" -ToolchainBin $ToolchainBin
+$objcopy = Resolve-ArmTool -Name "$($toolchain.Prefix)objcopy.exe" -ToolchainBin $ToolchainBin
+$size = Resolve-ArmTool -Name "$($toolchain.Prefix)size.exe" -ToolchainBin $ToolchainBin
 
-$gccArguments = @(
-    '-mcpu=cortex-m3',
-    '-mthumb',
+$gccArguments = @($toolchain.CFlags) + @(
     '-Os',
     '-ffreestanding',
     '-fno-builtin',
@@ -51,9 +52,8 @@ $gccArguments = @(
     "-Wl,-T,$linker",
     "-Wl,-Map,$map",
     '-Wl,--gc-sections',
-    '-Wl,--build-id=none',
-    '-o', $elf
-) + $sources
+    '-Wl,--build-id=none'
+) + @($toolchain.LdFlags) + @('-o', $elf) + $sources
 
 Invoke-CheckedCommand -Executable $gcc -Arguments $gccArguments -Description "Building probe $ProbeName"
 Invoke-CheckedCommand -Executable $objcopy -Arguments @('-O', 'binary', $elf, $binary) -Description 'Creating raw probe image'
