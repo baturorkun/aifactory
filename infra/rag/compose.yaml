@@ -3,6 +3,12 @@ services:
     image: pgvector/pgvector:pg16
     container_name: aifactory-rag-postgres
     restart: unless-stopped
+    # Docker gives a container 64 MB of /dev/shm whatever the host has, and
+    # PostgreSQL's parallel workers (VACUUM, CREATE INDEX, parallel scans)
+    # allocate their shared memory there: with 64 MB a VACUUM of rag_chunks
+    # fails with "could not resize shared memory segment". 1 GB covers the
+    # 285k-row chunk table; raise it with the table.
+    shm_size: ${RAG_POSTGRES_SHM:-1g}
     environment:
       POSTGRES_DB: ${RAG_POSTGRES_DB:-aifactory_rag}
       POSTGRES_USER: ${RAG_POSTGRES_USER:-aifactory_rag}
