@@ -61,6 +61,20 @@ def require_schema(connection_string: str) -> None:
         )
 
 
+# How the index's graph is built: links per chunk and candidates weighed for
+# each. With pgvector's defaults (16 and 64) the index did not return some
+# chunks that exact search ranks first, whatever hnsw.ef_search was set to (3
+# of 150 requirements asked for by their own sentence, 13 Oct 2026, on 290k
+# chunks after months of re-embedding). The numbers are part of the index's
+# name, so changing them builds a new index and drops the one before.
+HNSW_M = 24
+HNSW_EF_CONSTRUCTION = 200
+
+
+def vector_index_name(dimensions: int) -> str:
+    return f"idx_rag_chunks_embedding_hnsw_half_{dimensions}_m{HNSW_M}c{HNSW_EF_CONSTRUCTION}"
+
+
 def ensure_vector_index(connection_string: str, dimensions: int) -> bool:
     """Make sure the current embedding width has an index to search through.
 
@@ -74,39 +88,57 @@ def ensure_vector_index(connection_string: str, dimensions: int) -> bool:
     The cast is to halfvec: the vectors are stored with 16-bit components
     already (Qwen3 2000-wide), so a full-precision index only doubles the
     bytes per row. Measured on 285k rows of width 2000: 3.8 GB as vector,
-    about half as halfvec, same neighbours. The earlier full-precision index
-    of the same width is dropped once the halfvec one exists, so a database
-    built before this change migrates on the next start.
+    about half as halfvec, same neighbours.
 
-    Returns True when an index was created, False when one already existed.
+    The indexes of the same width built earlier (full precision, or with
+    other graph parameters) are dropped once this one is valid, and not
+    before: until then they are what questions are answered through. An index
+    another session is still building is left to it.
+
+    Returns True when an index was created, False otherwise.
     """
-    name = f"idx_rag_chunks_embedding_hnsw_half_{dimensions}"
-    previous = f"idx_rag_chunks_embedding_hnsw_{dimensions}"
+    name = vector_index_name(dimensions)
+    earlier = (f"idx_rag_chunks_embedding_hnsw_half_{dimensions}", f"idx_rag_chunks_embedding_hnsw_{dimensions}")
     # CREATE INDEX CONCURRENTLY cannot run inside a transaction, and it lets the
     # ingest keep writing while the index is built.
     with psycopg.connect(connection_string, autocommit=True) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (name,))
-            row = cur.fetchone()
-            if row and row[0]:
-                # The halfvec index is there; the full-precision one of the
-                # same width, if a database built earlier still has it, is
-                # dead weight.
-                cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {previous}")
+            cur.execute(
+                """
+                SELECT i.indisvalid,
+                       EXISTS (SELECT 1 FROM pg_stat_progress_create_index p WHERE p.index_relid = i.indexrelid)
+                FROM pg_index i
+                WHERE i.indexrelid = to_regclass(%s)
+                """,
+                (name,),
+            )
+            state = cur.fetchone()
+            if state and state[0]:
+                for old in earlier:
+                    cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {old}")
                 return False
-            # A parallel build allocates a shared-memory segment, and a
-            # container's /dev/shm is 64 MB whatever the host has. One worker
-            # keeps the working memory private to the process instead.
+            if state and state[1]:
+                return False  # being built elsewhere; the earlier index serves until it is done
+            if state:
+                # Left invalid by a build that was interrupted.
+                cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {name}")
+            # A parallel build allocates a shared-memory segment as large as
+            # the working memory, and a container's /dev/shm is far smaller.
+            # One worker keeps the working memory private to the process.
             cur.execute("SET max_parallel_maintenance_workers = 0")
-            cur.execute("SET maintenance_work_mem = '2GB'")
+            # The graph is built in memory while it fits: 2.2 GB for 290k
+            # chunks of width 2000.
+            cur.execute("SET maintenance_work_mem = '4GB'")
             cur.execute(
                 f"""
                 CREATE INDEX CONCURRENTLY IF NOT EXISTS {name}
                 ON rag_chunks USING hnsw ((embedding::halfvec({dimensions})) halfvec_cosine_ops)
+                WITH (m = {HNSW_M}, ef_construction = {HNSW_EF_CONSTRUCTION})
                 WHERE status = 'active' AND vector_dims(embedding) = {dimensions}
                 """
             )
-            cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {previous}")
+            for old in earlier:
+                cur.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {old}")
     return True
 
 

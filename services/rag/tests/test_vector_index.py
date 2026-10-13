@@ -18,9 +18,12 @@ from aifactory_rag import db
 
 
 class EnsureVectorIndexTests(unittest.TestCase):
-    def _connection(self, existing: bool):
+    """`state` is what the database says about the index: None when it is not
+    there, else (valid, being built)."""
+
+    def _connection(self, state: tuple[bool, bool] | None):
         cursor = mock.MagicMock()
-        cursor.fetchone.return_value = (existing,)
+        cursor.fetchone.return_value = state
         cursor.__enter__ = mock.Mock(return_value=cursor)
         cursor.__exit__ = mock.Mock(return_value=False)
         connection = mock.MagicMock()
@@ -29,44 +32,76 @@ class EnsureVectorIndexTests(unittest.TestCase):
         connection.__exit__ = mock.Mock(return_value=False)
         return connection, cursor
 
-    def test_builds_an_index_named_and_shaped_for_the_configured_width(self) -> None:
-        connection, cursor = self._connection(existing=False)
+    def _ensure(self, state: tuple[bool, bool] | None, dimensions: int = 1536) -> tuple[bool, list[str], mock.Mock]:
+        connection, cursor = self._connection(state)
         with mock.patch.object(db.psycopg, "connect", return_value=connection) as connect:
-            created = db.ensure_vector_index("postgresql://x", 1536)
+            created = db.ensure_vector_index("postgresql://x", dimensions)
+        return created, [" ".join(str(call.args[0]).split()) for call in cursor.execute.call_args_list], connect
+
+    def test_builds_an_index_named_and_shaped_for_the_configured_width(self) -> None:
+        created, statements, connect = self._ensure(None)
 
         self.assertTrue(created)
         self.assertTrue(connect.call_args.kwargs["autocommit"], "CREATE INDEX CONCURRENTLY needs it")
-        statements = " ".join(str(call.args[0]) for call in cursor.execute.call_args_list)
-        self.assertIn("idx_rag_chunks_embedding_hnsw_half_1536", statements)
-        self.assertIn("USING hnsw ((embedding::halfvec(1536)) halfvec_cosine_ops)", statements)
-        self.assertIn("vector_dims(embedding) = 1536", statements)
-        self.assertIn("CONCURRENTLY", statements)
-        # The full-precision index of the same width goes once the halfvec one
-        # exists; a database built before the change migrates on start.
-        self.assertIn("DROP INDEX CONCURRENTLY IF EXISTS idx_rag_chunks_embedding_hnsw_1536", statements)
+        build = next(statement for statement in statements if statement.startswith("CREATE INDEX"))
+        self.assertIn("CONCURRENTLY IF NOT EXISTS idx_rag_chunks_embedding_hnsw_half_1536_m24c200 ", build)
+        self.assertIn("USING hnsw ((embedding::halfvec(1536)) halfvec_cosine_ops)", build)
+        self.assertIn("vector_dims(embedding) = 1536", build)
         # A parallel build needs a shared-memory segment that a container's
-        # 64 MB /dev/shm cannot give it.
-        self.assertIn("max_parallel_maintenance_workers = 0", statements)
+        # /dev/shm cannot give it.
+        self.assertIn("SET max_parallel_maintenance_workers = 0", statements)
 
-    def test_an_existing_index_is_left_alone(self) -> None:
-        connection, cursor = self._connection(existing=True)
-        with mock.patch.object(db.psycopg, "connect", return_value=connection):
-            created = db.ensure_vector_index("postgresql://x", 1536)
+    def test_the_graph_is_built_denser_than_the_default_and_the_name_says_so(self) -> None:
+        """With 16 links and 64 candidates the index did not return chunks that
+        exact search ranks first, at any ef_search."""
+        _, statements, _ = self._ensure(None, 2000)
+
+        build = next(statement for statement in statements if statement.startswith("CREATE INDEX"))
+        self.assertIn("WITH (m = 24, ef_construction = 200)", build)
+        self.assertEqual(db.vector_index_name(2000), "idx_rag_chunks_embedding_hnsw_half_2000_m24c200")
+
+    def test_the_earlier_indexes_go_only_after_the_new_one_is_built(self) -> None:
+        _, statements, _ = self._ensure(None)
+
+        build = next(n for n, statement in enumerate(statements) if statement.startswith("CREATE INDEX"))
+        drops = [n for n, statement in enumerate(statements) if statement.startswith("DROP INDEX")]
+        self.assertEqual(
+            [statements[n] for n in drops],
+            ["DROP INDEX CONCURRENTLY IF EXISTS idx_rag_chunks_embedding_hnsw_half_1536",
+             "DROP INDEX CONCURRENTLY IF EXISTS idx_rag_chunks_embedding_hnsw_1536"],
+        )
+        self.assertTrue(all(n > build for n in drops))
+
+    def test_a_valid_index_is_left_alone_and_the_earlier_ones_go(self) -> None:
+        created, statements, _ = self._ensure((True, False))
 
         self.assertFalse(created)
-        statements = " ".join(str(call.args[0]) for call in cursor.execute.call_args_list)
-        self.assertNotIn("CREATE INDEX", statements)
-        # ...but the full-precision index of the same width still goes.
+        self.assertFalse([statement for statement in statements if statement.startswith("CREATE INDEX")])
+        self.assertIn("DROP INDEX CONCURRENTLY IF EXISTS idx_rag_chunks_embedding_hnsw_half_1536", statements)
         self.assertIn("DROP INDEX CONCURRENTLY IF EXISTS idx_rag_chunks_embedding_hnsw_1536", statements)
 
-    def test_each_width_gets_its_own_index(self) -> None:
-        connection, cursor = self._connection(existing=False)
-        with mock.patch.object(db.psycopg, "connect", return_value=connection):
-            db.ensure_vector_index("postgresql://x", 384)
+    def test_an_index_another_session_is_building_is_left_to_it_and_nothing_is_dropped(self) -> None:
+        """Dropping the earlier index now would leave every question to a
+        sequential scan until the build is done."""
+        created, statements, _ = self._ensure((False, True))
 
-        statements = " ".join(str(call.args[0]) for call in cursor.execute.call_args_list)
-        self.assertIn("idx_rag_chunks_embedding_hnsw_half_384", statements)
-        self.assertIn("halfvec(384)", statements)
+        self.assertFalse(created)
+        self.assertEqual(len(statements), 1)  # the look at its state, nothing else
+
+    def test_an_index_left_invalid_by_an_interrupted_build_is_built_again(self) -> None:
+        created, statements, _ = self._ensure((False, False))
+
+        self.assertTrue(created)
+        first_drop = statements.index("DROP INDEX CONCURRENTLY IF EXISTS idx_rag_chunks_embedding_hnsw_half_1536_m24c200")
+        build = next(n for n, statement in enumerate(statements) if statement.startswith("CREATE INDEX"))
+        self.assertLess(first_drop, build)
+
+    def test_each_width_gets_its_own_index(self) -> None:
+        _, statements, _ = self._ensure(None, 384)
+
+        build = next(statement for statement in statements if statement.startswith("CREATE INDEX"))
+        self.assertIn("idx_rag_chunks_embedding_hnsw_half_384_m24c200", build)
+        self.assertIn("halfvec(384)", build)
 
 
 if __name__ == "__main__":
