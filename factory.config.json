@@ -126,6 +126,12 @@
     "git": {
       "mirrorDir": "${RAG_GIT_MIRROR_DIR:-/srv/rag-sources/git}"
     },
+    "doors": {
+      "clients": "${RAG_DOORS_CLIENTS:-}",
+      "executable": "${RAG_DOORS_EXECUTABLE:-}",
+      "mirrorDir": "${RAG_DOORS_MIRROR_DIR:-/srv/rag-sources/doors}",
+      "timeoutSeconds": "${RAG_DOORS_TIMEOUT_SECONDS:-600}"
+    },
     "joern": {
       "url": "${RAG_JOERN_URL:-http://127.0.0.1:8090}",
       "workspace": "${RAG_JOERN_WORKSPACE:-/srv/rag-sources/joern}"

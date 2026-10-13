@@ -142,7 +142,7 @@ def _expand_with_graph(
 def code_location(relative_path: str, metadata: dict[str, Any]) -> dict[str, Any]:
     """Where a code chunk sits, and its GitLab link when it came from a repository."""
     location: dict[str, Any] = {}
-    for key in ("repository", "commit", "symbol", "symbolKind", "section", "startLine", "endLine"):
+    for key in ("repository", "commit", "symbol", "symbolKind", "section", "startLine", "endLine", "doorsModule", "requirement"):
         if metadata.get(key) is not None:
             location[key] = metadata[key]
     repository_url = metadata.get("repositoryUrl")
@@ -160,8 +160,14 @@ def citation_label(relative_path: str, metadata: dict[str, Any], page_numbers: t
 
     `<repository>@<short commit>:<path>:<start>-<end> (<symbol>)` for code from
     a repository, `<path>:<start>-<end> (<symbol>)` for code from a folder, and
-    the file name with its pages for everything else.
+    the file name with its pages for everything else. A requirement of a DOORS
+    module (RQ-0037) is `DOORS <module> <identifier>`.
     """
+    if metadata.get("doorsModule") and metadata.get("requirement"):
+        label = f"DOORS {metadata['doorsModule']} {metadata['requirement']}"
+        if metadata.get("section"):
+            label += f" § {metadata['section'].split(' > ')[-1]}"
+        return label
     label = relative_path
     if metadata.get("repository") and metadata.get("commit"):
         label = f"{metadata['repository']}@{str(metadata['commit'])[:8]}:{relative_path}"

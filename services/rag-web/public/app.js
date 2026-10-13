@@ -345,16 +345,29 @@ function fillSourceCard(item) {
     const block = el('section', 'card-input');
     const title = el('div', 'card-input-head');
     const isGit = Boolean(input.commit);
+    // A DOORS database (RQ-0037): its modules are the documents.
+    const isDoors = input.kind === 'doors';
+    const kind = isGit ? 'git' : isDoors ? 'doors' : 'folder';
     // A folder is shown by its path on the share it lies on (the server's mount point left out).
-    const name = el('span', `card-input-name${isGit ? '' : ' directory'}`,
-      isGit ? input.label.replace(/^git: /, '') : (input.directory || input.name || 'folder'));
-    if (!isGit && input.path) name.title = input.path;
+    const name = el('span', `card-input-name${isGit || isDoors ? '' : ' directory'}`,
+      isGit ? input.label.replace(/^git: /, '') : isDoors ? input.label.replace(/^doors: /, '')
+        : (input.directory || input.name || 'folder'));
+    if (isDoors && input.database) name.title = `DOORS database ${input.database}`;
+    else if (!isGit && input.path) name.title = input.path;
     title.append(
-      el('span', `card-kind ${isGit ? 'git' : 'folder'}`, isGit ? 'git' : 'folder'),
+      el('span', `card-kind ${kind}`, kind),
       name,
-      el('span', 'card-count', `${input.documents ?? 0} docs`),
+      el('span', 'card-count', `${input.documents ?? 0} ${isDoors ? 'modules' : 'docs'}`),
     );
     block.append(title);
+    if (isDoors) {
+      if (input.paths) {
+        const refs = el('div', 'card-refs');
+        refs.append(el('span', 'card-chip ref', input.paths));
+        block.append(refs);
+      }
+      if (input.checkedAt) block.append(stamp(input.checkedAt, 'Checked'));
+    }
     if (isGit) {
       const refs = el('div', 'card-refs');
       refs.append(el('span', 'card-chip ref', input.ref || 'default branch'));
@@ -562,7 +575,7 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
       if (source.sourceId && source.relativePath) {
         // A code chunk is its own citation: the same file in two repositories,
         // or two functions of one file, are different places.
-        const key = [source.sourceId, source.repository || '', source.relativePath, source.startLine || ''].join('\u0000');
+        const key = [source.sourceId, source.repository || '', source.relativePath, source.startLine || '', source.requirement || ''].join('\u0000');
         const group = groupedSources.get(key);
         const pageNumbers = Array.isArray(source.pageNumbers)
           ? source.pageNumbers.filter((page) => Number.isInteger(page) && page > 0)
@@ -584,6 +597,9 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
         chip.target = '_blank';
         chip.rel = 'noopener';
         chip.title = `Open ${source.repository}:${source.relativePath} on GitLab`;
+      } else if (source.doorsModule) {
+        // A DOORS requirement (RQ-0037) is read in DOORS; there is no file to hand out.
+        chip.title = `${source.requirement || ''} in DOORS module ${source.doorsModule}`.trim();
       } else if (!source.repository) {
         chip.href = `/api/documents/download?${params}`;
         chip.download = '';
@@ -592,7 +608,8 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
       const sortedPages = [...pages].sort((left, right) => left - right);
       const pathLabel = document.createElement('span');
       pathLabel.className = 'source-path';
-      pathLabel.textContent = source.repository ? `${source.repository}:${source.relativePath}` : source.relativePath;
+      pathLabel.textContent = source.doorsModule ? `DOORS ${source.doorsModule}`
+        : source.repository ? `${source.repository}:${source.relativePath}` : source.relativePath;
       const sourceDetails = document.createElement('span');
       sourceDetails.className = 'source-details';
       if (sortedPages.length) {
@@ -600,6 +617,12 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
         pageLabel.className = 'source-pages';
         pageLabel.textContent = `${sortedPages.length === 1 ? 'Page' : 'Pages'} ${sortedPages.join(', ')}`;
         sourceDetails.append(pageLabel);
+      }
+      if (source.requirement) {
+        const requirementLabel = document.createElement('span');
+        requirementLabel.className = 'source-pages';
+        requirementLabel.textContent = source.requirement;
+        sourceDetails.append(requirementLabel);
       }
       if (source.symbol || source.startLine) {
         const symbolLabel = document.createElement('span');
@@ -611,7 +634,7 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
       sourceDetails.append(pathLabel);
       const downloadLabel = document.createElement('span');
       downloadLabel.className = 'source-download';
-      downloadLabel.textContent = source.webUrl ? '↗ GitLab' : source.repository ? '' : '↓ Download';
+      downloadLabel.textContent = source.webUrl ? '↗ GitLab' : source.repository || source.doorsModule ? '' : '↓ Download';
       chip.append(sourceDetails, downloadLabel);
       sourceContainer.append(chip);
     }

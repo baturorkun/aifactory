@@ -15,6 +15,9 @@ from typing import Any
 # source runs for days (simics, 39M tokens, showed "Ingest stopped" at hour 6).
 STALE_AFTER = timedelta(hours=6)
 
+# The input key of a DOORS database: doors:<port>@<host> (RQ-0037).
+DOORS_KEY_PREFIX = "doors:"
+
 RUN_COLUMNS = (
     "id, source_id, status, started_at, finished_at, scanned_count, inserted_count, "
     "updated_count, skipped_count, deleted_count, error_count"
@@ -87,9 +90,11 @@ def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str
         repository = repositories.get(key, {})
         change = changed.get(key, {})
         url = str(repository.get("url") or "")
+        doors = key.startswith(DOORS_KEY_PREFIX)
         item: dict[str, Any] = {
             "input": key or "path",
-            "label": "folder" if not key else f"git: {key.rsplit('/', 1)[-1]}",
+            "kind": "folder" if not key else "doors" if doors else "git",
+            "label": "folder" if not key else f"doors: {key.rsplit('@', 1)[-1]}" if doors else f"git: {key.rsplit('/', 1)[-1]}",
             # the folder's own name, so the page never has to guess what it holds,
             # and where it lies on its share
             **({"name": folder.rstrip("/").rsplit("/", 1)[-1], "path": folder, "directory": _directory(folder)}
@@ -97,7 +102,10 @@ def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str
             "documents": change.get("documents"),
             "lastChange": _iso(change.get("last_change")),
         }
-        if repository:
+        if repository and doors:
+            # A DOORS database (RQ-0037): which paths of it are read, and when they last were.
+            item.update({"database": url or None, "paths": repository.get("ref"), "checkedAt": _iso(repository.get("ingested_at"))})
+        elif repository:
             item.update({
                 "url": url or None, "ref": repository.get("ref"), "commit": repository.get("commit_sha"),
                 "committedAt": _iso(repository.get("committed_at")), "checkedAt": _iso(repository.get("ingested_at")),

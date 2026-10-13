@@ -94,6 +94,9 @@ CSHARP_MEMBERS = {
 class CodeChunk:
     text: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    # What the vector is made from when that is not the stored text: a DOORS
+    # requirement is stored with its attributes and embedded without (RQ-0037).
+    embedding_text: str | None = None
 
 
 @dataclass

@@ -43,6 +43,39 @@ class GitGroupConfig(BaseModel):
     project_exclude: list[str] = Field(default_factory=list, alias="projectExclude")
 
 
+class DoorsDatabaseConfig(BaseModel):
+    """One IBM DOORS server of a source, read from `<prefix>_DOORS_<k>_*` (RQ-0037)."""
+
+    entry: str
+    # The server's database in DOORS's own notation, port@host: 36677@192.168.2.101.
+    database: str
+    # Where the DOORS client runs, as an SSH destination: the server itself.
+    client: str
+    user: str
+    # The name of the variable that holds the password, as with a repository's token.
+    password_env: str = Field(alias="passwordEnv")
+    # Projects, folders or modules; every formal module under them is read.
+    paths: list[str] = Field(default_factory=lambda: ["/"])
+    # Globs matched against a module's full name.
+    exclude: list[str] = Field(default_factory=list)
+
+
+class RagDoorsConfig(BaseModel):
+    """How DOORS is reached (RQ-0037): classic DOORS has no web interface, its
+    data comes out through a DOORS client running a DXL script."""
+
+    # Only when the DOORS client is not on the DOORS server itself: the Windows
+    # PCs that have one, as SSH destinations (user@host), the preferred one
+    # first, separated by commas. Empty: each entry's own server.
+    clients: str = ""
+    # doors.exe on the client; found under Program Files when empty.
+    executable: str = ""
+    # Outside the deployed tree, like the git mirror.
+    mirror_dir: str = Field(default="/srv/rag-sources/doors", alias="mirrorDir")
+    # How long one doors.exe run (the listing, or the export) may take.
+    timeout_seconds: float = Field(default=600.0, gt=0, alias="timeoutSeconds")
+
+
 class RagJoernConfig(BaseModel):
     url: str = "http://127.0.0.1:8090"
     workspace: str = "/srv/rag-sources/joern"
@@ -58,6 +91,8 @@ DEFAULT_INCLUDE = [
     "**/*.txt",
     "**/*.md",
     "**/*.json",
+    # An IBM DOORS module exported by doors_client/export.dxl (RQ-0037).
+    "**/*.doors.jsonl",
     "**/*.csv",
     "**/*.html",
     "**/*.htm",
@@ -145,11 +180,13 @@ class RagSourceConfig(BaseModel):
     enabled: bool = True
     # The folder input. Optional: a source may hold only repositories.
     root_path: str | None = Field(default=None, alias="rootPath")
-    # The slot's variable prefix (`RAG_SOURCE_3`); its numbered REPO_<k> and
-    # GROUP_<k> entries are read from the environment under it.
+    # The slot's variable prefix (`RAG_SOURCE_3`); its numbered REPO_<k>,
+    # GROUP_<k> and DOORS_<k> entries are read from the environment under it.
     env_prefix: str | None = Field(default=None, alias="envPrefix")
     repositories: list[GitRepositoryConfig] = Field(default_factory=list)
     groups: list[GitGroupConfig] = Field(default_factory=list)
+    # DOORS databases whose modules join the source (RQ-0037), from DOORS_<k>.
+    doors: list[DoorsDatabaseConfig] = Field(default_factory=list)
     # RQ-0025: build Joern graphs of this source's C/C++ inputs, and the
     # source, sink and interrupt-handler patterns its queries use.
     dataflow: bool = False
@@ -185,7 +222,7 @@ class RagSourceConfig(BaseModel):
 
     @property
     def has_inputs(self) -> bool:
-        return bool(self.root_path or self.repositories or self.groups)
+        return bool(self.root_path or self.repositories or self.groups or self.doors)
 
     @field_validator("exclude_additions", mode="before")
     @classmethod
@@ -321,6 +358,7 @@ class RagConfig(BaseModel):
     database: RagDatabaseConfig = Field(default_factory=RagDatabaseConfig)
     sources: list[RagSourceConfig] = Field(default_factory=list)
     git: RagGitConfig = Field(default_factory=RagGitConfig)
+    doors: RagDoorsConfig = Field(default_factory=RagDoorsConfig)
     joern: RagJoernConfig = Field(default_factory=RagJoernConfig)
     ingest: RagIngestConfig = Field(default_factory=RagIngestConfig)
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
@@ -351,13 +389,14 @@ def load_factory_config(config_path: str | Path = "factory.config.json") -> Fact
         for source in sources:
             if isinstance(source, dict) and source.get("envPrefix"):
                 source.update(git_entries_from_env(str(source["envPrefix"]), str(source.get("id", "")), os.environ))
+                source.update(doors_entries_from_env(str(source["envPrefix"]), str(source.get("id", "")), os.environ))
                 source.update(dataflow_from_env(str(source["envPrefix"]), os.environ))
                 flag = (os.environ.get(f"{source['envPrefix']}_ENABLED") or "").strip().lower()
                 if flag:
                     source["enabled"] = flag not in {"0", "off", "false", "no"}
     config = FactoryConfig.model_validate({"rag": expanded_rag})
-    # A slot that names neither a folder nor a repository is an unused template
-    # slot, not a source.
+    # A slot that names neither a folder, a repository nor a DOORS database is
+    # an unused template slot, not a source.
     config.rag.sources = [source for source in config.rag.sources if source.has_inputs]
     return config
 
@@ -411,6 +450,70 @@ def git_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]
     return {"repositories": repositories, "groups": groups}
 
 
+DOORS_ENTRY_PATTERN = re.compile(r"^DOORS_(\d+)_(SERVER|SSH_USER|USER|PASSWORD|PATHS|EXCLUDE)$")
+DOORS_DEFAULT_PORT = 36677
+
+
+def doors_entries_from_env(prefix: str, source_id: str, environ: Mapping[str, str]) -> dict[str, list[dict[str, Any]]]:
+    """Collect a slot's numbered DOORS entries (RQ-0037).
+
+    `<prefix>_DOORS_<k>_SERVER` / `_USER` / `_PASSWORD`, and optionally
+    `_SSH_USER`, `_PATHS` and `_EXCLUDE` (JSON arrays). `SERVER` is the DOORS
+    server's address, with `:port` when it is not 36677; the DOORS client that
+    exports runs on the same machine, reached over SSH as `_SSH_USER`. Only
+    the password variable's name is kept. A server is listed once per slot:
+    its documents are told apart by the server, so two entries would retire
+    each other's modules.
+    """
+    found: dict[int, dict[str, str]] = {}
+    for name, value in environ.items():
+        if not name.startswith(prefix + "_"):
+            continue
+        match = DOORS_ENTRY_PATTERN.match(name[len(prefix) + 1:])
+        if match and value.strip():
+            found.setdefault(int(match.group(1)), {})[match.group(2)] = value.strip()
+
+    label = f"{prefix} ({source_id})" if source_id else prefix
+    entries: list[dict[str, Any]] = []
+    databases: dict[str, str] = {}
+    for number, fields in sorted(found.items()):
+        entry = f"{prefix}_DOORS_{number}"
+        missing = [f"{entry}_{field}" for field in ("SERVER", "USER", "PASSWORD") if field not in fields]
+        if missing:
+            raise ValueError(f"{label}: {entry} is incomplete, {' and '.join(missing)} not set")
+        host, port = _doors_server(fields["SERVER"], f"{entry}_SERVER")
+        database = f"{port}@{host}"
+        if database.lower() in databases:
+            raise ValueError(
+                f"{label}: {entry}_SERVER={fields['SERVER']} is also {databases[database.lower()]}_SERVER; "
+                f"list a server once and put all its paths in one _PATHS"
+            )
+        databases[database.lower()] = entry
+        paths = _json_glob_list(fields.get("PATHS"), f"{entry}_PATHS", "DOORS paths") or ["/"]
+        outside = [path for path in paths if not path.startswith("/")]
+        if outside:
+            raise ValueError(f"{entry}_PATHS: a DOORS path starts with /, got {outside[0]!r}")
+        entries.append({
+            "entry": entry, "database": database,
+            "client": f"{fields['SSH_USER']}@{host}" if fields.get("SSH_USER") else host,
+            "user": fields["USER"], "passwordEnv": f"{entry}_PASSWORD",
+            "paths": paths, "exclude": _json_glob_list(fields.get("EXCLUDE"), f"{entry}_EXCLUDE"),
+        })
+    return {"doors": entries}
+
+
+def _doors_server(value: str, name: str) -> tuple[str, int]:
+    """(host, port) of `host`, `host:port` or, as DOORS writes it, `port@host`."""
+    port, separator, host = value.partition("@")
+    if not separator:
+        host, separator, port = value.partition(":")
+    if not separator:
+        port = str(DOORS_DEFAULT_PORT)
+    if not host or not port.isdigit() or any(character.isspace() or character in "/@:" for character in host):
+        raise ValueError(f"{name}={value} is not a server address: an IP address or a name, with :port when it is not {DOORS_DEFAULT_PORT}")
+    return host, int(port)
+
+
 def dataflow_from_env(prefix: str, environ: Mapping[str, str]) -> dict[str, Any]:
     """`<prefix>_DATAFLOW=on` and its optional patterns.
 
@@ -435,15 +538,15 @@ def dataflow_from_env(prefix: str, environ: Mapping[str, str]) -> dict[str, Any]
     return values
 
 
-def _json_glob_list(value: str | None, name: str) -> list[str]:
+def _json_glob_list(value: str | None, name: str, what: str = "glob strings") -> list[str]:
     if not value:
         return []
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{name} must be a JSON array of glob strings") from exc
+        raise ValueError(f"{name} must be a JSON array of {what}") from exc
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
-        raise ValueError(f"{name} must be a JSON array of glob strings")
+        raise ValueError(f"{name} must be a JSON array of {what}")
     return parsed
 
 

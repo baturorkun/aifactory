@@ -191,6 +191,79 @@ re-chunked on their next ingest.
 Deploying it needs `pip install` of the tree-sitter packages in
 `pyproject.toml` and `db migrate` (migration `003_source_inputs.sql`).
 
+### IBM DOORS modules
+
+A source can also hold the requirement modules of an IBM DOORS server (classic
+DOORS, 9.x), next to its folder and its repositories. Classic DOORS has no web
+interface: its data comes out through a DOORS client running a DXL script. So
+the DOORS server gets a DOORS client installed on it, and the service reaches
+it over SSH.
+
+```dotenv
+# The DOORS server; the export runs on this machine's own DOORS client.
+RAG_SOURCE_3_DOORS_1_SERVER=192.168.2.101
+# The Windows account the service logs in as over SSH (quote a DOMAIN\name).
+RAG_SOURCE_3_DOORS_1_SSH_USER='LAB\rag'
+# The DOORS login.
+RAG_SOURCE_3_DOORS_1_USER=reader
+RAG_SOURCE_3_DOORS_1_PASSWORD=...
+# Projects, folders or modules; every formal module under them. Default: everything.
+RAG_SOURCE_3_DOORS_1_PATHS='["/PROJECT"]'
+# Globs on a module's full name.
+RAG_SOURCE_3_DOORS_1_EXCLUDE='["**/TEMPLATES/**"]'
+```
+
+`SERVER` is an address; add `:port` when the DOORS database is not on 36677.
+A server is listed once in a slot, with all its paths in one `_PATHS`.
+
+What the server needs:
+
+- OpenSSH Server, and the public key of the account the RAG service runs as in
+  the SSH account's `authorized_keys` (for an administrator account:
+  `C:\ProgramData\ssh\administrators_authorized_keys`).
+- A DOORS client of the server's version, licensed like any other client.
+  `doors.exe` is found under `Program Files\IBM\Rational\DOORS\*\bin`; set
+  `RAG_DOORS_EXECUTABLE` when it lives elsewhere.
+- A DOORS account that can read the modules. Read access is enough, the
+  scripts change nothing. A password that expires stops the export until it is
+  changed, so a dedicated account whose password does not expire is the better
+  choice. Each export holds a client licence for a few seconds.
+
+When the client cannot be on the server, name the Windows PCs that have one
+instead, as SSH destinations: `RAG_DOORS_CLIENTS=reader@192.168.1.57,reader@192.168.1.111`.
+The first that answers exports; one that cannot be reached is stepped over.
+
+At an ingest the service makes a directory of its own there
+(`aifactory-doors\<random>` under the SSH account's home), copies
+`ingest/doors_client/` into it, runs `doors.exe` in batch mode twice, to list
+the formal modules under the paths and to export the ones the excludes leave,
+fetches the files and removes the directory, also when the export failed. The
+password travels on the SSH connection; on the machine it is on `doors.exe`'s
+command line while that runs. A DOORS error (no client installed, a wrong or
+expired password, a path the database does not have) is reported as an input
+error of the ingest, never retried on another client, and the documents
+already ingested stay as they were.
+
+Each module is one document, `<module full name>.doors.jsonl`, mirrored under
+`rag.doors.mirrorDir` (`/srv/rag-sources/doors`), and each object that has text
+is one chunk: the module and the headings above it, the object's identifier,
+its text, then its attributes and links. A table is one chunk, row by row. The
+vector is made from the heading, identifier and text only; the attributes are
+there for the answer. The chunks are labelled `contentType: requirements`, and
+an answer cites `DOORS <module> <identifier>`.
+
+An unchanged module is skipped, a changed one is embedded again as a whole, a
+module that is gone or no longer selected has its document retired. There is
+no schedule: DOORS is read when the source is ingested. Pictures and OLE
+objects are not read, and neither are baselines.
+
+A module can also be exported by hand: run `doors_client/export.dxl` in a
+DOORS client with `AIFACTORY_DOORS_DIR` set to a directory that holds
+`selected.txt` (one module full name a line) and an `out` folder, rename
+`out\m1.jsonl` to `<name>.doors.jsonl` and put it in the source's folder or in
+a repository. A `*.doors.jsonl` file is chunked per requirement wherever it
+lies.
+
 ### Symbol graph
 
 The same parse records, per code file, its definitions (`rag_symbols`) and the

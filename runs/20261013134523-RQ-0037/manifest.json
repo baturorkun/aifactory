@@ -1,0 +1,51 @@
+{
+  "runId": "20261013134523-RQ-0037",
+  "requirementId": "RQ-0037",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261013134523-RQ-0037/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-13T13:45:23.414Z",
+  "updatedAt": "2026-10-13T13:46:06.192Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-13T13:45:28.298Z",
+      "finishedAt": "2026-10-13T13:45:49.615Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "factory.config.json",
+    "services/rag-web/public/app.js",
+    "services/rag-web/public/index.html",
+    "services/rag-web/public/styles.css",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/build_info.py",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/ingest/code_chunker.py",
+    "services/rag/src/aifactory_rag/ingest/doors_chunker.py",
+    "services/rag/src/aifactory_rag/ingest/doors_client/export.dxl",
+    "services/rag/src/aifactory_rag/ingest/doors_client/list.dxl",
+    "services/rag/src/aifactory_rag/ingest/doors_client/run.ps1",
+    "services/rag/src/aifactory_rag/ingest/doors_inputs.py",
+    "services/rag/src/aifactory_rag/ingest/parsers.py",
+    "services/rag/src/aifactory_rag/ingest/pipeline.py",
+    "services/rag/src/aifactory_rag/query/responder.py",
+    "services/rag/src/aifactory_rag/status.py",
+    "services/rag/tests/test_doors_chunker.py",
+    "services/rag/tests/test_doors_inputs.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-13T13:46:06.193Z",
+  "approvedBy": "Batur Orkun"
+}
