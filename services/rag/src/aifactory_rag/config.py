@@ -301,6 +301,12 @@ class RagLlmConfig(BaseModel):
 
 class RagRetrievalConfig(BaseModel):
     top_k: int = Field(default=6, alias="topK")
+    # How many candidates the HNSW index keeps while it searches (pgvector's
+    # hnsw.ef_search, 40 by default, 1000 at most). At 40 the index missed the
+    # true nearest chunk for 4 of 100 questions, a requirement asked for by its
+    # own sentence among them; at 400 it returned 99% of the exact top 12 in
+    # about 10 ms instead of 3 (measured on 290k chunks, 13 Oct 2026).
+    ef_search: int = Field(default=400, ge=1, le=1000, alias="efSearch")
     min_score: float | None = Field(default=None, alias="minScore")
 
 

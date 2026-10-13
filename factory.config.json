@@ -172,7 +172,8 @@
       "timeoutSeconds": "${RAG_LLM_TIMEOUT_SECONDS:-300}"
     },
     "retrieval": {
-      "topK": "${RAG_TOP_K:-12}"
+      "topK": "${RAG_TOP_K:-12}",
+      "efSearch": "${RAG_EF_SEARCH:-400}"
     },
     "auth": {
       "provider": "none",

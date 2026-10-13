@@ -85,6 +85,13 @@ class SourceFilterTests(unittest.TestCase):
 
         self.assertEqual(cursor.statements[0], "SET LOCAL hnsw.iterative_scan = strict_order")
 
+    def test_the_index_searches_with_more_candidates_than_its_default(self) -> None:
+        """At pgvector's default of 40 the index missed the true nearest chunk
+        for 4 of 100 questions; the retriever asks for rag.retrieval.efSearch."""
+        cursor = self.run_retrieve(["source-a"])
+
+        self.assertIn("SET LOCAL hnsw.ef_search = 400", cursor.statements)
+
     def test_retrieval_has_no_source_clause_without_filter(self) -> None:
         cursor = self.run_retrieve(None)
 

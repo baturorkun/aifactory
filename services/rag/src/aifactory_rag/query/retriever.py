@@ -87,6 +87,9 @@ def retrieve(
             # examples in aselsan-bfi. An iterative scan keeps walking the graph
             # until the filters leave enough rows (pgvector 0.8+).
             cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+            # The index is approximate: with the default 40 candidates it does
+            # not always reach the true nearest chunks (see RagRetrievalConfig).
+            cur.execute(f"SET LOCAL hnsw.ef_search = {int(config.retrieval.ef_search)}")
             cur.execute(
                 f"""
                 SELECT
