@@ -1,0 +1,173 @@
+// Exports the formal modules named in selected.txt, one full name a line:
+// module n goes to out\m<n>.jsonl, one JSON object a line, the module first
+// and then every object (RQ-0037). out\export.txt gets "n <tab> objects <tab>
+// full name" for each, -1 objects for a module that could not be opened. It
+// only reads. The same file format is read from a folder or a repository, so
+// a module can also be exported by hand with this script.
+// DXL binds a function call looser than string juxtaposition, so every piece
+// is appended on its own; nothing is concatenated after a call.
+pragma runLim, 0
+string dir = getenv "AIFACTORY_DOORS_DIR"
+
+string esc(string s) {
+    Buffer b = create
+    int i
+    for (i = 0; i < length s; i++) {
+        char c = s[i]
+        int n = intOf c
+        if (c == '"') b += "\\\""
+        else if (c == '\\') b += "\\\\"
+        else if (c == '\n') b += "\\n"
+        else if (c == '\r') b += ""
+        else if (c == '\t') b += "\\t"
+        else if (n >= 0 && n < 32) b += " "
+        else b += c
+    }
+    string r = stringOf b
+    delete b
+    return r
+}
+
+void pair(Buffer b, string key, string val) {
+    string e = esc val
+    b += "\""
+    b += key
+    b += "\": \""
+    b += e
+    b += "\""
+}
+
+int exportModule(string modPath, string file) {
+    Module m = read(modPath, false)
+    if (null m) return -1
+    Stream out = write(file, CP_UTF8)
+    int count = 0
+    Buffer head = create
+    string v1 = fullName m
+    string v2 = name m
+    string v3 = m."Description" ""
+    string v4 = m."Prefix" ""
+    string v5 = m."Last Modified On" ""
+    head += "{\"kind\": \"module\", \"format\": \"aifactory-doors-1\", "
+    pair(head, "path", v1)
+    head += ", "
+    pair(head, "name", v2)
+    head += ", "
+    pair(head, "description", v3)
+    head += ", "
+    pair(head, "prefix", v4)
+    head += ", "
+    pair(head, "modified", v5)
+    head += "}"
+    string hs = stringOf head
+    out << hs
+    out << "\n"
+    delete head
+    Object o
+    for o in entire m do {
+        if (isDeleted o) continue
+        Buffer line = create
+        string oid = identifier o
+        string absno = o."Absolute Number" ""
+        string num = number o
+        int lvl = level o
+        string shape = "object"
+        if (cell o) shape = "cell"
+        else if (row o) shape = "row"
+        else if (table o) shape = "table"
+        string heading = probeAttr_(o, "Object Heading")
+        string text = probeAttr_(o, "Object Text")
+        line += "{\"kind\": \"object\", "
+        pair(line, "id", oid)
+        line += ", \"absno\": "
+        line += absno
+        line += ", "
+        pair(line, "number", num)
+        line += ", \"level\": "
+        line += lvl ""
+        line += ", "
+        pair(line, "shape", shape)
+        line += ", "
+        pair(line, "heading", heading)
+        line += ", "
+        pair(line, "text", text)
+        line += ", \"attributes\": {"
+        bool first = true
+        AttrDef ad
+        for ad in m do {
+            if (!ad.object) continue
+            string an = ad.name
+            if (an == "Object Heading" || an == "Object Text" || an == "Absolute Number") continue
+            string v = probeAttr_(o, an)
+            if (v == "") continue
+            if (!first) line += ", "
+            first = false
+            pair(line, an, v)
+        }
+        line += "}, \"outLinks\": ["
+        first = true
+        Link l
+        for l in o -> "*" do {
+            string tm = fullName(target l)
+            int tn = targetAbsNo l
+            string via = fullName(module l)
+            if (!first) line += ", "
+            first = false
+            line += "{"
+            pair(line, "module", tm)
+            line += ", \"absno\": "
+            line += tn ""
+            line += ", "
+            pair(line, "via", via)
+            line += "}"
+        }
+        line += "], \"inLinks\": ["
+        first = true
+        LinkRef lr
+        for lr in o <- "*" do {
+            string sm = fullName(source lr)
+            int sn = sourceAbsNo lr
+            if (!first) line += ", "
+            first = false
+            line += "{"
+            pair(line, "module", sm)
+            line += ", \"absno\": "
+            line += sn ""
+            line += "}"
+        }
+        line += "]}"
+        string ls = stringOf line
+        out << ls
+        out << "\n"
+        delete line
+        count++
+    }
+    close m
+    close out
+    return count
+}
+
+Stream report = write(dir "\\out\\export.txt", CP_UTF8)
+// (selected and ok are names of DXL's own.)
+Stream chosen = read(dir "\\selected.txt", CP_UTF8)
+string modPath
+int n = 0
+while (true) {
+    chosen >> modPath
+    if (modPath != "") {
+        n++
+        int objects = exportModule(modPath, dir "\\out\\m" n ".jsonl")
+        report << n ""
+        report << "\t"
+        report << objects ""
+        report << "\t"
+        report << modPath
+        report << "\n"
+    }
+    if (end of chosen) break
+}
+close chosen
+close report
+Stream finished = write(dir "\\out\\export.ok")
+finished << "ok\n"
+close finished
