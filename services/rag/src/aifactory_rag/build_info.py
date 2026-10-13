@@ -8,8 +8,8 @@ is visible from outside. So the running process reports:
   submitted but not yet merged is deployed from its branch. Drafts and
   cancelled requirements do not count. Without a requirements directory, the
   version in pyproject.toml.
-- build: a fingerprint of its own source (every .py under the package plus
-  pyproject.toml). The same code always gives the same build, so two hosts,
+- build: a fingerprint of its own source (every .py under the package, the
+  scripts a DOORS client runs, and pyproject.toml). The same code always gives the same build, so two hosts,
   or a host and a commit, can be compared without a git checkout.
 - updatedAt: when those files last changed. rsync.sh keeps the source
   mtimes, so this is when the code itself last changed, not the copy time
@@ -39,6 +39,8 @@ _STATUS = re.compile(r"^status:\s*([A-Za-z_-]+)", re.M)
 
 def code_files(package_dir: Path = PACKAGE_DIR, pyproject: Path = PYPROJECT) -> list[Path]:
     files = sorted(p for p in package_dir.rglob("*.py") if "__pycache__" not in p.parts)
+    # The scripts a DOORS client runs are code too (RQ-0037).
+    files.extend(sorted(p for pattern in ("*.dxl", "*.ps1") for p in package_dir.rglob(pattern)))
     if pyproject.is_file():
         files.append(pyproject)
     return files

@@ -169,6 +169,9 @@ def _parse(path: Path) -> str:
     extension = path.suffix.lower()
     if extension in PLAIN_TEXT_EXTENSIONS or path.name.lower() in PLAIN_TEXT_FILENAMES:
         return path.read_text(encoding="utf-8", errors="replace")
+    if path.name.lower().endswith(".doors.jsonl"):
+        # A DOORS module export (RQ-0037): its own chunker reads the lines.
+        return path.read_text(encoding="utf-8", errors="replace")
     if extension == ".json":
         data = json.loads(path.read_text(encoding="utf-8"))
         return json.dumps(data, ensure_ascii=False, indent=2)

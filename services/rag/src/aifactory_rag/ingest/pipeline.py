@@ -25,6 +25,8 @@ from aifactory_rag.ingest.chunker import chunk_text
 from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_code, language_for
 from aifactory_rag.ingest.code_chunker import expected_chunker as code_chunker_for
 from aifactory_rag.ingest.markdown_chunker import MARKDOWN_CHUNKER, chunk_markdown, is_markdown
+from aifactory_rag.ingest.doors_chunker import DOORS_CHUNKER, chunk_doors, is_doors_export
+from aifactory_rag.ingest.doors_inputs import DoorsInput, DoorsInputError, DoorsTree, doors_inputs, sync_doors
 from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
 from aifactory_rag.ingest.git_inputs import (
     GitInputError,
@@ -117,9 +119,11 @@ def _format_duration(seconds: float) -> str:
 
 
 def _content_type_metadata(relative_path: str) -> dict[str, str]:
-    """Classify a file as documentation or code from its extension."""
+    """Classify a file as documentation, code or requirements from its name."""
     name = PurePosixPath(relative_path).name
     extension = PurePosixPath(name).suffix.lower()
+    if is_doors_export(name):
+        return {"contentType": "requirements"}  # a DOORS module (RQ-0037)
     if extension in DOCUMENTATION_EXTENSIONS:
         return {"contentType": "documentation"}
     if extension in CODE_EXTENSIONS or name.lower() in PLAIN_TEXT_FILENAMES:
@@ -230,6 +234,8 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
     print(f"RAG exclude       : {', '.join(excludes) if excludes else '(none)'}", flush=True)
     print(f"RAG subdirectory  : {normalized_subdir or '(entire source)'}", flush=True)
     print(f"RAG repositories  : {len(source.repositories)} listed, {len(source.groups)} groups", flush=True)
+    if source.doors:
+        print(f"RAG DOORS         : {', '.join(entry.database for entry in source.doors)}", flush=True)
 
     conn = connect(config.database.connection_string)
     try:
@@ -286,6 +292,30 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
                             {family: tree.commit for family in families}, summary.inputs[-1],
                             ref=tree.ref, repository_url=repository.web_url,
                         )
+
+            # DOORS modules (RQ-0037), exported through a DOORS client; like the
+            # repositories they are left alone when a subdirectory is asked for.
+            if normalized_subdir is None:
+                for doors_input in doors_inputs(source):
+                    print(f"RAG DOORS database: {doors_input.database} ({doors_input.entry})", flush=True)
+                    try:
+                        tree = sync_doors(source.id, doors_input, config.doors)
+                    except DoorsInputError as exc:
+                        conn = _record_input_error(conn, config, summary, source.id, exc, doors_input.key)
+                        continue
+                    print(f"RAG DOORS exported: {len(tree.files)} modules through {tree.client}", flush=True)
+                    _print_matched(doors_input.key, tree.files)
+                    context = InputContext(
+                        key=doors_input.key, label=doors_input.key,
+                        metadata={"input": doors_input.key, "doorsDatabase": doors_input.database},
+                    )
+                    conn = _ingest_input(conn, config, source, context, tree.files, embed_model, force, summary, None)
+                    conn, _ = _run_with_database_retries(
+                        conn,
+                        config,
+                        f"recording the export of {doors_input.key}",
+                        lambda current: _record_doors_state_and_commit(current, source.id, doors_input, tree),
+                    )
 
             summary.status = "failed" if summary.error_count else "passed"
             summary.duration_seconds = round(perf_counter() - run_started, 3)
@@ -799,6 +829,34 @@ def _record_input_state_and_commit(
     conn.commit()
 
 
+def _record_doors_state_and_commit(
+    conn: psycopg.Connection,
+    source_id: str,
+    doors_input: DoorsInput,
+    tree: DoorsTree,
+) -> None:
+    """When a DOORS database was last read, and what of it (RQ-0037). It shares
+    the repositories' table: the database is its address, the paths its ref,
+    and it has no commit."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO rag_source_inputs(source_id, input_key, entry, url, ref, commit_sha, file_count, committed_at, ingested_at)
+            VALUES (%s, %s, %s, %s, %s, '', %s, NULL, now())
+            ON CONFLICT(source_id, input_key) DO UPDATE SET
+              entry = EXCLUDED.entry,
+              url = EXCLUDED.url,
+              ref = EXCLUDED.ref,
+              commit_sha = '',
+              file_count = EXCLUDED.file_count,
+              committed_at = NULL,
+              ingested_at = now()
+            """,
+            (source_id, doors_input.key, doors_input.entry, doors_input.database, ", ".join(doors_input.paths), len(tree.files)),
+        )
+    conn.commit()
+
+
 def _finish_failed_run_and_commit(
     conn: psycopg.Connection,
     summary: IngestSummary,
@@ -860,13 +918,15 @@ def _ingest_file(
 
 
 def _chunks_for(text: str, relative_path: str, config: RagConfig) -> tuple[list[CodeChunk], bool]:
-    """Section chunks for Markdown, symbol chunks for C, C++, TS and JS from any
-    input; size chunks otherwise.
+    """Requirement chunks for a DOORS export, section chunks for Markdown, symbol
+    chunks for C, C++, TS and JS from any input; size chunks otherwise.
 
     The boolean says that a code file the symbol chunker could not read was
     chunked by size instead.
     """
     size, overlap = config.ingest.chunk_size, config.ingest.chunk_overlap
+    if is_doors_export(relative_path):
+        return chunk_doors(text, size), False
     if is_markdown(relative_path):
         return chunk_markdown(text, relative_path, size), False
     if language_for(relative_path):
@@ -920,8 +980,11 @@ def _replace_graph(conn: psycopg.Connection, document_id: int, source_id: str, g
 
 
 def expected_chunker(relative_path: str) -> str:
-    """The chunker a file gets now: by section for Markdown (RQ-0030), by symbol
-    for C, C++, TS and JS (RQ-0023), by size for everything else."""
+    """The chunker a file gets now: by requirement for a DOORS export (RQ-0037),
+    by section for Markdown (RQ-0030), by symbol for C, C++, TS and JS
+    (RQ-0023), by size for everything else."""
+    if is_doors_export(relative_path):
+        return DOORS_CHUNKER
     return MARKDOWN_CHUNKER if is_markdown(relative_path) else code_chunker_for(relative_path)
 
 
@@ -999,7 +1062,7 @@ def _replace_chunks(
         batch_chunks = [chunks[index].text for index in indices]
         print(f"  EMBED [{batch_number}/{total_batches}] {relative_path}: chunks {indices[0] + 1}-{indices[-1] + 1}/{len(chunks)}", flush=True)
         batch_started = perf_counter()
-        embeddings = embed_model.embed_documents(batch_chunks)
+        embeddings = embed_model.embed_documents([chunks[index].embedding_text or chunks[index].text for index in indices])
         if len(embeddings) != len(batch_chunks):
             raise RuntimeError(f"Embedding provider returned {len(embeddings)} vectors for {len(batch_chunks)} chunks")
         with conn.cursor() as cur:

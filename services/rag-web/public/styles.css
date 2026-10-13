@@ -254,6 +254,7 @@ button { color: inherit; }
 .card-kind { flex: none; padding: 1px 7px; border-radius: 6px; font: 600 10px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.06em; }
 .card-kind.git { color: #ffcf9e; background: rgba(240, 128, 48, 0.16); }
 .card-kind.folder { color: #a9d4ff; background: rgba(90, 160, 255, 0.15); }
+.card-kind.doors { color: #e3c7ff; background: rgba(170, 110, 255, 0.16); }
 .card-input-name { flex: 1; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .card-input-name.directory { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
 .card-count { flex: none; color: var(--muted); font-size: 11px; }

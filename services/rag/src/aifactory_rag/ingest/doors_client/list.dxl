@@ -1,0 +1,55 @@
+// Lists the formal modules under the DOORS paths of paths.txt, one path a
+// line, into out\modules.txt (RQ-0037). It only reads. A line "M <tab> full
+// name" is a module, "E <tab> path" a path the database does not have.
+// DXL binds a function call looser than string juxtaposition, so every piece
+// goes to the stream on its own.
+pragma runLim, 0
+string dir = getenv "AIFACTORY_DOORS_DIR"
+Stream out = write(dir "\\out\\modules.txt", CP_UTF8)
+
+void line(string mark, string text) {
+    out << mark
+    out << "\t"
+    out << text
+    out << "\n"
+}
+
+void walk(Folder f) {
+    Item i
+    for i in f do {
+        if (isDeleted i) continue
+        string t = type i
+        string n = fullName i
+        if (t == "Formal") line("M", n)
+        else if (t == "Folder" || t == "Project") walk(folder i)
+    }
+}
+
+void take(string path) {
+    if (path == "/") {
+        walk(folder "/")
+        return
+    }
+    Item found = item path
+    if (null found) {
+        line("E", path)
+        return
+    }
+    string t = type found
+    if (t == "Formal") line("M", path)
+    else if (t == "Folder" || t == "Project") walk(folder found)
+}
+
+// (path and ok are names of DXL's own.)
+Stream wanted = read(dir "\\paths.txt", CP_UTF8)
+string wantedPath
+while (true) {
+    wanted >> wantedPath
+    if (wantedPath != "") take wantedPath
+    if (end of wanted) break
+}
+close wanted
+close out
+Stream finished = write(dir "\\out\\list.ok")
+finished << "ok\n"
+close finished
