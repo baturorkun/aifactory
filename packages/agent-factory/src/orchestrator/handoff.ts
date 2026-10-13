@@ -19,9 +19,12 @@ import {
 } from './manifest';
 import {
   buildGroundingQuestion,
+  compareRequirement,
+  comparisonSummary,
   groundingExcludePaths,
   formatGroundingReference,
   queryConfiguredRag,
+  shouldCompareRequirement,
   shouldQueryGrounding,
   type RagGroundingResponse,
 } from '../rag/grounding-client';
@@ -333,6 +336,13 @@ async function createImplementationPackage(
         fetchImpl,
         { excludePaths: groundingExcludePaths(config) },
       );
+      // The requirement compared with the sources' requirements (RQ-0039).
+      // It is advice: it is stored and shown with the grounding and fails nothing.
+      if (shouldCompareRequirement(config, requirement.rawMarkdown)) {
+        console.log("  ▸ Comparison with the sources' requirements...");
+        ragGrounding.comparison = await compareRequirement(config, requirement, fetchImpl);
+        console.log(`    └ ${comparisonSummary(ragGrounding.comparison)}`);
+      }
       writeFileSync(
         join(handoffDir, 'rag-context.json'),
         JSON.stringify(ragGrounding, null, 2) + '\n',

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { existsSync, readdirSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { resolve, join } from 'path';
 import chalk from 'chalk';
 import { loadConfig } from './config';
@@ -21,7 +21,14 @@ import {
   runRagEnv,
   runRagPython,
 } from './rag/python-runner';
-import { queryConfiguredRag } from './rag/grounding-client';
+import {
+  compareRequirement,
+  comparisonSummary,
+  queryConfiguredRag,
+  shouldQueryGrounding,
+  type RagGroundingResponse,
+} from './rag/grounding-client';
+import { parseRequirement } from './requirements/parser';
 import {
   installRagService,
   runRagService,
@@ -90,6 +97,16 @@ program.hook('preAction', (_command, actionCommand) => {
 // ============================================================
 // factory requirement ...
 // ============================================================
+
+/** The conflicts a run's grounding recorded for its requirement (RQ-0039). */
+function recordedConflicts(runDir: string): string[] {
+  try {
+    const context = JSON.parse(readFileSync(join(runDir, 'rag-context.json'), 'utf8')) as RagGroundingResponse;
+    return Array.isArray(context.comparison?.conflicts) ? context.comparison.conflicts : [];
+  } catch {
+    return []; // no grounding recorded, or not readable: nothing to warn about
+  }
+}
 
 const requirement = program
   .command('requirement')
@@ -281,6 +298,32 @@ requirement
         console.log(chalk.dim(`  Apply  : ask Codex to apply handoff ${result.runId}`));
       }
       console.log();
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+requirement
+  .command('compare <reqId>')
+  .description("Compare a requirement with the requirements of the project's RAG sources (DOORS); changes nothing")
+  .action(async (reqId: string) => {
+    try {
+      const config = loadConfig();
+      const grounding = config.rag.grounding;
+      if (!grounding.enabled) throw new Error('RAG grounding is disabled for this project (rag.grounding.enabled).');
+      if (!grounding.compare.enabled) {
+        throw new Error('The comparison is not enabled for this project (rag.grounding.compare.enabled).');
+      }
+      const parsed = parseRequirement(reqId, config.paths.requirements);
+      if (!shouldQueryGrounding(config, parsed.rawMarkdown)) {
+        throw new Error(`Grounding is explicit for this project and ${reqId} does not carry the marker ${grounding.marker}.`);
+      }
+      const comparison = await compareRequirement(config, parsed);
+      console.log(chalk.blue(`\n▶ ${reqId} compared with the sources' requirements\n`));
+      console.log(`  ${comparisonSummary(comparison)}`);
+      if (comparison.answer) console.log(`\n${comparison.answer}\n`);
+      if (comparison.status === 'unavailable') process.exitCode = 1;
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
@@ -776,6 +819,12 @@ program
       }));
 
       console.log(chalk.green(`\n✓ Approved: ${chalk.bold(runId)} by ${chalk.bold(opts.by)}`));
+      // What the run's requirement conflicts with was a warning when it was
+      // grounded (RQ-0039); the approver sees it again, and decides.
+      const conflicts = recordedConflicts(runDir);
+      if (conflicts.length > 0) {
+        console.log(chalk.yellow(`  ⚠ Its requirement was found to conflict with: ${conflicts.join(', ')} (see rag-context.json of the run).`));
+      }
 
       const recorded = commitApprovedRun(manifest.requirementId, runId, config);
       if (recorded.committed) {
@@ -1125,6 +1174,7 @@ program
           mode: 'always',
           marker: '@rag',
           sourceIds: '${RAG_SOURCE_IDS:-fileserver}',
+          compare: { enabled: false },
           agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
           timeoutMs: 120000,
           failOpen: true,

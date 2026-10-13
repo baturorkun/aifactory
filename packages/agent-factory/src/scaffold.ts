@@ -1301,6 +1301,7 @@ function writeFactoryConfig(
         mode: 'always',
         marker: '@rag',
         sourceIds: '${RAG_SOURCE_IDS:-fileserver}',
+        compare: { enabled: false },
         agents: ['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard'],
         timeoutMs: 120000,
         failOpen: true,
