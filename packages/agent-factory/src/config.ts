@@ -258,6 +258,16 @@ const RagGroundingSchema = z.object({
       z.array(z.string().min(1)),
     )
     .optional(),
+  // A second question at grounding (RQ-0039): the requirement compared with
+  // the requirements the project's sources hold (a DOORS module, RQ-0037).
+  // What it leaves out by default are the other content types, so that what
+  // comes back are requirement chunks.
+  compare: z
+    .object({
+      enabled: z.boolean().default(false),
+      excludeContentTypes: z.array(z.string().min(1)).default(['documentation', 'code']),
+    })
+    .default({}),
   agents: z
     .array(RagGroundingAgentSchema)
     .default(['planner', 'architect', 'coder', 'tester', 'reviewer', 'domain-guard']),

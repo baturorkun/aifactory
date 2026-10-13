@@ -565,6 +565,49 @@ Ask the configured remote endpoint directly with:
 pnpm factory rag chat "What are the GpTriangleFan parameters?"
 ```
 
+### Comparing a requirement with the sources' requirements
+
+A source can hold the requirements of a project's DOORS modules (see "IBM
+DOORS modules"). A project grounded on such a source can have each of its
+factory requirements compared with them:
+
+```json
+{
+  "rag": {
+    "grounding": {
+      "enabled": true,
+      "sourceIds": ["aselsan-bfi"],
+      "compare": { "enabled": true }
+    }
+  }
+}
+```
+
+With `compare.enabled`, every grounding is followed by a second question to
+the same endpoint: the requirement, compared with requirement chunks only
+(`compare.excludeContentTypes`, by default `["documentation", "code"]`). The
+answer begins with two lines, `IMPLEMENTS:` and `CONFLICTS:`, and an
+identifier on them is kept only when the RAG returned a chunk of that
+requirement; whatever else the model names is listed as unverified. The
+result is stored with the grounding (`rag-context.json`, under `comparison`),
+shown under it in the handoff and to the agents, and summed up in one line
+when the package is created:
+
+```
+  ▸ Comparison with the sources' requirements...
+    └ implements BFI-SRS-1296; conflicts with none
+```
+
+It warns and never blocks: a conflict fails neither the submit nor the run,
+`factory approve` prints the conflicts of the run it approves, and a RAG that
+does not answer the second question leaves the grounding in place. While a
+requirement is being written, the same comparison can be asked for without
+creating a run or changing a file:
+
+```bash
+pnpm factory requirement compare RQ-0042
+```
+
 ## Run As An Ubuntu Service
 
 Install and immediately start a boot-enabled systemd service:

@@ -57,9 +57,12 @@ import { runAgent } from './runner';
 import { runAllGates, type GateReport } from '@aifactory/quality-gates';
 import {
   buildGroundingQuestion,
+  compareRequirement,
+  comparisonSummary,
   groundingExcludePaths,
   formatGroundingContext,
   queryConfiguredRag,
+  shouldCompareRequirement,
   shouldQueryGrounding,
   type RagGroundingResponse,
 } from '../rag/grounding-client';
@@ -556,6 +559,13 @@ export async function runPipeline(
         ragGrounding = await queryConfiguredRag(config, buildGroundingQuestion(config, requirement), fetch, {
           excludePaths: groundingExcludePaths(config),
         });
+        // The requirement compared with the sources' requirements (RQ-0039);
+        // the agents get it with the grounding.
+        if (shouldCompareRequirement(config, requirement.rawMarkdown)) {
+          console.log("  ▸ Comparison with the sources' requirements...");
+          ragGrounding.comparison = await compareRequirement(config, requirement);
+          console.log(`    └ ${comparisonSummary(ragGrounding.comparison)}`);
+        }
         writeFileSync(
           join(runDir, 'rag-context.json'),
           JSON.stringify(ragGrounding, null, 2) + '\n',

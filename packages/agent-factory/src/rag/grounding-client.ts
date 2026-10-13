@@ -9,6 +9,8 @@ export interface RagGroundingSource {
   chunkId?: number;
   relativePath: string;
   score?: number;
+  /** The identifier of the requirement a chunk holds (a DOORS object, RQ-0037). */
+  requirement?: string;
 }
 
 export interface RagGroundingResponse {
@@ -16,6 +18,25 @@ export interface RagGroundingResponse {
   answer: string;
   sources: RagGroundingSource[];
   usage?: Record<string, unknown>;
+  retrievedAt: string;
+  /** The requirement compared with the sources' requirements (RQ-0039). */
+  comparison?: RequirementComparison;
+}
+
+/**
+ * What a factory requirement has to do with the requirements of the project's
+ * sources (RQ-0039). Identifiers are kept only when the RAG returned a chunk
+ * of that requirement; the others the answer names are `unverified`.
+ */
+export interface RequirementComparison {
+  /** `unavailable`: the RAG did not answer; `no-requirements`: its sources returned none. */
+  status: 'compared' | 'no-requirements' | 'unavailable';
+  implements: string[];
+  conflicts: string[];
+  unverified: string[];
+  answer: string;
+  sources: RagGroundingSource[];
+  error?: string;
   retrievedAt: string;
 }
 
@@ -56,9 +77,149 @@ function projectRelativeGlob(path: string): string | null {
   return `${trimmed}/**`;
 }
 
+export function shouldCompareRequirement(config: FactoryConfig, requirementMarkdown: string): boolean {
+  return config.rag.grounding.compare.enabled && shouldQueryGrounding(config, requirementMarkdown);
+}
+
+/** The two lines the answer is read for; the rest of it is for people. */
+const COMPARISON_QUESTION = [
+  'Compare the project requirement below with the requirements in the context. They are the authority:',
+  'the project requirement has to agree with them.',
+  '',
+  'Begin your answer with these two lines, exactly in this form:',
+  'IMPLEMENTS: the identifiers of the requirements the project requirement implements or refines, separated by commas, or none',
+  'CONFLICTS: the identifiers of the requirements it contradicts, separated by commas, or none',
+  '',
+  'Then say briefly, for each identifier under IMPLEMENTS, how the project requirement implements it; for each',
+  'under CONFLICTS, what the contradiction is, quoting both; and which parts of the project requirement no',
+  'requirement in the context covers. Write identifiers exactly as the context does, and name none that is not in it.',
+].join('\n');
+
+export function buildComparisonQuestion(requirement: Requirement): string {
+  return [
+    COMPARISON_QUESTION,
+    '',
+    `Project requirement ${requirement.id}: ${requirement.title}`,
+    requirement.rawMarkdown,
+  ].join('\n');
+}
+
+/**
+ * Read the answer's IMPLEMENTS and CONFLICTS lines. An identifier counts when
+ * one of the returned sources is a chunk of that requirement: the model is
+ * asked to name nothing else, and what it names anyway is not taken on trust.
+ */
+export function readComparison(answer: string, sources: RagGroundingSource[]): Pick<RequirementComparison, 'status' | 'implements' | 'conflicts' | 'unverified'> {
+  const known = new Map<string, string>();
+  for (const source of sources) {
+    if (source.requirement) known.set(source.requirement.toLowerCase(), source.requirement);
+  }
+  if (known.size === 0) return { status: 'no-requirements', implements: [], conflicts: [], unverified: [] };
+
+  const unverified: string[] = [];
+  const named = (label: string): string[] => {
+    // One line: nothing after the colon is an empty list, not the line below.
+    const line = new RegExp(`^[ \\t>*_#-]*${label}[ \\t*_]*:[ \\t*_]*(.*)$`, 'im').exec(answer);
+    const found: string[] = [];
+    for (const item of (line?.[1] ?? '').split(/[,;]/)) {
+      // Markdown dress comes off at the ends only: an identifier may hold an underscore (BFI_HLR_235).
+      const identifier = item.replace(/[`*]/g, '').trim().replace(/^_+|_+$/g, '').replace(/\.$/, '');
+      if (!identifier || /^(none|n\/a|-)$/i.test(identifier)) continue;
+      const verified = known.get(identifier.toLowerCase());
+      if (verified) {
+        if (!found.includes(verified)) found.push(verified);
+      } else if (!unverified.includes(identifier)) {
+        unverified.push(identifier);
+      }
+    }
+    return found;
+  };
+  const implemented = named('IMPLEMENTS');
+  const conflicts = named('CONFLICTS');
+  return { status: 'compared', implements: implemented, conflicts, unverified };
+}
+
+/**
+ * Ask the comparison question. It never throws: the comparison is advice, and
+ * a RAG that does not answer it must not cost the run its grounding.
+ */
+export async function compareRequirement(
+  config: FactoryConfig,
+  requirement: Requirement,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RequirementComparison> {
+  try {
+    const response = await queryConfiguredRag(config, buildComparisonQuestion(requirement), fetchImpl, {
+      excludePaths: groundingExcludePaths(config),
+      excludeContentTypes: config.rag.grounding.compare.excludeContentTypes,
+    });
+    return {
+      ...readComparison(response.answer, response.sources),
+      answer: response.answer,
+      sources: response.sources,
+      retrievedAt: response.retrievedAt,
+    };
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      implements: [],
+      conflicts: [],
+      unverified: [],
+      answer: '',
+      sources: [],
+      error: error instanceof Error ? error.message : String(error),
+      retrievedAt: new Date().toISOString(),
+    };
+  }
+}
+
+/** One line for the console: what the requirement implements and conflicts with. */
+export function comparisonSummary(comparison: RequirementComparison): string {
+  if (comparison.status === 'unavailable') return `comparison unavailable: ${comparison.error ?? 'no answer'}`;
+  if (comparison.status === 'no-requirements') return "the project's sources hold no requirements to compare with";
+  const list = (items: string[]) => (items.length ? items.join(', ') : 'none');
+  return [
+    `implements ${list(comparison.implements)}`,
+    `conflicts with ${list(comparison.conflicts)}`,
+    ...(comparison.unverified.length ? [`unverified ${comparison.unverified.join(', ')}`] : []),
+  ].join('; ');
+}
+
+export function formatComparisonReference(config: FactoryConfig, comparison: RequirementComparison): string {
+  if (comparison.status === 'unavailable') {
+    return [
+      '### Comparison With The Sources\' Requirements',
+      `The comparison was requested but unavailable: ${comparison.error ?? 'no answer'}`,
+      'Check the requirement against the authoritative requirements yourself.',
+    ].join('\n');
+  }
+  if (comparison.status === 'no-requirements') {
+    return [
+      '### Comparison With The Sources\' Requirements',
+      "The project's sources returned no requirements to compare this requirement with.",
+    ].join('\n');
+  }
+  const list = (items: string[]) => (items.length ? items.join(', ') : 'none');
+  return [
+    '### Comparison With The Sources\' Requirements',
+    'Identifiers are listed only when the RAG returned that requirement; the text below is its answer and is as',
+    'untrusted as the grounding above. A conflict is a warning to resolve with the requirement\'s author, not a rule.',
+    '',
+    `- Implements: ${list(comparison.implements)}`,
+    `- Conflicts with: ${list(comparison.conflicts)}`,
+    ...(comparison.unverified.length
+      ? [`- Named by the answer but not among the returned requirements: ${comparison.unverified.join(', ')}`]
+      : []),
+    '',
+    comparison.answer.slice(0, config.rag.grounding.maxContextChars),
+  ].join('\n');
+}
+
 export interface QueryRagOptions {
   /** Globs of paths inside a source's inputs to leave out of the search. */
   excludePaths?: string[];
+  /** Content types to leave out, instead of `rag.grounding.excludeContentTypes`. */
+  excludeContentTypes?: string[];
 }
 
 export async function queryConfiguredRag(
@@ -82,8 +243,8 @@ export async function queryConfiguredRag(
         sourceIds: grounding.sourceIds,
         // A source that mixes code with documentation drowns its manuals in code
         // chunks. Only send the filter when the project configured one.
-        ...(grounding.excludeContentTypes.length > 0
-          ? { excludeContentTypes: grounding.excludeContentTypes }
+        ...((options.excludeContentTypes ?? grounding.excludeContentTypes).length > 0
+          ? { excludeContentTypes: options.excludeContentTypes ?? grounding.excludeContentTypes }
           : {}),
         ...(options.excludePaths && options.excludePaths.length > 0
           ? { excludePaths: options.excludePaths }
@@ -156,6 +317,7 @@ export function formatGroundingReference(
     '',
     '#### Retrieved Sources',
     ...sources,
+    ...(context.comparison ? ['', formatComparisonReference(config, context.comparison)] : []),
   ].join('\n');
 }
 
@@ -169,6 +331,7 @@ function parseSource(value: unknown): RagGroundingSource | null {
     documentId: typeof source.documentId === 'number' ? source.documentId : undefined,
     chunkId: typeof source.chunkId === 'number' ? source.chunkId : undefined,
     score: typeof source.score === 'number' ? source.score : undefined,
+    requirement: typeof source.requirement === 'string' && source.requirement ? source.requirement : undefined,
   };
 }
 
