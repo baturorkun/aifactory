@@ -345,7 +345,9 @@ function fillSourceCard(item) {
     const block = el('section', 'card-input');
     const title = el('div', 'card-input-head');
     const isGit = Boolean(input.commit);
-    const name = el('span', 'card-input-name', isGit ? input.label.replace(/^git: /, '') : (input.name || 'folder'));
+    // A folder is shown by its path on the share it lies on (the server's mount point left out).
+    const name = el('span', `card-input-name${isGit ? '' : ' directory'}`,
+      isGit ? input.label.replace(/^git: /, '') : (input.directory || input.name || 'folder'));
     if (!isGit && input.path) name.title = input.path;
     title.append(
       el('span', `card-kind ${isGit ? 'git' : 'folder'}`, isGit ? 'git' : 'folder'),

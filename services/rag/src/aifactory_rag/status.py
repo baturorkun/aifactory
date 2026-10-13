@@ -3,7 +3,11 @@ its data-flow graphs, and whether an ingest is running now."""
 
 from __future__ import annotations
 
+import os
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import PurePosixPath
 from typing import Any
 
 # A run still marked running after this long died without finishing, unless
@@ -86,8 +90,10 @@ def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str
         item: dict[str, Any] = {
             "input": key or "path",
             "label": "folder" if not key else f"git: {key.rsplit('/', 1)[-1]}",
-            # the folder's own name, so the page never has to guess what it holds
-            **({"name": folder.rstrip("/").rsplit("/", 1)[-1], "path": folder} if not key and folder else {}),
+            # the folder's own name, so the page never has to guess what it holds,
+            # and where it lies on its share
+            **({"name": folder.rstrip("/").rsplit("/", 1)[-1], "path": folder, "directory": _directory(folder)}
+               if not key and folder else {}),
             "documents": change.get("documents"),
             "lastChange": _iso(change.get("last_change")),
         }
@@ -100,6 +106,28 @@ def _inputs(source_id: str, inputs: list[dict[str, Any]], changes: list[dict[str
                 item["commitUrl"] = f"{url}/-/commit/{repository['commit_sha']}"
         result.append(item)
     return result
+
+
+def below_mount(path: str, is_mount: Callable[[str], bool] = os.path.ismount) -> str:
+    """A folder as its users know it: its path on the share it lies on, without
+    where the server happens to mount that share
+    (`/mnt/fs2/5000-K .../5001-K ...` -> `5000-K .../5001-K ...`). A folder
+    that is on no mount of its own keeps its whole path."""
+    folder = PurePosixPath(path)
+    for parent in [folder, *folder.parents]:
+        if str(parent) != "/" and is_mount(str(parent)):
+            return str(folder.relative_to(parent)) if parent != folder else folder.name
+    return str(folder)
+
+
+@lru_cache(maxsize=64)
+def _directory(path: str) -> str:
+    # Asked once per folder: mounts do not move while the service runs, and the
+    # status page must not wait on a share for every refresh.
+    try:
+        return below_mount(path)
+    except OSError:
+        return path
 
 
 def _run(row: dict[str, Any]) -> dict[str, Any]:
