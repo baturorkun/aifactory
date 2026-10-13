@@ -100,7 +100,7 @@ def _dataflow_findings(
                         for finding in item["findings"]:
                             text, anchor = dataflow.describe(finding)
                             found.append((
-                                f"[data-flow finding by Joern ({kind}, {item.get('language', 'C/C++')}), not a qualified tool; input {item['input']}"
+                                f"[data-flow finding by static analysis ({kind}, {item.get('language', 'C/C++')}), not a qualified tool; input {item['input']}"
                                 f"{' @ ' + str(item.get('ref')) if item.get('ref') else ''}"
                                 f"{' (' + str(item['commit'])[:8] + ')' if item.get('commit') else ''}]\n{text}",
                                 {
@@ -202,8 +202,8 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
         "Answer the question using only the provided source context. "
         "If the context is insufficient, say so. Cite supporting evidence using the document "
         "filename and page number when available; cite code by the location in its document label, "
-        "exactly as given. Do not use source numbers such as 'source 1'. A data-flow finding by Joern is "
-        "a tool finding, not verified evidence: say so when you use one.\n\n"
+        "exactly as given. Do not use source numbers such as 'source 1'. A data-flow finding by static "
+        "analysis is a tool finding, not verified evidence: say so when you use one.\n\n"
         f"Question:\n{question}\n\n"
         f"Source context:\n{context}"
     )

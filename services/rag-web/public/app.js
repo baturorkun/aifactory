@@ -407,7 +407,7 @@ function fillSourceCard(item) {
 
   if (item.dataflow.length) {
     const block = el('section', 'card-run');
-    block.append(el('div', 'card-section-title', 'Joern data-flow graphs'));
+    block.append(el('div', 'card-section-title', 'Data-flow graphs'));
     for (const graph of item.dataflow) {
       const name = graph.input === 'path' ? 'folder' : graph.input.split('/').pop();
       const language = { c: 'C/C++', js: 'TS/JS', cs: 'C#' }[graph.family] || graph.family || 'C/C++';

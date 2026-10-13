@@ -29,8 +29,10 @@ from typing import Any
 
 import httpx
 
+# What reaches an answer or the page does not name the analyser: the product
+# is shown to people who need not know what it is built from.
 NOTICE = (
-    "Joern is not a qualified tool (DO-330): these findings guide review and point at code; "
+    "The data-flow analysis is not a qualified tool (DO-330): these findings guide review and point at code; "
     "they are not certification evidence."
 )
 QUERIES = ("unchecked-input", "shared-state", "coupling")
