@@ -11,6 +11,26 @@ from aifactory_rag.query.path_filter import exclusion_regexes
 
 PAGE_MARKER = re.compile(r"\[page\s+(\d+)\]", re.IGNORECASE)
 
+# What can be a requirement's identifier (RQ-0038): a word that starts with a
+# letter, its parts joined by - _ or . (BFI-SRS-1296, BFI_HLR_235, REQ12). It
+# counts when it holds two letters and a digit, which leaves v2.3 and 3.5.1 out.
+IDENTIFIER = re.compile(r"(?<![\w.-])[A-Za-z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*(?![\w-])")
+MAX_IDENTIFIERS = 20
+# How a chunk found by its identifier is marked, for the answer and its source list.
+FOUND_BY_IDENTIFIER = "identifier"
+
+
+def identifiers_in(question: str) -> list[str]:
+    """The tokens of a question that can be requirement identifiers, lower-cased,
+    in the order they appear."""
+    found: list[str] = []
+    for match in IDENTIFIER.finditer(question):
+        token = match.group(0).lower()
+        if sum(character.isalpha() for character in token) >= 2 and any(character.isdigit() for character in token):
+            if token not in found:
+                found.append(token)
+    return found[:MAX_IDENTIFIERS]
+
 
 @dataclass(frozen=True)
 class RetrievedChunk:
@@ -72,15 +92,52 @@ def retrieve(
             # the requirement's own file.
             path_regexes = exclusion_regexes(exclude_paths)
             path_filter = " AND NOT (d.relative_path ~ ANY(%s))" if path_regexes else ""
-            params: list[Any] = [vector_literal(embedding), len(embedding)]
+            filter_params: list[Any] = []
             if source_ids:
-                params.append(source_ids)
+                filter_params.append(source_ids)
             if exclude_content_types:
-                params.append(exclude_content_types)
+                filter_params.append(exclude_content_types)
             if path_regexes:
-                params.append(path_regexes)
-            params.extend([vector_literal(embedding), config.retrieval.top_k])
+                filter_params.append(path_regexes)
+            params: list[Any] = [
+                vector_literal(embedding), len(embedding), *filter_params, vector_literal(embedding), config.retrieval.top_k,
+            ]
             dims = len(embedding)
+            # A requirement named by its identifier is looked up, not searched
+            # for (RQ-0038): a number means nothing to an embedding model, and
+            # "BFI-SRS-1296 ne diyor?" brought back twelve other requirements.
+            identifiers = identifiers_in(question)
+            named: list[dict[str, Any]] = []
+            if identifiers:
+                cur.execute(
+                    f"""
+                    SELECT
+                      c.id AS chunk_id,
+                      c.document_id,
+                      c.source_id,
+                      d.relative_path,
+                      c.text,
+                      c.metadata,
+                      c.chunk_index,
+                      lower(c.metadata->>'requirement') AS identifier,
+                      1 - ((c.embedding::halfvec({dims})) <=> %s::halfvec({dims})) AS score
+                    FROM rag_chunks c
+                    JOIN rag_documents d ON d.id = c.document_id
+                    WHERE c.status = 'active'
+                      AND d.status = 'active'
+                      AND c.embedding IS NOT NULL
+                      AND vector_dims(c.embedding) = %s
+                      -- as the index is written (migration 009)
+                      AND c.metadata ? 'requirement'
+                      AND lower(c.metadata->>'requirement') = ANY(%s)
+                      {source_filter}{content_filter}{path_filter}
+                    """,
+                    (vector_literal(embedding), len(embedding), identifiers, *filter_params),
+                )
+                named = sorted(
+                    cur.fetchall(),
+                    key=lambda row: (identifiers.index(row["identifier"]), row["relative_path"], row["chunk_index"]),
+                )[: config.retrieval.top_k]
             # The HNSW scan finds the nearest ef_search (40) chunks of the whole
             # index and filters them afterwards. "kac tip container var" asked
             # of arinc came back empty: its 40 nearest were all Ballard C#
@@ -135,19 +192,23 @@ def retrieve(
             )
             rows = cur.fetchall()
 
-    chunks = [
-        RetrievedChunk(
+    def chunk(row: dict[str, Any], found_by: str | None = None) -> RetrievedChunk:
+        return RetrievedChunk(
             chunk_id=int(row["chunk_id"]),
             document_id=int(row["document_id"]),
             source_id=row["source_id"],
             relative_path=row["relative_path"],
             text=row["text"],
             score=float(row["score"]),
-            metadata=row["metadata"] or {},
+            metadata={**(row["metadata"] or {}), **({"foundBy": found_by} if found_by else {})},
             page_numbers=infer_page_numbers(row["text"], row.get("previous_page_text")),
         )
-        for row in rows
-    ]
-    if config.retrieval.min_score is None:
-        return chunks
-    return [chunk for chunk in chunks if chunk.score >= config.retrieval.min_score]
+
+    # What was named comes first and is not weighed by its score; the search
+    # fills what is left of topK, without repeating a chunk.
+    by_identifier = [chunk(row, FOUND_BY_IDENTIFIER) for row in named]
+    taken = {found.chunk_id for found in by_identifier}
+    searched = [chunk(row) for row in rows if int(row["chunk_id"]) not in taken]
+    if config.retrieval.min_score is not None:
+        searched = [found for found in searched if found.score >= config.retrieval.min_score]
+    return [*by_identifier, *searched][: config.retrieval.top_k]

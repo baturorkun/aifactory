@@ -252,6 +252,15 @@ vector is made from the heading, identifier and text only; the attributes are
 there for the answer. The chunks are labelled `contentType: requirements`, and
 an answer cites `DOORS <module> <identifier>`.
 
+A requirement can be asked for by its identifier ("BFI-SRS-1296 ne diyor?").
+An embedding model cannot match a number, so the question is read for tokens
+that can be identifiers (two letters and a digit, parts joined by `-`, `_` or
+`.`), and each is looked up, whatever its letter case, among the requirement
+labels of the chunks the question may search. What is found heads the result,
+in the order of the question; the vector search fills the rest of
+`rag.retrieval.topK`. Only the label is looked up: an identifier that a PDF
+merely mentions is found by the search or not at all.
+
 An unchanged module is skipped, a changed one is embedded again as a whole, a
 module that is gone or no longer selected has its document retired. There is
 no schedule: DOORS is read when the source is ingested. Pictures and OLE

@@ -54,6 +54,7 @@ def answer_question(
             "score": chunk.score,
             **code_location(chunk.relative_path, chunk.metadata),
             **({"graphRelation": chunk.metadata["graphRelation"]} if chunk.metadata.get("graphRelation") else {}),
+            **({"foundBy": chunk.metadata["foundBy"]} if chunk.metadata.get("foundBy") else {}),
         }
         for chunk in chunks
     ]
@@ -192,6 +193,8 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
         label = citation_label(chunk.relative_path, chunk.metadata, chunk.page_numbers)
         if chunk.metadata.get("graphRelation"):
             label += f"; found through the code graph: {chunk.metadata['graphRelation']}"
+        if chunk.metadata.get("foundBy") == "identifier":
+            label += "; the requirement the question names"
         context_parts.append(f"[document: {label}]\n{chunk.text}")
     context_parts.extend(findings or [])
     context = "\n\n".join(context_parts)
