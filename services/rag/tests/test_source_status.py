@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from aifactory_rag.status import summarize
+from aifactory_rag.status import below_mount, summarize
 
 NOW = datetime(2026, 10, 2, 9, 0, tzinfo=timezone.utc)
 
@@ -15,6 +15,22 @@ def run(run_id: int, source: str, status: str, started: datetime, finished: date
         "id": run_id, "source_id": source, "status": status, "started_at": started, "finished_at": finished,
         "scanned_count": scanned, "inserted_count": 1, "updated_count": 2, "skipped_count": 7, "deleted_count": 0, "error_count": errors,
     }
+
+
+class FolderDirectoryTests(unittest.TestCase):
+    def test_a_folder_is_shown_by_its_path_on_the_share_not_by_where_the_share_is_mounted(self) -> None:
+        mounts = {"/mnt/fs1", "/mnt/fs2"}
+        self.assertEqual(
+            below_mount("/mnt/fs2/5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW", mounts.__contains__),
+            "5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW",
+        )
+        self.assertEqual(below_mount("/mnt/fs1/1000 AR-GE/1010 STANDARDS/ARINC/", mounts.__contains__), "1000 AR-GE/1010 STANDARDS/ARINC")
+
+    def test_a_folder_on_no_mount_of_its_own_keeps_its_whole_path(self) -> None:
+        self.assertEqual(below_mount("/srv/docs/manuals", lambda _: False), "/srv/docs/manuals")
+
+    def test_a_share_ingested_whole_is_shown_by_its_name(self) -> None:
+        self.assertEqual(below_mount("/mnt/fs1", {"/mnt/fs1"}.__contains__), "fs1")
 
 
 class SummaryTests(unittest.TestCase):
@@ -68,6 +84,7 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual((folder["label"], folder["documents"], folder["lastChange"]), ("folder", 1230, folder_change.isoformat()))
         self.assertNotIn("commit", folder)
         self.assertEqual(folder["name"], "5001-K ASELSAN BFI-SW")
+        self.assertIn("5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW", folder["directory"])
         self.assertEqual((repository["label"], repository["ref"], repository["committedAt"]), ("git: bfi-sw", "project-initialization", committed.isoformat()))
         self.assertEqual(repository["commitUrl"], "http://gitlab.bc.int/aselsan/bfi-sw/-/commit/0acecaf696e7abc")
         self.assertEqual(item["dataflow"][0]["input"], "path")
