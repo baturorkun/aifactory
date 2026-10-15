@@ -325,6 +325,15 @@ function ago(iso) {
   return `${Math.round(hours / 24)} days ago`;
 }
 
+// "git teydeb-2d-ge-ipc · 193 of 207 · path/file.pdf", or the step that is not a file.
+function progressText(progress) {
+  const input = progress.kind === 'folder' ? 'folder' : `${progress.kind} ${String(progress.input || '').replace(/^doors:/, '')}`;
+  const parts = [`Now: ${input}`];
+  if (progress.file) parts.push(`${progress.index} of ${progress.total}`, progress.file);
+  else if (progress.step) parts.push(progress.step);
+  return parts.join(' · ');
+}
+
 function stamp(iso, prefix) {
   const line = el('div', 'card-when');
   line.append(el('span', null, `${prefix} ${formatStamp(iso)}`), el('span', 'card-ago', ago(iso)));
@@ -396,6 +405,9 @@ function fillSourceCard(item) {
     block.append(el('div', 'card-section-title', `${item.running ? 'Running ingest' : 'Last ingest'} #${run.id}`));
     if (run.finishedAt) block.append(stamp(run.finishedAt, 'Finished'));
     else block.append(stamp(run.startedAt, 'Started'));
+    // Who started it and, while it runs, where it is (RQ-0040).
+    if (run.startedBy) block.append(el('div', 'card-run-note', `By ${run.startedBy}`));
+    if (item.running && run.progress) block.append(el('div', 'card-run-now', progressText(run.progress)));
     const stats = el('div', 'card-stats');
     for (const [value, label, color] of [
       [run.inserted, 'new', 'green'], [run.updated, 'changed', 'amber'], [run.deleted, 'removed', 'red'],

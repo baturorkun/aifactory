@@ -86,17 +86,34 @@ def authentic(repository: GitRepositoryConfig, token: str | None, environ: dict[
     return hmac.compare_digest(secret.encode(), token.encode())
 
 
-class IngestQueue:
-    """One background ingest per source; pushes during a run fold into one more run."""
+def started_by(event: dict[str, Any]) -> str:
+    """Who a webhook's ingest is for, as the page shows it (RQ-0040)."""
+    project = (event.get("project") or {}).get("path_with_namespace") or "a project"
+    user = event.get("user_name") or (event.get("user") or {}).get("name") or "someone"
+    kind = event.get("object_kind")
+    if kind == "tag_push":
+        return f"GitLab tag push by {user} to {project}"
+    if kind == "pipeline":
+        return f"GitLab pipeline of {project}, by {user}"
+    return f"GitLab push by {user} to {project}"
 
-    def __init__(self, ingest: Callable[[str], Any]) -> None:
+
+class IngestQueue:
+    """One background ingest per source; pushes during a run fold into one more run.
+
+    `ingest` is called with the source and who the run is for: the last of the
+    pushes folded into it."""
+
+    def __init__(self, ingest: Callable[[str, str | None], Any]) -> None:
         self._ingest = ingest
         self._lock = threading.Lock()
         self._running: set[str] = set()
         self._pending: set[str] = set()
+        self._started_by: dict[str, str | None] = {}
 
-    def trigger(self, source_id: str) -> str:
+    def trigger(self, source_id: str, started_by: str | None = None) -> str:
         with self._lock:
+            self._started_by[source_id] = started_by
             if source_id in self._running:
                 self._pending.add(source_id)
                 return "pending"
@@ -107,8 +124,10 @@ class IngestQueue:
     def _run(self, source_id: str) -> None:
         while True:
             try:
-                print(f"Webhook ingest of {source_id} started", flush=True)
-                self._ingest(source_id)
+                with self._lock:
+                    who = self._started_by.pop(source_id, None)
+                print(f"Webhook ingest of {source_id} started" + (f" ({who})" if who else ""), flush=True)
+                self._ingest(source_id, who)
             except Exception:  # noqa: BLE001 - one failed run must not stop the next
                 print(f"Webhook ingest of {source_id} failed:\n{traceback.format_exc()}", flush=True)
             with self._lock:

@@ -20,7 +20,7 @@ DOORS_KEY_PREFIX = "doors:"
 
 RUN_COLUMNS = (
     "id, source_id, status, started_at, finished_at, scanned_count, inserted_count, "
-    "updated_count, skipped_count, deleted_count, error_count"
+    "updated_count, skipped_count, deleted_count, error_count, started_by, progress"
 )
 
 
@@ -144,6 +144,9 @@ def _run(row: dict[str, Any]) -> dict[str, Any]:
         "startedAt": _iso(row.get("started_at")), "finishedAt": _iso(row.get("finished_at")),
         "scanned": row.get("scanned_count"), "inserted": row.get("inserted_count"), "updated": row.get("updated_count"),
         "skipped": row.get("skipped_count"), "deleted": row.get("deleted_count"), "errors": row.get("error_count"),
+        # RQ-0040: who started it, and while it runs, where it is.
+        **({"startedBy": row["started_by"]} if row.get("started_by") else {}),
+        **({"progress": row["progress"]} if row.get("progress") and not row.get("finished_at") else {}),
     }
 
 

@@ -7,7 +7,7 @@ import time
 import unittest
 
 from aifactory_rag.config import RagConfig, git_entries_from_env
-from aifactory_rag.webhook import IngestQueue, authentic, entries_for, follows
+from aifactory_rag.webhook import IngestQueue, authentic, entries_for, follows, started_by
 
 SECRET = "webhook-secret-123"
 
@@ -93,7 +93,7 @@ class QueueTests(unittest.TestCase):
         release = threading.Event()
         runs: list[str] = []
 
-        def ingest(source_id: str) -> None:
+        def ingest(source_id: str, started_by: str | None) -> None:
             runs.append(source_id)
             release.wait(5)
 
@@ -111,7 +111,7 @@ class QueueTests(unittest.TestCase):
     def test_a_failed_run_does_not_stop_the_queue(self) -> None:
         calls: list[int] = []
 
-        def ingest(source_id: str) -> None:
+        def ingest(source_id: str, started_by: str | None) -> None:
             calls.append(1)
             raise RuntimeError("database down")
 
@@ -121,6 +121,36 @@ class QueueTests(unittest.TestCase):
         while queue.busy("s") and time.time() < deadline:
             time.sleep(0.02)
         self.assertEqual(queue.trigger("s"), "started")
+
+
+class StartedByTests(unittest.TestCase):
+    """Who a webhook's ingest is for, as the page shows it (RQ-0040)."""
+
+    def test_a_push_names_the_pusher_and_the_project(self) -> None:
+        self.assertEqual(started_by({**push(path="2d-ge-ipc/teydeb-2d-ge-ipc"), "user_name": "Batur Orkun"}),
+                         "GitLab push by Batur Orkun to 2d-ge-ipc/teydeb-2d-ge-ipc")
+        self.assertEqual(started_by({**push(kind="tag_push"), "user_name": "Ayşe"}), "GitLab tag push by Ayşe to aselsan/bfi-sw")
+        self.assertEqual(started_by({**push(kind="pipeline"), "user": {"name": "Ayşe"}}), "GitLab pipeline of aselsan/bfi-sw, by Ayşe")
+        self.assertEqual(started_by({"object_kind": "push"}), "GitLab push by someone to a project")
+
+    def test_the_run_is_for_the_last_of_the_pushes_folded_into_it(self) -> None:
+        release = threading.Event()
+        runs: list[tuple[str, str | None]] = []
+
+        def ingest(source_id: str, who: str | None) -> None:
+            runs.append((source_id, who))
+            release.wait(5)
+
+        queue = IngestQueue(ingest)
+        queue.trigger("s", "GitLab push by A to p")
+        time.sleep(0.05)
+        queue.trigger("s", "GitLab push by B to p")
+        queue.trigger("s", "GitLab push by C to p")
+        release.set()
+        deadline = time.time() + 5
+        while queue.busy("s") and time.time() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(runs, [("s", "GitLab push by A to p"), ("s", "GitLab push by C to p")])
 
 
 if __name__ == "__main__":

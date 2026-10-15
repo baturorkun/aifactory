@@ -135,13 +135,15 @@ class PassiveSourceError(ValueError):
     """An ingest of a source that is turned off (RQ-0033)."""
 
 
-def ingest_source(config: RagConfig, source_id: str, force: bool = False, subdir: str | None = None) -> IngestSummary:
+def ingest_source(
+    config: RagConfig, source_id: str, force: bool = False, subdir: str | None = None, started_by: str | None = None,
+) -> IngestSummary:
     if not find_source(config, source_id).enabled:
         raise PassiveSourceError(
             f"RAG source {source_id} is passive: its rows are kept but it is not ingested; set its ENABLED=on to ingest it"
         )
     with _source_lock(config, source_id):
-        return _ingest_source(config, source_id, force, subdir)
+        return _ingest_source(config, source_id, force, subdir, started_by)
 
 
 def _lock_key(source_id: str) -> str:
@@ -167,7 +169,7 @@ def close_interrupted_runs(connection_string: str) -> list[int]:
                 continue  # an ingest of this source is running somewhere
             try:
                 closed.extend(row[0] for row in conn.execute(
-                    "UPDATE rag_ingest_runs SET status = 'failed', finished_at = now(), "
+                    "UPDATE rag_ingest_runs SET status = 'failed', finished_at = now(), progress = NULL, "
                     "error = 'interrupted: no ingest of this source was running when the service started' "
                     "WHERE source_id = %s AND status = 'running' RETURNING id",
                     (source_id,),
@@ -211,7 +213,9 @@ def _source_lock(config: RagConfig, source_id: str) -> Iterator[None]:
             lock.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (key,))
 
 
-def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str | None) -> IngestSummary:
+def _ingest_source(
+    config: RagConfig, source_id: str, force: bool, subdir: str | None, started_by: str | None = None,
+) -> IngestSummary:
     run_started = perf_counter()
     # A corpus is only useful once it can be searched quickly, and the index has
     # to match the width this run writes, so it is ensured here rather than left
@@ -240,7 +244,7 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
     conn = connect(config.database.connection_string)
     try:
         _upsert_source(conn, source)
-        run_id = _start_run(conn, source.id)
+        run_id = _start_run(conn, source.id, started_by)
         summary = IngestSummary(run_id=run_id, source_id=source.id, status="running", subdir=normalized_subdir)
         conn.commit()
 
@@ -256,6 +260,9 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
                         family: dataflow.folder_state(code)
                         for family, code in _by_family((f.relative_path, f.size, f.modified_timestamp) for f in files).items()
                     }
+                    conn = _report_progress(
+                        conn, config, summary, {"kind": "folder", "input": FOLDER_INPUT.label, "step": "building data-flow graphs"},
+                    )
                     conn = _build_dataflow_graphs(
                         conn, config, source.id, "", f"{source.id}-path", str(source.root_path), states, summary.inputs[-1],
                     )
@@ -267,6 +274,7 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
                     conn = _record_input_error(conn, config, summary, source.id, error)
                 for repository in repositories:
                     print(f"RAG repository    : {repository.key} ({repository.entry})", flush=True)
+                    conn = _report_progress(conn, config, summary, {"kind": "git", "input": repository.key, "step": "fetching"})
                     try:
                         tree = sync_repository(repository, config.git.mirror_dir)
                     except GitInputError as exc:
@@ -287,6 +295,9 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
                     conn = _apply_scip_index(conn, config, source.id, repository, tree, summary.inputs[-1])
                     if source.dataflow:
                         families = _by_family((path, 0, 0.0) for path in tree.blobs)
+                        conn = _report_progress(
+                            conn, config, summary, {"kind": "git", "input": repository.key, "step": "building data-flow graphs"},
+                        )
                         conn = _build_dataflow_graphs(
                             conn, config, source.id, repository.key, repository.key, str(tree.worktree),
                             {family: tree.commit for family in families}, summary.inputs[-1],
@@ -298,6 +309,9 @@ def _ingest_source(config: RagConfig, source_id: str, force: bool, subdir: str |
             if normalized_subdir is None:
                 for doors_input in doors_inputs(source):
                     print(f"RAG DOORS database: {doors_input.database} ({doors_input.entry})", flush=True)
+                    conn = _report_progress(
+                        conn, config, summary, {"kind": "doors", "input": doors_input.key, "step": "exporting from DOORS"},
+                    )
                     try:
                         tree = sync_doors(source.id, doors_input, config.doors)
                     except DoorsInputError as exc:
@@ -602,10 +616,14 @@ def _ingest_input(
         counts["commit"] = context.metadata["commit"]
     summary.scanned_count += len(files)
     seen: set[str] = set()
+    kind = "folder" if not context.key else "doors" if context.key.startswith("doors:") else "git"
     for index, file in enumerate(files, start=1):
         file_started = perf_counter()
         progress = f"[{index}/{len(files)}]"
         print(f"{progress} START {file.relative_path}", flush=True)
+        conn = _report_progress(conn, config, summary, {
+            "kind": kind, "input": context.label, "file": file.relative_path, "index": index, "total": len(files),
+        })
         seen.add(file.relative_path)
         try:
             conn, (outcome, fallback) = _run_with_database_retries(
@@ -656,6 +674,32 @@ def _ingest_input(
 
 def _display_path(context: InputContext, relative_path: str) -> str:
     return f"{context.key}:{relative_path}" if context.key else relative_path
+
+
+def _report_progress(
+    conn: psycopg.Connection, config: RagConfig, summary: IngestSummary, progress: dict[str, Any],
+) -> psycopg.Connection:
+    """Where a running ingest is, and its counts so far (RQ-0040): the page
+    otherwise shows a run at 0 until it ends, which for a large source is an
+    hour or more."""
+    def write(current: psycopg.Connection) -> None:
+        with current.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE rag_ingest_runs
+                SET progress = %s::jsonb, scanned_count = %s, inserted_count = %s, updated_count = %s,
+                    skipped_count = %s, deleted_count = %s, error_count = %s
+                WHERE id = %s
+                """,
+                (
+                    json.dumps(progress), summary.scanned_count, summary.inserted_count, summary.updated_count,
+                    summary.skipped_count, summary.deleted_count, summary.error_count, summary.run_id,
+                ),
+            )
+        current.commit()
+
+    conn, _ = _run_with_database_retries(conn, config, "recording the ingest's progress", write)
+    return conn
 
 
 def _record_input_error(
@@ -1276,11 +1320,11 @@ def _mark_deleted(conn: psycopg.Connection, source_id: str, input_key: str, seen
         return len(document_ids)
 
 
-def _start_run(conn: psycopg.Connection, source_id: str) -> int:
+def _start_run(conn: psycopg.Connection, source_id: str, started_by: str | None = None) -> int:
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO rag_ingest_runs(source_id, status) VALUES (%s, 'running') RETURNING id",
-            (source_id,),
+            "INSERT INTO rag_ingest_runs(source_id, status, started_by) VALUES (%s, 'running', %s) RETURNING id",
+            (source_id, started_by),
         )
         row = cur.fetchone()
         return int(row["id"])
@@ -1293,6 +1337,7 @@ def _finish_run(conn: psycopg.Connection, summary: IngestSummary, error: str | N
             UPDATE rag_ingest_runs
             SET status = %s,
                 finished_at = now(),
+                progress = NULL,
                 scanned_count = %s,
                 inserted_count = %s,
                 updated_count = %s,

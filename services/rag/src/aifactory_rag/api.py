@@ -119,7 +119,9 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     @app.post("/ingest-runs")
     def create_ingest_run(payload: IngestRunRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:
         try:
-            summary = ingest_source(factory_config.rag, payload.sourceId, force=payload.force, subdir=payload.subdir)
+            summary = ingest_source(
+                factory_config.rag, payload.sourceId, force=payload.force, subdir=payload.subdir, started_by="API",
+            )
         except PassiveSourceError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return summary.__dict__
@@ -269,7 +271,9 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    queue = webhook.IngestQueue(lambda source_id: ingest_source(factory_config.rag, source_id))
+    queue = webhook.IngestQueue(
+        lambda source_id, started_by: ingest_source(factory_config.rag, source_id, started_by=started_by)
+    )
 
     # GitLab push and tag-push events keep repository sources current (RQ-0028).
     # The API is open on the network, so the entry's secret is never optional.
@@ -296,7 +300,8 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
                 return JSONResponse({"ignored": f"pipeline {attributes.get('status')}, not finished"}, status_code=200)
             pushed = event.get("ref") or attributes.get("ref")
             return JSONResponse({"ignored": f"no source follows {pushed}"}, status_code=200)
-        return JSONResponse({"queued": {source_id: queue.trigger(source_id) for source_id in sources}}, status_code=202)
+        who = webhook.started_by(event)
+        return JSONResponse({"queued": {source_id: queue.trigger(source_id, who) for source_id in sources}}, status_code=202)
 
     @app.post("/db/migrate")
     def migrate_db(_: dict[str, Any] = Depends(auth_claims)) -> dict[str, str]:
