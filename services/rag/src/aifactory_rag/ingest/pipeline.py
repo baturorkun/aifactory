@@ -39,7 +39,7 @@ from aifactory_rag.ingest.git_inputs import (
 )
 from aifactory_rag.ingest.scip_index import ScipIndex, read_index
 from aifactory_rag import dataflow
-from aifactory_rag.ingest.parsers import parse_file
+from aifactory_rag.ingest.parsers import parse_file, parser_version
 from aifactory_rag.ingest.sources import SourceFile, effective_excludes, normalize_subdir, scan_files, selected
 
 
@@ -1106,11 +1106,13 @@ def _ingest_config_matches(existing: dict[str, Any], config: RagConfig, relative
     The chunker is part of that: a code file chunked by size before symbol
     chunking existed is chunked again even though the file did not change.
     Only the file types whose chunker changed are affected; a document from
-    before the field existed was chunked by size.
+    before the field existed was chunked by size. So is the parser's version:
+    a slide deck read before its pictures were is read again.
     """
     metadata = existing.get("metadata") or {}
     return (
         (metadata.get("chunker") or SIZE_CHUNKER) == expected_chunker(relative_path)
+        and (metadata.get("parserVersion") or 1) == parser_version(relative_path)
         and metadata.get("chunkSize") == config.ingest.chunk_size
         and metadata.get("chunkOverlap") == config.ingest.chunk_overlap
         and metadata.get("embeddingProvider") == config.embedding.provider
@@ -1177,6 +1179,7 @@ def _upsert_document(
 ) -> int:
     metadata = {
         "chunker": expected_chunker(file.relative_path),
+        "parserVersion": parser_version(file.relative_path),
         **({"chunkFallback": True} if chunk_fallback else {}),
         **context.metadata,
         "extension": file.path.suffix.lower(),

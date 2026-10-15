@@ -99,6 +99,19 @@ SUPPORTED_EXTENSIONS = (
     | IMAGE_EXTENSIONS
 )
 
+# How a file type is read now. A document read by an earlier version of its
+# parser is read again on the next ingest, even when the file did not change.
+# Types missing here are at version 1.
+PARSER_VERSIONS = {
+    # 2: the text in a slide's pictures is read too, as it is in PDF and DOCX.
+    ".pptx": 2,
+}
+
+
+def parser_version(relative_path: str) -> int:
+    return PARSER_VERSIONS.get(Path(relative_path).suffix.lower(), 1)
+
+
 # Embedded images repeat on every page of a document as logos and stamps. Only the
 # first occurrence of a given image is worth reading.
 MIN_EMBEDDED_IMAGE_BYTES = 3000
@@ -322,6 +335,7 @@ def _parse_pptx(path: Path) -> str:
 
     presentation = Presentation(str(path))
     slides: list[str] = []
+    seen_hashes: set[str] = set()
     for slide_index, slide in enumerate(presentation.slides):
         texts: list[str] = []
         for shape in slide.shapes:
@@ -334,9 +348,32 @@ def _parse_pptx(path: Path) -> str:
                     cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
                     if cells:
                         texts.append(" | ".join(cells))
+        # Screenshots and diagrams carry text of their own; a logo repeated on
+        # every slide is read once.
+        image_text = _embedded_image_text(_pptx_blobs(slide.shapes), seen_hashes)
+        if image_text:
+            texts.append(f"(image) {image_text}")
         if texts:
             slides.append(f"[slide {slide_index + 1}]\n" + "\n".join(texts))
     return "\n\n".join(slides)
+
+
+def _pptx_blobs(shapes: Iterable[object]) -> list[bytes]:
+    """The embedded pictures of a slide, those inside groups included."""
+    blobs: list[bytes] = []
+    for shape in shapes:
+        inner = getattr(shape, "shapes", None)  # a group
+        if inner is not None:
+            blobs.extend(_pptx_blobs(inner))
+            continue
+        try:
+            image = getattr(shape, "image", None)
+            blob = image.blob if image is not None else None
+        except Exception:  # a linked picture has no embedded bytes
+            blob = None
+        if blob:
+            blobs.append(blob)
+    return blobs
 
 
 def _cell_text(value: object) -> str:
