@@ -344,10 +344,12 @@ function fillSourceCard(item) {
   for (const input of item.inputs) {
     const block = el('section', 'card-input');
     const title = el('div', 'card-input-head');
-    const isGit = Boolean(input.commit);
+    // The kind is the service's word: a repository is one before its first
+    // ingest has finished and recorded a commit.
+    const kind = input.kind || (input.commit ? 'git' : 'folder');
+    const isGit = kind === 'git';
     // A DOORS database (RQ-0037): its modules are the documents.
-    const isDoors = input.kind === 'doors';
-    const kind = isGit ? 'git' : isDoors ? 'doors' : 'folder';
+    const isDoors = kind === 'doors';
     // A folder is shown by its path on the share it lies on (the server's mount point left out).
     const name = el('span', `card-input-name${isGit || isDoors ? '' : ' directory'}`,
       isGit ? input.label.replace(/^git: /, '') : isDoors ? input.label.replace(/^doors: /, '')
@@ -368,7 +370,9 @@ function fillSourceCard(item) {
       }
       if (input.checkedAt) block.append(stamp(input.checkedAt, 'Checked'));
     }
-    if (isGit) {
+    if (isGit && !input.commit) {
+      block.append(el('div', 'card-when', 'First ingest in progress'));
+    } else if (isGit) {
       const refs = el('div', 'card-refs');
       refs.append(el('span', 'card-chip ref', input.ref || 'default branch'));
       const commit = el(input.commitUrl ? 'a' : 'span', 'card-chip commit', input.commit.slice(0, 8));
