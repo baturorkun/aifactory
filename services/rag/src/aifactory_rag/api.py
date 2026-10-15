@@ -15,7 +15,7 @@ from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_sch
 from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source, sources_being_ingested
 from aifactory_rag import dataflow, status, webhook
 from aifactory_rag.query import graph
-from aifactory_rag.query.responder import answer_question
+from aifactory_rag.query.responder import answer_question, shared_answer
 
 
 class QueryRequest(BaseModel):
@@ -115,6 +115,14 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             expand_graph=payload.expandGraph,
             exclude_paths=payload.excludePaths,
         )
+
+    # A shared answer, by the identifier its link carries (RQ-0041).
+    @app.get("/queries/{share_id}")
+    def shared_query(share_id: str, _: dict[str, Any] = Depends(auth_claims)) -> dict:
+        found = shared_answer(factory_config.rag, share_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="No shared answer with this link")
+        return found
 
     @app.post("/ingest-runs")
     def create_ingest_run(payload: IngestRunRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:

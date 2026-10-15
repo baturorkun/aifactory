@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 import re
 import subprocess
 import tempfile
@@ -59,8 +60,8 @@ def answer_question(
         for chunk in chunks
     ]
     sources.extend(location for _, location in findings)
-    _record_query(config, question, answer, sources, user_id)
-    return {"answer": answer, "sources": sources}
+    share_id = _record_query(config, question, answer, sources, user_id)
+    return {"answer": answer, "sources": sources, "shareId": share_id}
 
 
 MAX_DATAFLOW_FINDINGS = 6
@@ -408,14 +409,43 @@ def _complete_with_ollama(config: RagConfig, prompt: str) -> str:
     return str(answer).strip()
 
 
-def _record_query(config: RagConfig, question: str, answer: str, sources: list[dict], user_id: str | None) -> None:
+def _record_query(config: RagConfig, question: str, answer: str, sources: list[dict], user_id: str | None) -> str:
+    """Record a question and its answer; the returned identifier shares it (RQ-0041)."""
+    share_id = str(uuid.uuid4())
     with connect(config.database.connection_string) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO rag_queries(user_id, question, answer, sources)
-                VALUES (%s, %s, %s, %s::jsonb)
+                INSERT INTO rag_queries(user_id, question, answer, sources, share_id)
+                VALUES (%s, %s, %s, %s::jsonb, %s)
                 """,
-                (user_id, question, answer, json.dumps(sources)),
+                (user_id, question, answer, json.dumps(sources), share_id),
             )
         conn.commit()
+    return share_id
+
+
+def shared_answer(config: RagConfig, share_id: str) -> dict[str, Any] | None:
+    """A recorded question and answer, by its share identifier (RQ-0041); None
+    for an identifier that is not a UUID or not known."""
+    try:
+        key = str(uuid.UUID(share_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    with connect(config.database.connection_string) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT question, answer, sources, created_at FROM rag_queries WHERE share_id = %s",
+                (key,),
+            )
+            row = cur.fetchone()
+    if not row:
+        return None
+    asked = row["created_at"]
+    return {
+        "shareId": key,
+        "question": row["question"],
+        "answer": row["answer"],
+        "sources": row["sources"] or [],
+        "askedAt": asked.isoformat() if hasattr(asked, "isoformat") else asked,
+    }
