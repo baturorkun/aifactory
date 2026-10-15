@@ -6,6 +6,8 @@ const messages = document.querySelector('#messages');
 const form = document.querySelector('#chat-form');
 const question = document.querySelector('#question');
 const sendButton = document.querySelector('#send-button');
+const composerNote = document.querySelector('.composer-note');
+const COMPOSER_NOTE = composerNote ? composerNote.textContent : '';
 const clearButton = document.querySelector('#clear-chat');
 const newChatButton = document.querySelector('#new-chat');
 const sessionList = document.querySelector('#session-list');
@@ -195,15 +197,50 @@ function selectedSourceIds() {
   return [...sourceList.querySelectorAll('input:checked')].map((input) => input.value);
 }
 
+// Which sources a question searches. Nothing is ticked on a first visit: a
+// question searched all of them and mixed one project's documents into
+// another's answers. The choice is kept in the browser.
+const SELECTED_SOURCES_KEY = 'aifactory-rag-selected-sources-v1';
+
+function rememberedSources() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SELECTED_SOURCES_KEY) || '[]');
+    return new Set(Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberSources() {
+  try {
+    localStorage.setItem(SELECTED_SOURCES_KEY, JSON.stringify(selectedSourceIds()));
+  } catch {
+    // private window or blocked storage: the choice lasts until the page is closed
+  }
+}
+
+// Ask needs at least one source; with none ticked the service would search all.
+function updateSourceChoice() {
+  const inputs = [...sourceList.querySelectorAll('input')];
+  const chosen = inputs.filter((input) => input.checked).length;
+  selectAllButton.textContent = inputs.length && chosen === inputs.length ? 'Clear all' : 'Select all';
+  sendButton.disabled = busy || chosen === 0;
+  composerNote.textContent = chosen === 0
+    ? 'Choose at least one source on the left · click a name to search only that source'
+    : COMPOSER_NOTE;
+  composerNote.classList.toggle('warning', chosen === 0);
+}
+
 function renderSources(sources) {
   sourceList.replaceChildren();
+  const remembered = rememberedSources();
   for (const source of sources) {
     const label = document.createElement('label');
     label.className = 'source-option';
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.value = source.id;
-    input.checked = true;
+    input.checked = remembered.has(source.id);
     const text = document.createElement('span');
     text.className = 'source-text';
     const name = document.createElement('span');
@@ -214,9 +251,16 @@ function renderSources(sources) {
     meta.dataset.source = source.id;
     text.append(name, meta);
     label.append(input, text);
+    // The name chooses only this source; the box adds it to or takes it from the choice.
+    text.addEventListener('click', (event) => {
+      event.preventDefault();
+      for (const other of sourceList.querySelectorAll('input')) other.checked = other === input;
+      rememberSources();
+      updateSourceChoice();
+    });
     sourceList.append(label);
   }
-  selectAllButton.textContent = sources.length ? 'Clear all' : 'Select all';
+  updateSourceChoice();
   loadSourceStatus();
 }
 
@@ -810,6 +854,10 @@ function resizeQuestion() {
 async function ask(value) {
   const prompt = value.trim();
   if (!prompt || busy) return;
+  if (!selectedSourceIds().length) {
+    updateSourceChoice();
+    return;
+  }
   busy = true;
   sendButton.disabled = true;
   addMessage('user', prompt);
@@ -832,7 +880,7 @@ async function ask(value) {
     addMessage('assistant', error instanceof Error ? error.message : 'The query failed.', [], true);
   } finally {
     busy = false;
-    sendButton.disabled = false;
+    updateSourceChoice();
     question.focus();
   }
 }
@@ -854,14 +902,13 @@ selectAllButton.addEventListener('click', () => {
   const inputs = [...sourceList.querySelectorAll('input')];
   const shouldSelect = inputs.some((input) => !input.checked);
   inputs.forEach((input) => { input.checked = shouldSelect; });
-  selectAllButton.textContent = shouldSelect ? 'Clear all' : 'Select all';
+  rememberSources();
+  updateSourceChoice();
 });
 
 sourceList.addEventListener('change', () => {
-  const inputs = [...sourceList.querySelectorAll('input')];
-  selectAllButton.textContent = inputs.length && inputs.every((input) => input.checked)
-    ? 'Clear all'
-    : 'Select all';
+  rememberSources();
+  updateSourceChoice();
 });
 
 clearButton.addEventListener('click', () => {

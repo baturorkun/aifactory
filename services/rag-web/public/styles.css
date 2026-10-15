@@ -279,3 +279,5 @@ a.card-chip.commit:hover { border-color: var(--accent); text-decoration: underli
 .share-link { margin-top: 10px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; line-height: 1.4; cursor: pointer; }
 .share-link:hover { border-color: var(--accent); color: var(--accent); }
 .share-link-field { margin: 10px 0 0 8px; padding: 4px 8px; width: min(420px, 100%); border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.composer-note.warning { color: #f0b46b; }
+.source-option .source-text { cursor: pointer; }
