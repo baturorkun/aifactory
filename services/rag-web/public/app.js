@@ -720,16 +720,49 @@ async function copyShareLink(button, article, answerText) {
     }
   }
   const link = shareLink(shareId);
-  try {
-    await navigator.clipboard.writeText(link);
+  if (await copyText(link)) {
     button.textContent = 'Link copied';
-  } catch {
-    // An http page has no clipboard API in most browsers: hand the link over to copy by hand.
-    window.prompt('Copy this link:', link);
-    button.textContent = 'Copy link';
+    setTimeout(() => { button.textContent = 'Copy link'; }, 2000);
     return;
   }
-  setTimeout(() => { button.textContent = 'Copy link'; }, 2000);
+  // Neither way could copy: show the link, selected, beside the button.
+  button.textContent = 'Copy link';
+  let field = button.parentElement.querySelector('.share-link-field');
+  if (!field) {
+    field = el('input', 'share-link-field');
+    field.readOnly = true;
+    button.after(field);
+  }
+  field.value = link;
+  field.select();
+}
+
+// The page is served over plain http, where browsers give no clipboard API
+// (navigator.clipboard needs https): the older copy command still works there.
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fall through to the older way
+    }
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.append(area);
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  }
+  area.remove();
+  return copied;
 }
 
 // Opened with ?answer=<shareId>: show that question and answer as a chat of its own.
