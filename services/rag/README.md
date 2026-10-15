@@ -202,8 +202,9 @@ it over SSH.
 ```dotenv
 # The DOORS server; the export runs on this machine's own DOORS client.
 RAG_SOURCE_3_DOORS_1_SERVER=192.168.2.101
-# The Windows account the service logs in as over SSH (quote a DOMAIN\name).
-RAG_SOURCE_3_DOORS_1_SSH_USER='LAB\rag'
+# The Windows account the service logs in as over SSH, as name@domain: newer
+# OpenSSH clients refuse a DOMAIN\name user.
+RAG_SOURCE_3_DOORS_1_SSH_USER=rag@lab.example
 # The DOORS login.
 RAG_SOURCE_3_DOORS_1_USER=reader
 RAG_SOURCE_3_DOORS_1_PASSWORD=...
