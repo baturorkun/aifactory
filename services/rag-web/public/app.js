@@ -703,8 +703,9 @@ function addMessage(role, text, sources = [], error = false, persist = true, sha
   // An answer can be shared by its link (RQ-0041): whoever opens it sees this
   // question and answer as they were, without asking again.
   // An answer from before share identifiers is looked up on the service when
-  // its button is first used.
-  if (role === 'assistant' && !error) {
+  // its button is first used. The thinking indicator is an assistant message
+  // with no text yet: nothing to share.
+  if (role === 'assistant' && !error && text) {
     const share = el('button', 'share-link', 'Copy link');
     share.type = 'button';
     share.title = 'Copy a link to this question and answer';
