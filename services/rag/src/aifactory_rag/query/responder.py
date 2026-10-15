@@ -425,6 +425,36 @@ def _record_query(config: RagConfig, question: str, answer: str, sources: list[d
     return share_id
 
 
+# The page keeps at most this much of an answer in its local chat history.
+STORED_ANSWER_CHARS = 40000
+
+
+def share_recorded_answer(config: RagConfig, question: str, answer: str) -> str | None:
+    """The share identifier of an answer recorded before identifiers existed,
+    found by its exact question and answer and given one the first time it is
+    asked for (RQ-0041). The latest of identical records is the one shared;
+    None when the service has no such record."""
+    with connect(config.database.connection_string) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, share_id FROM rag_queries
+                WHERE question = %s AND left(answer, %s) = left(%s, %s)
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (question, STORED_ANSWER_CHARS, answer, STORED_ANSWER_CHARS),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            if row["share_id"]:
+                return str(row["share_id"])
+            share_id = str(uuid.uuid4())
+            cur.execute("UPDATE rag_queries SET share_id = %s WHERE id = %s AND share_id IS NULL", (share_id, row["id"]))
+        conn.commit()
+    return share_id
+
+
 def shared_answer(config: RagConfig, share_id: str) -> dict[str, Any] | None:
     """A recorded question and answer, by its share identifier (RQ-0041); None
     for an identifier that is not a UUID or not known."""

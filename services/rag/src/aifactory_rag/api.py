@@ -15,7 +15,7 @@ from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_sch
 from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source, sources_being_ingested
 from aifactory_rag import dataflow, status, webhook
 from aifactory_rag.query import graph
-from aifactory_rag.query.responder import answer_question, shared_answer
+from aifactory_rag.query.responder import answer_question, share_recorded_answer, shared_answer
 
 
 class QueryRequest(BaseModel):
@@ -26,6 +26,11 @@ class QueryRequest(BaseModel):
     excludePaths: list[str] = Field(default_factory=list)
     # Add the callers and callees of the functions found (RQ-0024).
     expandGraph: bool = True
+
+
+class ShareRequest(BaseModel):
+    question: str
+    answer: str
 
 
 class DataflowRequest(BaseModel):
@@ -123,6 +128,14 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         if found is None:
             raise HTTPException(status_code=404, detail="No shared answer with this link")
         return found
+
+    # An answer from before share identifiers, found by its question and answer.
+    @app.post("/queries/share")
+    def share_query(payload: ShareRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:
+        share_id = share_recorded_answer(factory_config.rag, payload.question, payload.answer)
+        if share_id is None:
+            raise HTTPException(status_code=404, detail="The service has no record of this answer")
+        return {"shareId": share_id}
 
     @app.post("/ingest-runs")
     def create_ingest_run(payload: IngestRunRequest, _: dict[str, Any] = Depends(auth_claims)) -> dict:

@@ -475,8 +475,10 @@ Every answered question is recorded with a random share identifier, returned
 with the answer as `shareId`. Under an answer the web page has a "Copy link"
 button for `<page>/?answer=<shareId>`; whoever opens the link sees that
 question, its answer and its sources as they were, without a new question to
-the model. `GET /queries/<shareId>` gives the same record. Answers recorded
-before identifiers existed cannot be shared.
+the model. `GET /queries/<shareId>` gives the same record. An answer recorded
+before identifiers existed gets one the first time its button is used: the
+page asks `POST /queries/share` with the question and the answer, and the
+service finds the record by them.
 
 ## Local Embeddings
 

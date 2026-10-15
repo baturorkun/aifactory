@@ -660,11 +660,14 @@ function addMessage(role, text, sources = [], error = false, persist = true, sha
 
   // An answer can be shared by its link (RQ-0041): whoever opens it sees this
   // question and answer as they were, without asking again.
-  if (role === 'assistant' && shareId) {
+  // An answer from before share identifiers is looked up on the service when
+  // its button is first used.
+  if (role === 'assistant' && !error) {
     const share = el('button', 'share-link', 'Copy link');
     share.type = 'button';
     share.title = 'Copy a link to this question and answer';
-    share.addEventListener('click', () => void copyShareLink(share, shareId));
+    share.addEventListener('click', () => void copyShareLink(share, article, text));
+    if (shareId) article.dataset.shareId = shareId;
     body.append(share);
   }
 
@@ -675,11 +678,47 @@ function addMessage(role, text, sources = [], error = false, persist = true, sha
   return article;
 }
 
+// Keep a looked-up identifier with the answer in the local history, so the next
+// copy needs no lookup.
+function rememberShareId(answerText, shareId) {
+  const session = activeSession();
+  const message = session?.messages.find((entry) => entry.role === 'assistant' && entry.text === answerText && !entry.shareId);
+  if (!message) return;
+  message.shareId = shareId;
+  saveSessions();
+}
+
 function shareLink(shareId) {
   return `${location.origin}/?answer=${encodeURIComponent(shareId)}`;
 }
 
-async function copyShareLink(button, shareId) {
+// The question an answer answers: the user message just before it.
+function questionBefore(article) {
+  let previous = article.previousElementSibling;
+  while (previous && !previous.classList.contains('user')) previous = previous.previousElementSibling;
+  return previous ? previous.querySelector('.message-text')?.textContent || '' : '';
+}
+
+async function copyShareLink(button, article, answerText) {
+  let shareId = article.dataset.shareId;
+  if (!shareId) {
+    button.textContent = 'Finding…';
+    try {
+      const response = await fetch('/api/queries/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: questionBefore(article), answer: answerText }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.shareId) throw new Error(payload.detail || 'not found');
+      shareId = payload.shareId;
+      article.dataset.shareId = shareId;
+      rememberShareId(answerText, shareId);
+    } catch {
+      button.textContent = 'No link: the service has no record of this answer';
+      return;
+    }
+  }
   const link = shareLink(shareId);
   try {
     await navigator.clipboard.writeText(link);

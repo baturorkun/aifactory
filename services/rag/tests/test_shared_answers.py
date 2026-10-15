@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from aifactory_rag.config import RagConfig
 from aifactory_rag.query import responder
-from aifactory_rag.query.responder import _record_query, shared_answer
+from aifactory_rag.query.responder import _record_query, share_recorded_answer, shared_answer
 
 MIGRATIONS = Path(responder.__file__).resolve().parents[1] / "migrations"
 
@@ -30,10 +30,19 @@ class Cursor:
         self.store.executed.append((" ".join(statement.split()), params))
         if statement.lstrip().startswith("INSERT INTO rag_queries"):
             user, question, answer, sources, share_id = params
-            self.store.rows.append({"question": question, "answer": answer, "sources": json.loads(str(sources)),
+            self.store.rows.append({"id": len(self.store.rows) + 1, "question": question, "answer": answer, "sources": json.loads(str(sources)),
                                     "share_id": share_id, "created_at": datetime(2026, 10, 15, 16, 0, tzinfo=timezone.utc)})
         elif statement.lstrip().startswith("SELECT question"):
             self.store.found = next((r for r in self.store.rows if r["share_id"] == params[0]), None)
+        elif statement.lstrip().startswith("SELECT id, share_id"):
+            question, limit, answer, _ = params
+            matches = [r for r in self.store.rows if r["question"] == question and str(r["answer"])[:limit] == str(answer)[:limit]]
+            self.store.found = matches[-1] if matches else None
+        elif statement.lstrip().startswith("UPDATE rag_queries SET share_id"):
+            share_id, row_id = params
+            for row in self.store.rows:
+                if row["id"] == row_id and not row["share_id"]:
+                    row["share_id"] = share_id
 
     def fetchone(self) -> dict[str, object] | None:
         return self.store.found
@@ -102,6 +111,38 @@ class SharedAnswerTests(unittest.TestCase):
         self.assertIsNone(shared_answer(self.config, "1' OR '1'='1"))
         self.assertIsNone(shared_answer(self.config, "42"))
         self.assertEqual(len(self.store.executed), before, "an invalid identifier does not reach the database")
+
+
+class EarlierAnswerTests(unittest.TestCase):
+    """An answer recorded before share identifiers gets one when it is first shared."""
+
+    def setUp(self) -> None:
+        self.store = Store()
+        patcher = patch("aifactory_rag.query.responder.connect", side_effect=lambda _: Connection(self.store))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.config = RagConfig()
+        for n, question in enumerate(["Eski soru", "Eski soru", "Başka soru"], start=1):
+            self.store.rows.append({"id": n, "question": question, "answer": f"cevap {n if n != 2 else 1}", "sources": [],
+                                    "share_id": None, "created_at": datetime(2026, 10, n, tzinfo=timezone.utc)})
+
+    def test_it_is_found_by_its_question_and_answer_and_given_an_identifier_once(self) -> None:
+        first = share_recorded_answer(self.config, "Eski soru", "cevap 1")
+        again = share_recorded_answer(self.config, "Eski soru", "cevap 1")
+
+        self.assertEqual(str(uuid.UUID(first)), first)
+        self.assertEqual(again, first, "the same link every time")
+        self.assertEqual(self.store.rows[1]["share_id"], first, "of identical records, the latest is shared")
+        self.assertEqual(shared_answer(self.config, first)["question"], "Eski soru")
+
+    def test_an_answer_the_service_never_gave_has_no_link(self) -> None:
+        self.assertIsNone(share_recorded_answer(self.config, "Eski soru", "başka bir cevap"))
+        self.assertIsNone(share_recorded_answer(self.config, "Hiç sorulmamış", "cevap 1"))
+
+    def test_an_answer_kept_shortened_in_the_page_still_matches(self) -> None:
+        self.store.rows.append({"id": 9, "question": "Uzun", "answer": "x" * 50000, "sources": [], "share_id": None,
+                                "created_at": datetime(2026, 10, 9, tzinfo=timezone.utc)})
+        self.assertIsNotNone(share_recorded_answer(self.config, "Uzun", "x" * 40000))
 
 
 class MigrationTests(unittest.TestCase):
