@@ -121,6 +121,20 @@
         "rootPath": "${RAG_SOURCE_6_PATH:-}",
         "envPrefix": "RAG_SOURCE_6",
         "excludeAdditions": "${RAG_SOURCE_6_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_7_ID:-source-7}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_7_PATH:-}",
+        "envPrefix": "RAG_SOURCE_7",
+        "excludeAdditions": "${RAG_SOURCE_7_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_8_ID:-source-8}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_8_PATH:-}",
+        "envPrefix": "RAG_SOURCE_8",
+        "excludeAdditions": "${RAG_SOURCE_8_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "git": {
