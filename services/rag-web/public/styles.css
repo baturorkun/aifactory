@@ -276,5 +276,5 @@ a.card-chip.commit:hover { border-color: var(--accent); text-decoration: underli
 .card-stat span { color: var(--muted); }
 
 /* An answer's share link (RQ-0041). */
-.share-link { margin-top: 10px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: 12px/1.4 inherit; cursor: pointer; }
+.share-link { margin-top: 10px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; line-height: 1.4; cursor: pointer; }
 .share-link:hover { border-color: var(--accent); color: var(--accent); }
