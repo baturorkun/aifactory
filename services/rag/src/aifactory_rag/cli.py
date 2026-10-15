@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 import json
 import sys
 from pathlib import Path
@@ -57,7 +59,7 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.command == "ingest":
         try:
-            summary = ingest_source(config.rag, args.source, force=args.force, subdir=args.subdir)
+            summary = ingest_source(config.rag, args.source, force=args.force, subdir=args.subdir, started_by=_command_line_user())
         except PassiveSourceError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -84,6 +86,11 @@ def _main(argv: list[str] | None = None) -> int:
 
     parser.error("Unsupported command")
     return 2
+
+
+def _command_line_user() -> str:
+    """`command line (<user>)`, the user behind sudo when there is one (RQ-0040)."""
+    return f"command line ({os.environ.get('SUDO_USER') or getpass.getuser()})"
 
 
 def _status(connection_string: str) -> dict:

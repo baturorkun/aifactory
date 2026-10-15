@@ -458,6 +458,16 @@ RAG_SOURCE_3_EXCLUDE_ADDITIONS='["**/*.txt","**/win64/**","**/flexnet/**","**/li
 Simics build and target files with `.mk`, `.inc`, `.include`, and `.cmake`
 extensions, plus `GNUmakefile`, are parsed as plain text.
 
+### Following a running ingest
+
+Each ingest run records who started it (`started_by`: `command line (<user>)`,
+`API`, or `GitLab push by <user> to <project>` for a webhook) and, while it
+runs, where it is (`progress`: the input, then the file with its number and the
+input's file count, or a step such as fetching a repository, exporting from
+DOORS or building data-flow graphs). Its counts are written with every file.
+The web page's source card shows both, and `/sources/status` gives them as
+`startedBy` and `progress` of the running and the last finished run.
+
 ## Local Embeddings
 
 Embedding generation can run entirely inside the RAG Python process with
