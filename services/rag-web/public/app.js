@@ -614,7 +614,7 @@ function addMessage(role, text, sources = [], error = false, persist = true, sha
   article.className = `message ${role}${error ? ' error' : ''}`;
   const avatar = document.createElement('div');
   avatar.className = 'message-avatar';
-  avatar.textContent = role === 'user' ? 'YOU' : 'AF';
+  avatar.textContent = role === 'user' ? 'YOU' : 'BC';
   const body = document.createElement('div');
   body.className = 'message-body';
   const roleLabel = document.createElement('div');
