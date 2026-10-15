@@ -11,10 +11,18 @@ def connect(connection_string: str) -> psycopg.Connection:
     return psycopg.connect(connection_string, row_factory=dict_row)
 
 
+# How long a migration waits for a table it has to lock. A running ingest keeps
+# a transaction open while it parses a file, minutes for a scanned PDF; a
+# migration queued behind it would block every question behind itself. Better
+# that it fails and is run again when no ingest runs.
+MIGRATION_LOCK_TIMEOUT = "10s"
+
+
 def migrate(connection_string: str) -> None:
     migration_root = resources.files("aifactory_rag.migrations")
     with connect(connection_string) as conn:
         with conn.cursor() as cur:
+            cur.execute(f"SET lock_timeout = '{MIGRATION_LOCK_TIMEOUT}'")
             for migration in sorted(item for item in migration_root.iterdir() if item.name.endswith(".sql")):
                 cur.execute(migration.read_text(encoding="utf-8"))
         conn.commit()
