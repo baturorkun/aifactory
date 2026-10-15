@@ -1,5 +1,4 @@
 const sourceList = document.querySelector('#source-list');
-const selectAllButton = document.querySelector('#select-all');
 const healthDot = document.querySelector('#health-dot');
 const healthLabel = document.querySelector('#health-label');
 const messages = document.querySelector('#messages');
@@ -223,7 +222,6 @@ function rememberSources() {
 function updateSourceChoice() {
   const inputs = [...sourceList.querySelectorAll('input')];
   const chosen = inputs.filter((input) => input.checked).length;
-  selectAllButton.textContent = inputs.length && chosen === inputs.length ? 'Clear all' : 'Select all';
   sendButton.disabled = busy || chosen === 0;
   composerNote.textContent = chosen === 0
     ? 'Choose at least one source on the left · click a name to search only that source'
@@ -896,14 +894,6 @@ question.addEventListener('keydown', (event) => {
     event.preventDefault();
     form.requestSubmit();
   }
-});
-
-selectAllButton.addEventListener('click', () => {
-  const inputs = [...sourceList.querySelectorAll('input')];
-  const shouldSelect = inputs.some((input) => !input.checked);
-  inputs.forEach((input) => { input.checked = shouldSelect; });
-  rememberSources();
-  updateSourceChoice();
 });
 
 sourceList.addEventListener('change', () => {
