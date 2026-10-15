@@ -49,6 +49,7 @@ function loadSessions() {
             text: message.text.slice(0, 40000),
             sources: Array.isArray(message.sources) ? message.sources : [],
             error: Boolean(message.error),
+            ...(typeof message.shareId === 'string' ? { shareId: message.shareId } : {}),
           })),
       }));
   } catch {
@@ -167,14 +168,14 @@ function renderActiveSession() {
     return;
   }
   for (const message of session.messages) {
-    addMessage(message.role, message.text, message.sources, message.error, false);
+    addMessage(message.role, message.text, message.sources, message.error, false, message.shareId);
   }
   messages.scrollTop = messages.scrollHeight;
 }
 
-function persistMessage(role, text, sources, error) {
+function persistMessage(role, text, sources, error, shareId) {
   const session = activeSession() || createSession();
-  session.messages.push({ role, text, sources, error });
+  session.messages.push({ role, text, sources, error, ...(shareId ? { shareId } : {}) });
   session.messages = session.messages.slice(-MAX_MESSAGES_PER_SESSION);
   if (role === 'user' && session.title === 'New chat') {
     session.title = text.replace(/\s+/g, ' ').trim().slice(0, 46) || 'New chat';
@@ -563,7 +564,7 @@ function renderAnswerText(container, text) {
   container.append(document.createTextNode(text.slice(cursor)));
 }
 
-function addMessage(role, text, sources = [], error = false, persist = true) {
+function addMessage(role, text, sources = [], error = false, persist = true, shareId = null) {
   const welcome = messages.querySelector('.welcome-card');
   if (welcome) welcome.remove();
 
@@ -657,11 +658,67 @@ function addMessage(role, text, sources = [], error = false, persist = true) {
     body.append(sourceContainer);
   }
 
+  // An answer can be shared by its link (RQ-0041): whoever opens it sees this
+  // question and answer as they were, without asking again.
+  if (role === 'assistant' && shareId) {
+    const share = el('button', 'share-link', 'Copy link');
+    share.type = 'button';
+    share.title = 'Copy a link to this question and answer';
+    share.addEventListener('click', () => void copyShareLink(share, shareId));
+    body.append(share);
+  }
+
   article.append(avatar, body);
   messages.append(article);
   messages.scrollTop = messages.scrollHeight;
-  if (persist) persistMessage(role, text, sources, error);
+  if (persist) persistMessage(role, text, sources, error, shareId);
   return article;
+}
+
+function shareLink(shareId) {
+  return `${location.origin}/?answer=${encodeURIComponent(shareId)}`;
+}
+
+async function copyShareLink(button, shareId) {
+  const link = shareLink(shareId);
+  try {
+    await navigator.clipboard.writeText(link);
+    button.textContent = 'Link copied';
+  } catch {
+    // An http page has no clipboard API in most browsers: hand the link over to copy by hand.
+    window.prompt('Copy this link:', link);
+    return;
+  }
+  setTimeout(() => { button.textContent = 'Copy link'; }, 2000);
+}
+
+// Opened with ?answer=<shareId>: show that question and answer as a chat of its own.
+async function openSharedAnswer() {
+  const params = new URLSearchParams(location.search);
+  const shareId = params.get('answer');
+  if (!shareId) return false;
+  params.delete('answer');
+  const rest = params.toString();
+  history.replaceState(null, '', `${location.pathname}${rest ? `?${rest}` : ''}${location.hash}`);
+  const existing = sessions.find((session) => session.messages.some((message) => message.shareId === shareId));
+  if (existing) {
+    activeSessionId = existing.id;
+    renderSessionList();
+    renderActiveSession();
+    return true;
+  }
+  activeSessionId = createSession().id;
+  renderSessionList();
+  try {
+    const response = await fetch(`/api/queries/${encodeURIComponent(shareId)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `The shared answer could not be opened (${response.status})`);
+    addMessage('user', payload.question);
+    addMessage('assistant', payload.answer, payload.sources || [], false, true, payload.shareId);
+  } catch (error) {
+    addMessage('assistant', error instanceof Error ? error.message : 'The shared answer could not be opened.', [], true);
+  }
+  return true;
 }
 
 function addTypingIndicator() {
@@ -696,7 +753,7 @@ async function ask(value) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || `Query failed with status ${response.status}`);
     typing.remove();
-    addMessage('assistant', payload.answer || 'The API returned an empty answer.', payload.sources || []);
+    addMessage('assistant', payload.answer || 'The API returned an empty answer.', payload.sources || [], false, true, payload.shareId || null);
   } catch (error) {
     typing.remove();
     addMessage('assistant', error instanceof Error ? error.message : 'The query failed.', [], true);
@@ -781,10 +838,13 @@ messages.addEventListener('click', (event) => {
   if (suggestion) void ask(suggestion.textContent || '');
 });
 
-if (!sessions.length) createSession();
-else {
-  renderSessionList();
-  renderActiveSession();
-}
+void openSharedAnswer().then((opened) => {
+  if (opened) return;
+  if (!sessions.length) createSession();
+  else {
+    renderSessionList();
+    renderActiveSession();
+  }
+});
 void loadSources();
 void loadRuntimeInfo();
