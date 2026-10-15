@@ -726,6 +726,7 @@ async function copyShareLink(button, article, answerText) {
   } catch {
     // An http page has no clipboard API in most browsers: hand the link over to copy by hand.
     window.prompt('Copy this link:', link);
+    button.textContent = 'Copy link';
     return;
   }
   setTimeout(() => { button.textContent = 'Copy link'; }, 2000);
