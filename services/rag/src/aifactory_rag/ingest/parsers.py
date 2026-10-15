@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import re
 from collections.abc import Iterable
@@ -260,6 +261,7 @@ def _parse_pdf(path: Path) -> str:
     reader = PdfReader(str(path))
     pages: list[str] = []
     seen_hashes: set[str] = set()
+    seen_pictures: set[tuple[int, int]] = set()
     for index, page in enumerate(reader.pages):
         parts: list[str] = []
         try:
@@ -271,7 +273,7 @@ def _parse_pdf(path: Path) -> str:
         text = strip_page_stamps(text)
         if text:
             parts.append(text)
-        image_text = _embedded_image_text(_pdf_page_blobs(page), seen_hashes)
+        image_text = _embedded_image_text(_pdf_page_blobs(page, seen_pictures), seen_hashes)
         if image_text:
             parts.append(f"(image) {image_text}")
         if parts:
@@ -279,17 +281,46 @@ def _parse_pdf(path: Path) -> str:
     return "\n\n".join(pages)
 
 
-def _pdf_page_blobs(page: object) -> Iterable[bytes]:
+# A picture smaller than this is an icon, a bullet or a logo, never text worth
+# reading; it is left out before it is decoded.
+MIN_PICTURE_PIXELS = 100 * 100
+
+
+def _pdf_page_blobs(page: object, seen: set[tuple[int, int]] | None = None) -> list[bytes]:
+    """The pictures of a page worth reading, as PNG.
+
+    Each picture is judged by its size before it is decoded, and one used on
+    many pages is decoded once. pypdf's `page.images` decodes every picture of
+    the page, inline ones included, and spent 48 s a page on a 2054-page Vivado
+    guide whose pictures were all icons: a day for one PDF, with nothing read.
+    """
     try:
-        images = list(page.images)
+        resources = page.get("/Resources")  # type: ignore[attr-defined]
+        resources = resources.get_object() if resources is not None else {}
+        xobjects = resources.get("/XObject")
+        xobjects = xobjects.get_object() if xobjects is not None else {}
     except Exception:
         return []
     blobs: list[bytes] = []
-    for image in images:
+    for name in list(xobjects.keys()):
         try:
-            blobs.append(image.data)
+            reference = xobjects.raw_get(name)
+            key = (reference.idnum, reference.generation) if hasattr(reference, "idnum") else None
+            if key is not None and seen is not None:
+                if key in seen:
+                    continue
+                seen.add(key)
+            picture = xobjects[name].get_object()
+            if picture.get("/Subtype") != "/Image":
+                continue
+            if int(picture.get("/Width", 0)) * int(picture.get("/Height", 0)) < MIN_PICTURE_PIXELS:
+                continue
+            image = picture.decode_as_image()
+            data = io.BytesIO()
+            image.save(data, format="PNG")
+            blobs.append(data.getvalue())
         except Exception:
-            continue
+            continue  # a picture pypdf cannot decode is not worth the page
     return blobs
 
 
