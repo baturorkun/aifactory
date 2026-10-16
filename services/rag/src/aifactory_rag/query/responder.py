@@ -33,6 +33,8 @@ from aifactory_rag.query.retriever import (
 FOUND_BY_SECTION = "section"
 # How the best chunk of a file whose path holds the question's terms is marked (RQ-0042).
 FOUND_BY_PATH = "path"
+# The file whose path matches the question's terms best brings this many chunks.
+TOP_FILE_CHUNKS = 3
 
 
 def answer_question(
@@ -262,8 +264,8 @@ _PATH_MATCHES = """
       ORDER BY hits DESC, d.id
       LIMIT 40
     ),
-    best AS MATERIALIZED (
-      SELECT DISTINCT ON (c.document_id)
+    scored AS MATERIALIZED (
+      SELECT
         c.id AS chunk_id, c.document_id, c.source_id, d.relative_path, c.text, c.metadata, docs.hits,
         1 - ((c.embedding::halfvec({dims})) <=> %(embedding)s::halfvec({dims})) AS score
       FROM rag_chunks c
@@ -271,9 +273,14 @@ _PATH_MATCHES = """
       JOIN rag_documents d ON d.id = c.document_id
       WHERE c.status = 'active' AND c.embedding IS NOT NULL AND vector_dims(c.embedding) = %(dims)s
         {chunk_filter}
-      ORDER BY c.document_id, score DESC
+    ),
+    ranked AS (
+      SELECT *, row_number() OVER (PARTITION BY document_id ORDER BY score DESC) AS rank_in_file,
+             max(score) OVER (PARTITION BY document_id) AS file_score
+      FROM scored
     )
-    SELECT * FROM best ORDER BY hits DESC, score DESC LIMIT %(limit)s
+    SELECT * FROM ranked WHERE rank_in_file <= %(top_file)s
+    ORDER BY hits DESC, file_score DESC, document_id, rank_in_file
 """
 
 
@@ -290,19 +297,21 @@ def _add_path_matches(
 
     A file is often named for what it is about (peripherals/A429Lite.cs,
     RQ-0006-a429-lite-fifo-...); an embedding of its code does not say so.
-    The files whose paths hold most of the plan's terms bring their best
-    chunk each, up to a quarter of top-k (two at least), placed after what was
-    named by identifier; within the repository the question names, if it
-    names one. The filters of the search apply.
+    The files whose paths hold most of the plan's terms bring chunks, up to a
+    third of top-k (three at least): the file that matches best its best
+    TOP_FILE_CHUNKS, every other file its best one (A429Lite.cs brought only
+    its header comment, and the answer said the code was missing). They come
+    after what was named by identifier; within the repository the question
+    names, if it names one. The filters of the search apply.
     """
     if not plan.terms:
         return chunks
     top_k = config.retrieval.top_k
-    limit = max(2, top_k // 4)
+    limit = max(3, top_k // 3)
     searchable = searchable_source_ids(config, source_ids)
     document_filter = ""
     chunk_filter = ""
-    params: dict[str, Any] = {"terms": plan.terms, "limit": limit}
+    params: dict[str, Any] = {"terms": plan.terms, "top_file": TOP_FILE_CHUNKS}
     if searchable:
         document_filter += " AND d.source_id = ANY(%(sources)s)"
         params["sources"] = searchable
@@ -328,15 +337,18 @@ def _add_path_matches(
         print(f"Path matches skipped: {exc}", flush=True)
         return chunks
     seen = {found.chunk_id for found in chunks}
-    matched = [
-        RetrievedChunk(
+    first_file = rows[0]["document_id"] if rows else None
+    matched: list[RetrievedChunk] = []
+    for row in rows:
+        if len(matched) >= limit:
+            break
+        if int(row["chunk_id"]) in seen or (row["document_id"] != first_file and int(row["rank_in_file"]) > 1):
+            continue
+        matched.append(RetrievedChunk(
             chunk_id=int(row["chunk_id"]), document_id=int(row["document_id"]), source_id=row["source_id"],
             relative_path=row["relative_path"], text=row["text"], score=float(row["score"]),
             metadata={**(row["metadata"] or {}), "foundBy": FOUND_BY_PATH},
-        )
-        for row in rows
-        if int(row["chunk_id"]) not in seen
-    ]
+        ))
     if not matched:
         return chunks
     identified = [found for found in chunks if found.metadata.get("foundBy") == FOUND_BY_IDENTIFIER]

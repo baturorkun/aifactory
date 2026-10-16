@@ -226,19 +226,24 @@ class PathTests(unittest.TestCase):
         ):
             return responder._add_path_matches(plan_config(), plan, chunks, None, None, None, repositories), cursor
 
-    def test_files_named_for_the_terms_bring_their_best_chunk_after_what_was_named(self) -> None:
+    def test_the_best_file_brings_three_chunks_the_others_one_after_what_was_named(self) -> None:
+        def row(chunk_id: int, document_id: int, path: str, rank: int, score: float) -> dict[str, object]:
+            return {"chunk_id": chunk_id, "document_id": document_id, "source_id": "s", "relative_path": path,
+                    "text": f"chunk {chunk_id}", "metadata": {}, "hits": 2 if document_id == 5 else 1,
+                    "score": score, "rank_in_file": rank}
         rows = [
-            {"chunk_id": 50, "document_id": 5, "source_id": "s", "relative_path": "peripherals/A429Lite.cs",
-             "text": "class A429Lite", "metadata": {"symbol": "A429Lite"}, "hits": 1, "score": 0.68},
-            {"chunk_id": 2, "document_id": 1, "source_id": "s", "relative_path": "doc.md", "text": "x", "metadata": {}, "hits": 1, "score": 0.6},
+            row(50, 5, "peripherals/A429Lite.cs", 1, 0.68), row(51, 5, "peripherals/A429Lite.cs", 2, 0.66),
+            row(52, 5, "peripherals/A429Lite.cs", 3, 0.64),
+            row(60, 6, "requirements/RQ-0006-a429-lite-fifo.md", 1, 0.70), row(61, 6, "requirements/RQ-0006-a429-lite-fifo.md", 2, 0.69),
+            row(2, 1, "doc.md", 1, 0.6),
         ]
         chunks = [hit(1, foundBy="identifier"), hit(2), hit(3)]
         merged, cursor = self.match(["a429", "fifo"], chunks, rows, ["hardware-twin/bfi-sumilator"])
-        self.assertEqual([c.chunk_id for c in merged], [1, 50, 2, 3])
+        self.assertEqual([c.chunk_id for c in merged], [1, 50, 51, 52, 60, 2, 3])
         self.assertEqual(merged[1].metadata["foundBy"], "path")
         statement, params = cursor.executed[0]
         self.assertIn("d.metadata->>'repository' = ANY(%(repositories)s)", statement)
-        self.assertEqual((params["terms"], params["limit"]), (["a429", "fifo"], 3))
+        self.assertEqual((params["terms"], params["top_file"]), (["a429", "fifo"], 3))
 
     def test_no_terms_no_search(self) -> None:
         merged, cursor = self.match([], [hit(1)], [], [])
