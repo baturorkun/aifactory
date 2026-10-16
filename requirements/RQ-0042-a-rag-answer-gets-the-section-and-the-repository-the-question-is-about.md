@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-16T14:18:42.832Z"
 branch: "factory/RQ-0042"
 createdFromCommit: "f9a227cac8be5ff7cf9deca546006f13f7bc78ca"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/62"
+githubIssueIid: 62
+repositoryProvider: github
 ---
 # RQ-0042 - A RAG answer gets the section and the repository the question is about
 
