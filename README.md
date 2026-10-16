@@ -129,6 +129,7 @@ pnpm factory --help
 pnpm factory new myproject --template empty
 pnpm factory new my-web-app --template vanilla-ts
 pnpm factory new my-python-app --template python
+pnpm factory new my-c-app --template c
 pnpm factory new my-board-model --template simics
 ```
 
@@ -153,7 +154,7 @@ pnpm factory new myproject
 ```
 
 ```text
-Error: Missing --template. Choose one: empty, vanilla-ts, python, simics
+Error: Missing --template. Choose one: empty, vanilla-ts, python, c
 ```
 
 ### Templates
@@ -226,6 +227,35 @@ pnpm test
 ```
 
 The Python template uses Python standard library commands by default.
+
+#### `c`
+
+Creates a C11 CMake project: a library holding the code, a program on top of
+it, and a test CTest runs, with warnings treated as errors.
+
+```text
+CMakeLists.txt
+include/<name>/greeting.h
+src/greeting.c
+src/main.c
+tests/test_greeting.c
+cmake/
+.clang-format
+```
+
+Generated scripts include:
+
+```bash
+pnpm build   # configure into build/ and compile
+pnpm test    # ctest --output-on-failure
+```
+
+They are the `build` and `tests` gates. CMake and a C compiler must be on the
+machine that runs them; nothing is downloaded by the build. The generated
+`.gitlab-ci.yml` installs CMake in the factory job, and adds `c_build` and
+`c_test` jobs that build and test the code on every branch, merge request and
+tag in `$C_BUILD_IMAGE` (`debian:bookworm`, CMake and the compiler installed
+when the image lacks them), with the test results as a JUnit report.
 
 #### `simics`
 
