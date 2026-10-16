@@ -1,6 +1,6 @@
 ---
 id: RQ-0042
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -47,7 +47,8 @@ the section's first content: when the first content block does not fit
 beside the heading, the heading goes into the part that holds it (that part
 may then exceed the budget by the heading's length), and a block that has to
 be split carries the heading in its first piece. A section with nothing under
-its heading stays one chunk. The chunker's version changes, so markdown is
+its heading (a heading followed by a subheading) is no chunk of its own: its
+subsections' chunks name it in their heading path. The chunker's version changes, so markdown is
 re-chunked once on the next ingest.
 
 **A hit brings its section along.** When a retrieved chunk is one part of a
@@ -65,17 +66,35 @@ chunks take a share of the answer's places (half of top-k at most), code and
 documentation alike. Without such a name nothing changes. The answer's
 sources say which repository was searched this way.
 
+**The question is also searched in English, and its terms in file paths.**
+Measured on the lab server with the same model and index: among the twin
+repository's code, `A429Lite.cs` came ninth for "bfi-simulator kodunda arinc
+429 ip davranislari nasil" and second for the English "How does the twin
+model the A429 Lite ARINC 429 IP?". The embedding model reads the code; the
+question in Turkish and in the asker's words does not sit near it. So one
+short completion turns the question into an English search query and 3-8
+terms that would appear in file names, identifiers or headings (A429 for
+ARINC 429). Both the question and the query are searched, and each chunk
+keeps its best score. The terms are looked for in the documents' paths: the
+files whose paths hold most of them bring their best chunk each, up to a
+quarter of top-k, within the repository the question names if it names one
+(`peripherals/A429Lite.cs`, `RQ-0006-a429-lite-fifo-...`). The rewrite can be
+turned off, and can use a smaller model of the same provider than the answer
+(`retrieval.rewrite`, `retrieval.rewriteModel`); when it fails, the question
+is searched alone, as before.
+
 ## Not covered
 
-- A reranker, query rewriting or translation.
+- A reranker; summaries of code files written for the index.
 - Per-source quotas in general.
 - Scoping by anything other than a repository's name (a file, a symbol).
 
 ## Acceptance Criteria
 
-- The markdown chunker never emits a part that holds only a heading: a section whose first block does not fit beside its heading puts both in one part; a section with only a heading is one chunk; the chunker version changes and markdown is re-chunked once.
+- The markdown chunker never emits a part that holds only a heading: a section whose first block does not fit beside its heading puts both in one part; a section with nothing under its heading is no chunk; the chunker version changes and markdown is re-chunked once.
 - A retrieved part of a split section brings the section's other parts from the same document into the context, nearest first, up to the configured number, without duplicates and without bringing back excluded paths or content types.
 - A question that names a repository of the sources (exactly or within two letters for names of 8 characters or more) also searches that repository, and up to half of top-k of the context comes from it; a question that names none is answered as before.
-- Tests cover the three, including the `docs/twin-developer-guide.md` "ARINC 429 in: UDP 5429" case and the name "bfi-simulator" matching `hardware-twin/bfi-sumilator`.
+- The question is also searched as an English query from one completion, its terms are looked for in file paths (their files' best chunk each, a quarter of top-k at most, within a named repository), the rewrite can be turned off or given its own model, and a failed rewrite leaves the question searched alone.
+- Tests cover these, including the `docs/twin-developer-guide.md` "ARINC 429 in: UDP 5429" case and the name "bfi-simulator" matching `hardware-twin/bfi-sumilator`.
 - On the lab server, after a re-ingest of the hardware-twin repository, "bfi-simulator kodunda arinc 429 ip davranislari nasil" is answered from `peripherals/A429Lite.cs` and the guide's section body.
 - Existing checks still pass.

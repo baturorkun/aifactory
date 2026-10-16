@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 import re
+from dataclasses import dataclass, field, replace
 import subprocess
 import tempfile
 from pathlib import Path
@@ -14,12 +15,24 @@ import httpx
 from llama_index.llms.anthropic import Anthropic
 from llama_index.llms.openai import OpenAI
 
-from aifactory_rag.config import RagConfig, require_query_config
-from aifactory_rag.db import connect
+from aifactory_rag.config import RagConfig, require_query_config, searchable_source_ids
+from aifactory_rag.db import connect, vector_literal
+from aifactory_rag.embeddings import create_embedding_adapter
 from aifactory_rag import dataflow
 from aifactory_rag.query import graph
 from aifactory_rag.query.path_filter import excluded, exclusion_regexes
-from aifactory_rag.query.retriever import RetrievedChunk, retrieve
+from aifactory_rag.query.retriever import (
+    FOUND_BY_IDENTIFIER,
+    FOUND_BY_REPOSITORY,
+    RetrievedChunk,
+    repositories_named,
+    retrieve,
+)
+
+# How a part brought in beside a hit on its section is marked (RQ-0042).
+FOUND_BY_SECTION = "section"
+# How the best chunk of a file whose path holds the question's terms is marked (RQ-0042).
+FOUND_BY_PATH = "path"
 
 
 def answer_question(
@@ -32,13 +45,15 @@ def answer_question(
     exclude_paths: list[str] | None = None,
 ) -> dict:
     require_query_config(config)
-    chunks = retrieve(
-        config,
-        question,
-        source_ids=source_ids,
-        exclude_content_types=exclude_content_types,
-        exclude_paths=exclude_paths,
+    plan = _search_plan(config, question)
+    chunks = _retrieve_all(
+        config, plan.queries, source_ids=source_ids, exclude_content_types=exclude_content_types, exclude_paths=exclude_paths,
     )
+    chunks, named = _focus_repositories(
+        config, question, chunks, source_ids, exclude_content_types, exclude_paths, queries=plan.queries,
+    )
+    chunks = _add_path_matches(config, plan, chunks, source_ids, exclude_content_types, exclude_paths, named)
+    chunks = _expand_sections(config, chunks)
     if expand_graph:
         chunks = _expand_with_graph(config, chunks, exclude_paths)
     findings = _dataflow_findings(config, question, source_ids, chunks)
@@ -115,6 +130,287 @@ def _dataflow_findings(
     except Exception as exc:  # noqa: BLE001 - findings are an addition to the answer
         print(f"Data-flow findings skipped: {exc}", flush=True)
     return sorted(found, key=relevance, reverse=True)[:MAX_DATAFLOW_FINDINGS]
+
+
+@dataclass(frozen=True)
+class SearchPlan:
+    """What one question is searched with (RQ-0042): the question itself, and,
+    when the model could give them, an English search query and terms."""
+
+    queries: list[str]
+    terms: list[str] = field(default_factory=list)
+
+
+_REWRITE_PROMPT = (
+    "You help search a code and documentation index of software and hardware projects "
+    "(firmware, simulators, interface documents). Rewrite the user's question as one English "
+    "search query, and list 3 to 8 short terms that would appear in the relevant file names, "
+    "identifiers or headings (abbreviations included, e.g. A429 for ARINC 429). Use only what the "
+    "question implies. Answer with JSON only: {\"query\": \"...\", \"terms\": [\"...\"]}\n\nQuestion:\n"
+)
+# Path words too common to say anything about a file.
+_COMMON_TERMS = {"src", "test", "tests", "doc", "docs", "code", "file", "files", "source", "the", "and", "for", "data", "main"}
+TERM = re.compile(r"[a-z0-9][a-z0-9._-]{1,40}")
+
+
+def _search_plan(config: RagConfig, question: str) -> SearchPlan:
+    """The question, and its English search query and terms (RQ-0042).
+
+    A question in Turkish, in the asker's words, sits far from code written
+    in English in the asker's colleagues' words: "arinc 429 ip davranislari
+    nasil" put the twin's A429Lite.cs ninth among its repository's code, the
+    English question with the model's terms second. One short completion
+    gives both; without it (turned off, or a model that fails) the question
+    is searched alone, as before.
+    """
+    if not config.retrieval.rewrite:
+        return SearchPlan(queries=[question])
+    try:
+        rewriter = config
+        if config.retrieval.rewrite_model:
+            rewriter = config.model_copy(update={"llm": config.llm.model_copy(update={"model": config.retrieval.rewrite_model})})
+        reply = _complete(rewriter, _REWRITE_PROMPT + question, session_key="rewrite")
+        found = json.loads(reply[reply.index("{"): reply.rindex("}") + 1])
+    except Exception as exc:  # noqa: BLE001 - the rewrite is an addition to the search
+        print(f"Question rewrite skipped: {exc}", flush=True)
+        return SearchPlan(queries=[question])
+    query = str(found.get("query") or "").strip()
+    terms: list[str] = []
+    for term in found.get("terms") or []:
+        word = str(term).strip().lower()
+        if TERM.fullmatch(word) and word not in _COMMON_TERMS and word not in terms:
+            terms.append(word)
+    queries = [question, query] if query and query.lower() != question.lower() else [question]
+    return SearchPlan(queries=queries, terms=terms[:8])
+
+
+def _retrieve_all(config: RagConfig, queries: list[str], limit: int | None = None, **options: Any) -> list[RetrievedChunk]:
+    """Each query's nearest chunks, merged: a chunk keeps its best score; what
+    the first query looked up by its identifier stays first."""
+    top_k = limit or config.retrieval.top_k
+    first = retrieve(config, queries[0], limit=limit, **options)
+    if len(queries) == 1:
+        return first
+    identified = [found for found in first if found.metadata.get("foundBy") == FOUND_BY_IDENTIFIER]
+    best: dict[int, RetrievedChunk] = {}
+    for found in [*first, *(found for query in queries[1:] for found in retrieve(config, query, limit=limit, **options))]:
+        if found.chunk_id not in best or found.score > best[found.chunk_id].score:
+            best[found.chunk_id] = found
+    taken = {found.chunk_id for found in identified}
+    ranked = sorted((found for found in best.values() if found.chunk_id not in taken), key=lambda found: -found.score)
+    return [*identified, *ranked][:top_k]
+
+
+def _focus_repositories(
+    config: RagConfig,
+    question: str,
+    chunks: list[RetrievedChunk],
+    source_ids: list[str] | None,
+    exclude_content_types: list[str] | None,
+    exclude_paths: list[str] | None,
+    queries: list[str] | None = None,
+) -> tuple[list[RetrievedChunk], list[str]]:
+    """Search the repository the question names as well (RQ-0042).
+
+    "bfi-simulator kodunda arinc 429 ip davranislari nasil" found none of the
+    twin's A429 model: one top-k over every source, ranked by the embedding
+    alone, gave its places to documents that shared the question's words. A
+    repository the sources hold, named in the question, gets a second search
+    of its own, whose best chunks take up to half of top-k; what was looked up
+    by its identifier stays first. Without such a name nothing changes.
+    """
+    try:
+        searchable = searchable_source_ids(config, source_ids)
+        with connect(config.database.connection_string) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT DISTINCT metadata->>'repository' AS repository FROM rag_documents"
+                    " WHERE status = 'active' AND metadata ? 'repository'"
+                    + (" AND source_id = ANY(%s)" if searchable else ""),
+                    (searchable,) if searchable else (),
+                )
+                known = [row["repository"] for row in cur.fetchall() if row["repository"]]
+    except Exception as exc:  # noqa: BLE001 - the focus is an addition to the answer
+        print(f"Repository focus skipped: {exc}", flush=True)
+        return chunks, []
+    named = repositories_named(question, known)
+    if not named:
+        return chunks, []
+    top_k = config.retrieval.top_k
+    scoped = _retrieve_all(
+        config, queries or [question], limit=max(1, top_k // 2), source_ids=source_ids,
+        exclude_content_types=exclude_content_types, exclude_paths=exclude_paths, repositories=named,
+    )
+    scoped = [
+        found if found.metadata.get("foundBy") else replace(found, metadata={**found.metadata, "foundBy": FOUND_BY_REPOSITORY})
+        for found in scoped
+    ]
+    taken = {found.chunk_id for found in scoped}
+    identified = [found for found in chunks if found.metadata.get("foundBy") == FOUND_BY_IDENTIFIER and found.chunk_id not in taken]
+    taken |= {found.chunk_id for found in identified}
+    rest = [found for found in chunks if found.chunk_id not in taken]
+    return [*identified, *scoped, *rest][:top_k], named
+
+
+_PATH_MATCHES = """
+    WITH docs AS MATERIALIZED (
+      SELECT d.id, (SELECT count(*) FROM unnest(%(terms)s::text[]) t WHERE lower(d.relative_path) LIKE '%%' || t || '%%') AS hits
+      FROM rag_documents d
+      WHERE d.status = 'active'
+        AND lower(d.relative_path) LIKE ANY (SELECT '%%' || t || '%%' FROM unnest(%(terms)s::text[]) t)
+        {document_filter}
+      ORDER BY hits DESC, d.id
+      LIMIT 40
+    ),
+    best AS MATERIALIZED (
+      SELECT DISTINCT ON (c.document_id)
+        c.id AS chunk_id, c.document_id, c.source_id, d.relative_path, c.text, c.metadata, docs.hits,
+        1 - ((c.embedding::halfvec({dims})) <=> %(embedding)s::halfvec({dims})) AS score
+      FROM rag_chunks c
+      JOIN docs ON docs.id = c.document_id
+      JOIN rag_documents d ON d.id = c.document_id
+      WHERE c.status = 'active' AND c.embedding IS NOT NULL AND vector_dims(c.embedding) = %(dims)s
+        {chunk_filter}
+      ORDER BY c.document_id, score DESC
+    )
+    SELECT * FROM best ORDER BY hits DESC, score DESC LIMIT %(limit)s
+"""
+
+
+def _add_path_matches(
+    config: RagConfig,
+    plan: SearchPlan,
+    chunks: list[RetrievedChunk],
+    source_ids: list[str] | None,
+    exclude_content_types: list[str] | None,
+    exclude_paths: list[str] | None,
+    repositories: list[str],
+) -> list[RetrievedChunk]:
+    """Files whose path holds the question's terms (RQ-0042).
+
+    A file is often named for what it is about (peripherals/A429Lite.cs,
+    RQ-0006-a429-lite-fifo-...); an embedding of its code does not say so.
+    The files whose paths hold most of the plan's terms bring their best
+    chunk each, up to a quarter of top-k (two at least), placed after what was
+    named by identifier; within the repository the question names, if it
+    names one. The filters of the search apply.
+    """
+    if not plan.terms:
+        return chunks
+    top_k = config.retrieval.top_k
+    limit = max(2, top_k // 4)
+    searchable = searchable_source_ids(config, source_ids)
+    document_filter = ""
+    chunk_filter = ""
+    params: dict[str, Any] = {"terms": plan.terms, "limit": limit}
+    if searchable:
+        document_filter += " AND d.source_id = ANY(%(sources)s)"
+        params["sources"] = searchable
+    if repositories:
+        document_filter += " AND d.metadata->>'repository' = ANY(%(repositories)s)"
+        params["repositories"] = repositories
+    if exclude_content_types:
+        chunk_filter += " AND (c.metadata->>'contentType' IS NULL OR NOT (c.metadata->>'contentType' = ANY(%(types)s)))"
+        params["types"] = exclude_content_types
+    regexes = exclusion_regexes(exclude_paths)
+    if regexes:
+        document_filter += " AND NOT (d.relative_path ~ ANY(%(paths)s))"
+        params["paths"] = regexes
+    try:
+        embedding = create_embedding_adapter(config.embedding).embed_query(plan.queries[-1])
+        params.update({"embedding": vector_literal(embedding), "dims": len(embedding)})
+        statement = _PATH_MATCHES.format(document_filter=document_filter, chunk_filter=chunk_filter, dims=len(embedding))
+        with connect(config.database.connection_string) as conn:
+            with conn.cursor() as cur:
+                cur.execute(statement, params)
+                rows = cur.fetchall()
+    except Exception as exc:  # noqa: BLE001 - path matches are an addition to the answer
+        print(f"Path matches skipped: {exc}", flush=True)
+        return chunks
+    seen = {found.chunk_id for found in chunks}
+    matched = [
+        RetrievedChunk(
+            chunk_id=int(row["chunk_id"]), document_id=int(row["document_id"]), source_id=row["source_id"],
+            relative_path=row["relative_path"], text=row["text"], score=float(row["score"]),
+            metadata={**(row["metadata"] or {}), "foundBy": FOUND_BY_PATH},
+        )
+        for row in rows
+        if int(row["chunk_id"]) not in seen
+    ]
+    if not matched:
+        return chunks
+    identified = [found for found in chunks if found.metadata.get("foundBy") == FOUND_BY_IDENTIFIER]
+    rest = [found for found in chunks if found.metadata.get("foundBy") != FOUND_BY_IDENTIFIER]
+    return [*identified, *matched, *rest][:top_k]
+
+
+_SECTION_PARTS = """
+    SELECT c.id AS chunk_id, c.document_id, c.source_id, d.relative_path, c.text, c.metadata
+    FROM rag_chunks c
+    JOIN rag_documents d ON d.id = c.document_id
+    WHERE c.document_id = %s
+      AND c.status = 'active'
+      AND d.status = 'active'
+      AND c.metadata->>'section' = %s
+      AND c.metadata ? 'part'
+    ORDER BY abs((c.metadata->>'part')::int - %s), (c.metadata->>'part')::int
+    LIMIT %s
+"""
+
+
+def _expand_sections(config: RagConfig, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Bring a hit's section along (RQ-0042).
+
+    A section split into parts reached the answer one part at a time: the
+    developer guide's "ARINC 429 in: UDP 5429" came as its heading alone,
+    without the part that said anything. Each hit that is a part of a split
+    section brings up to sectionParts of the section's other parts from the
+    same document, nearest first, placed right after it; all hits together
+    bring at most a quarter of top-k (two at least), the best hits first, and
+    the weakest hits make room, so the answer keeps its top-k and is not all
+    one section's parts. A part is never added twice. Being
+    of the same document, the parts share its path and content type, so no
+    filter can be undone this way.
+    """
+    limit = config.retrieval.section_parts
+    split = [found for found in chunks if int(found.metadata.get("parts") or 0) > 1 and found.metadata.get("section")]
+    if limit <= 0 or not split:
+        return chunks
+    budget = max(2, config.retrieval.top_k // 4)
+    seen = {found.chunk_id for found in chunks}
+    added: dict[int, list[RetrievedChunk]] = {}
+    total = 0
+    try:
+        with connect(config.database.connection_string) as conn:
+            with conn.cursor() as cur:
+                for hit in split:
+                    if total >= budget:
+                        break
+                    cur.execute(_SECTION_PARTS, (hit.document_id, hit.metadata["section"], int(hit.metadata.get("part") or 1), limit + 1))
+                    for row in cur.fetchall():
+                        if int(row["chunk_id"]) in seen or len(added.get(hit.chunk_id, [])) >= limit or total >= budget:
+                            continue
+                        seen.add(int(row["chunk_id"]))
+                        total += 1
+                        added.setdefault(hit.chunk_id, []).append(RetrievedChunk(
+                            chunk_id=int(row["chunk_id"]),
+                            document_id=int(row["document_id"]),
+                            source_id=row["source_id"],
+                            relative_path=row["relative_path"],
+                            text=row["text"],
+                            score=0.0,
+                            metadata={**(row["metadata"] or {}), "foundBy": FOUND_BY_SECTION},
+                        ))
+    except Exception as exc:  # noqa: BLE001 - the section is an addition to the answer
+        print(f"Section expansion skipped: {exc}", flush=True)
+        return chunks
+    if not added:
+        return chunks
+    expanded: list[RetrievedChunk] = []
+    for found in chunks:
+        expanded.append(found)
+        expanded.extend(added.get(found.chunk_id, []))
+    return expanded[: config.retrieval.top_k]
 
 
 def _expand_with_graph(
@@ -209,13 +505,17 @@ def _generate_answer(config: RagConfig, question: str, chunks: list[RetrievedChu
         f"Source context:\n{context}"
     )
 
+    return _complete(config, prompt, session_key=",".join(sorted({chunk.source_id for chunk in chunks})) or "*")
+
+
+def _complete(config: RagConfig, prompt: str, session_key: str | None = None) -> str:
+    """One completion from the configured model."""
     if config.llm.provider == "ollama":
         return _complete_with_ollama(config, prompt)
     if config.llm.provider == "gemini":
         return _complete_with_gemini(config, prompt)
     if config.llm.provider == "claude-cli":
-        source_key = ",".join(sorted({chunk.source_id for chunk in chunks})) or "*"
-        return _complete_with_claude_cli(config, prompt, session_key=source_key)
+        return _complete_with_claude_cli(config, prompt, session_key=session_key)
     if config.llm.provider == "claude":
         llm = Anthropic(model=config.llm.model, api_key=config.llm.api_key, temperature=config.llm.temperature)
     else:
