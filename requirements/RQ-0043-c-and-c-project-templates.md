@@ -49,6 +49,18 @@ is `c`; the paths a requirement normally works in are `src`, `include`,
 CMake: the GitLab job and the GitHub workflow of a C project install CMake
 (and the compiler when it is missing) before the gates run.
 
+**GitLab CI is a C pipeline.** The generated `.gitlab-ci.yml` of a C project
+builds and tests the code itself, not only when the factory runs a
+requirement: a `c_build` job (configure and compile) and a `c_test` job
+(CTest, the results as a JUnit report on the merge request) run on every
+branch, merge request and tag, so a merge request whose code does not build or
+whose tests fail is not merged. They run in `$C_BUILD_IMAGE` (`debian:bookworm`,
+CMake and the compiler installed when the image lacks them, so an image with
+both works offline), and a branch with an open merge request runs them once,
+in the merge request pipeline. The factory job keeps the files a C
+requirement changes (`src/`, `include/`, `tests/`, `cmake/`,
+`CMakeLists.txt`) as its artifacts, not a TypeScript project's.
+
 **The agents are told.** `AGENTS.md` of a C project says how it builds and
 tests, that warnings are errors, that the language standard is not changed in
 passing, and that a dependency is added through CMake by a requirement, not
@@ -79,5 +91,10 @@ fetched by a build step.
   introduced into the code fails the build.
 - The generated `.gitlab-ci.yml` and GitHub workflow install CMake for a C
   project, and do not for the other templates.
+- The generated `.gitlab-ci.yml` of a C project has the `build` and `test`
+  stages with `c_build` and `c_test`; run in `debian:bookworm` as GitLab runs
+  them, `c_build` compiles and `c_test` passes and writes `build/junit.xml`.
+  The other templates have no such jobs.
+- The README lists the `c` template with its files, scripts and CI jobs.
 - `AGENTS.md` of a C project has the section on building and testing; the
   other templates' does not.

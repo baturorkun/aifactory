@@ -34,7 +34,67 @@ function isCTemplate(template: string | undefined): boolean {
   return template === 'c';
 }
 
-// The CI images have a C compiler but no CMake (RQ-0043).
+// The image of a C project's own build and test jobs (RQ-0043).
+const C_BUILD_IMAGE = 'debian:bookworm';
+const C_TOOLCHAIN_INSTALL =
+  'if ! command -v cmake >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends cmake make build-essential; fi';
+
+// A C project's code built and tested on every branch, merge request and tag,
+// not only when the factory runs a requirement: a merge request cannot be
+// merged with code that does not build or a test that fails. The merge request
+// pipeline runs them, and a branch that has one does not run them twice.
+function cBuildJobs(projectName: string): string[] {
+  const rules = [
+    '  rules:',
+    "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'",
+    "    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'",
+    '      when: never',
+    "    - if: '$CI_COMMIT_BRANCH'",
+    "    - if: '$CI_COMMIT_TAG'",
+  ];
+  return [
+    '',
+    'c_build:',
+    '  stage: build',
+    '  image: "$C_BUILD_IMAGE"',
+    '  tags:',
+    '    - linux',
+    '  before_script:',
+    '    - ' + C_TOOLCHAIN_INSTALL,
+    '    - cmake --version',
+    '    - cc --version',
+    '  script:',
+    '    - cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug',
+    '    - cmake --build build --parallel',
+    '  artifacts:',
+    '    name: "' + projectName + '-build-$CI_COMMIT_SHORT_SHA"',
+    '    expire_in: 7 days',
+    '    paths:',
+    '      - build/',
+    ...rules,
+    '',
+    'c_test:',
+    '  stage: test',
+    '  image: "$C_BUILD_IMAGE"',
+    '  tags:',
+    '    - linux',
+    '  needs:',
+    '    - job: c_build',
+    '      artifacts: true',
+    '  before_script:',
+    '    - ' + C_TOOLCHAIN_INSTALL,
+    '  script:',
+    '    - ctest --test-dir build --output-on-failure --output-junit junit.xml',
+    '  artifacts:',
+    '    when: always',
+    '    expire_in: 7 days',
+    '    reports:',
+    '      junit: build/junit.xml',
+    ...rules,
+  ];
+}
+
+// The factory job's image has a C compiler but no CMake (RQ-0043).
 const NATIVE_TOOLCHAIN_INSTALL =
   'if ! command -v cmake >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends cmake make gcc; fi';
 export const SIMULATORS: Simulator[] = ['simics', 'renode'];
@@ -516,6 +576,7 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       ...(ciImage ? ['  - ci_image', '  - probe_build', '  - twin_run', '  - parity', '  - report', '  - board'] : []),
       '  - ai_factory',
       ...(deployable ? ['  - build', '  - package', '  - image', '  - deploy'] : []),
+      ...(native ? ['  - build', '  - test'] : []),
       '',
       'variables:',
       '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
@@ -532,6 +593,13 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
         // so apt-get in a bullseye job fails.
         : ['  AIFACTORY_RUNNER_IMAGE: "node:20-bookworm"']),
       '  CODEX_HOME: "/home/gitlab-runner/.codex"',
+      ...(native
+        ? [
+            '  # c_build and c_test: CMake and a C compiler are installed when the image',
+            '  # lacks them. An image that has both makes the jobs work offline.',
+            `  C_BUILD_IMAGE: "${C_BUILD_IMAGE}"`,
+          ]
+        : []),
       ...(deployable
         ? [
             '  APP_PORT: "8282"',
@@ -651,19 +719,17 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       '    when: always',
       '    expire_in: 7 days',
       '    paths:',
-      '      - public/',
-      '      - src/',
-      '      - dist/',
+      ...(native
+        ? ['      - src/', '      - include/', '      - tests/', '      - cmake/', '      - CMakeLists.txt']
+        : ['      - public/', '      - src/', '      - dist/']),
       '      - runs/',
       '      - handoffs/',
       '      - requirements/',
       '      - constraints/',
       '      - factory.config.json',
       '      - package.json',
-      '      - tsconfig.json',
-      '      - tsconfig.build.json',
-      '      - pyproject.toml',
-      '      - tests/',
+      ...(native ? [] : ['      - tsconfig.json', '      - tsconfig.build.json', '      - pyproject.toml', '      - tests/']),
+      ...(native ? cBuildJobs(projectName) : []),
       ...(deployable
         ? [
             '',

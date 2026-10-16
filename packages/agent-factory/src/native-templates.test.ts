@@ -74,6 +74,35 @@ test('CI installs CMake for a C project only', () => {
   }
 });
 
+test('the GitLab CI of a C project builds and tests the C code', () => {
+  const { parent, read } = scaffold('c');
+  try {
+    const ci = read('.gitlab-ci.yml');
+    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- build\n {2}- test\n/m);
+    assert.match(ci, /^ {2}C_BUILD_IMAGE: "debian:bookworm"$/m);
+    assert.match(ci, /^c_build:\n {2}stage: build\n {2}image: "\$C_BUILD_IMAGE"/m);
+    assert.match(ci, /- cmake -S \. -B build -DCMAKE_BUILD_TYPE=Debug\n {4}- cmake --build build --parallel/);
+    assert.match(ci, /^c_test:\n {2}stage: test/m);
+    assert.match(ci, /- ctest --test-dir build --output-on-failure --output-junit junit\.xml/);
+    assert.match(ci, /junit: build\/junit\.xml/);
+    assert.match(ci, /merge_request_event/);
+    // The factory job keeps what a C requirement changes, not a TypeScript project's files.
+    const factoryJob = ci.slice(ci.indexOf('ai_factory_requirement_branch:'), ci.indexOf('c_build:'));
+    for (const path of ['include/', 'cmake/', 'CMakeLists.txt']) assert.match(factoryJob, new RegExp(`- ${path}$`, 'm'));
+    for (const path of ['public/', 'dist/', 'tsconfig.json', 'pyproject.toml']) assert.doesNotMatch(factoryJob, new RegExp(`- ${path}$`, 'm'));
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+  for (const template of ['vanilla-ts', 'python', 'empty']) {
+    const other = scaffold(template);
+    try {
+      assert.doesNotMatch(other.read('.gitlab-ci.yml'), /c_build|C_BUILD_IMAGE/, template);
+    } finally {
+      rmSync(other.parent, { recursive: true, force: true });
+    }
+  }
+});
+
 test('the agents of a C project are told how it builds and tests', () => {
   for (const [template, heading] of [['c', 'C11'], ['python', null], ['vanilla-ts', null]] as const) {
     const { parent, read } = scaffold(template);
