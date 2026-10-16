@@ -6,6 +6,14 @@ question matched the second and the answer could only quote the tail. Here a
 file is cut where its author structured it: each heading starts a section, a
 fenced code block is never split, a long section is packed paragraph by
 paragraph, and every chunk opens with the file and its heading path.
+
+A heading never makes a part on its own (RQ-0042): when the section's first
+block does not fit beside it, the two still share a part, which may then run
+over the budget by the heading's length. A part that was only its heading
+matched a question on the heading's words and carried nothing under them; for
+the same reason a section with nothing under its heading (a heading followed
+by a subheading) is no chunk at all: its subsections' chunks name it in their
+heading path.
 """
 
 from __future__ import annotations
@@ -17,7 +25,7 @@ from typing import Any
 
 from aifactory_rag.ingest.code_chunker import CodeChunk
 
-MARKDOWN_CHUNKER = "markdown-v1"
+MARKDOWN_CHUNKER = "markdown-v2"
 MARKDOWN_EXTENSIONS = {".md", ".markdown"}
 # A single code block may grow a chunk up to this many chunk sizes before it
 # is split; a command or a register table is worth an oversized chunk.
@@ -32,6 +40,7 @@ class _Block:
     lines: list[str]
     start: int  # 1-based line of the first line
     code: bool = False
+    heading: bool = False
 
     @property
     def text(self) -> str:
@@ -54,7 +63,7 @@ def chunk_markdown(text: str, relative_path: str, chunk_size: int) -> list[CodeC
     sections = _sections(text.splitlines())
     chunks: list[CodeChunk] = []
     for section in sections:
-        if not any(block.text.strip() for block in section.blocks):
+        if not any(block.text.strip() for block in section.blocks if not block.heading):
             continue
         heading = " > ".join(section.path)
         header = f"{relative_path} > {heading}" if heading else relative_path
@@ -70,6 +79,9 @@ def chunk_markdown(text: str, relative_path: str, chunk_size: int) -> list[CodeC
             if len(parts) > 1:
                 metadata.update({"part": number, "parts": len(parts)})
             chunks.append(CodeChunk(f"{header}\n\n{body}", {k: v for k, v in metadata.items() if v is not None}))
+    if not chunks and text.strip():  # headings and nothing else: the file is its one chunk
+        lines = text.splitlines()
+        chunks.append(CodeChunk(f"{relative_path}\n\n{text.strip()}", {"startLine": 1, "endLine": len(lines)}))
     return chunks
 
 
@@ -110,7 +122,7 @@ def _sections(lines: list[str]) -> list[_Section]:
                 stack.pop()
             stack.append((level, heading.group(2).strip()))
             sections.append(_Section(path=[title for _, title in stack], level=level, start=number))
-            sections[-1].blocks.append(_Block([line], number))
+            sections[-1].blocks.append(_Block([line], number, heading=True))
             continue
         if not line.strip():
             flush_paragraph()
@@ -128,7 +140,8 @@ def _sections(lines: list[str]) -> list[_Section]:
 
 def _pack(blocks: list[_Block], budget: int, chunk_size: int) -> list[list[_Block]]:
     """Paragraphs and code blocks into parts up to the budget, never splitting a block
-    except a code block beyond CODE_BLOCK_LIMIT chunk sizes, or a paragraph beyond one."""
+    except a code block beyond CODE_BLOCK_LIMIT chunk sizes, or a paragraph beyond one.
+    A part that holds only the heading takes the next unit whatever its size."""
     units: list[_Block] = []
     for block in blocks:
         limit = chunk_size * CODE_BLOCK_LIMIT if block.code else budget
@@ -138,7 +151,7 @@ def _pack(blocks: list[_Block], budget: int, chunk_size: int) -> list[list[_Bloc
     size = 0
     for unit in units:
         length = len(unit.text) + 2
-        if current and size + length > budget:
+        if current and size + length > budget and not all(block.heading for block in current):
             parts.append(current)
             current, size = [], 0
         current.append(unit)

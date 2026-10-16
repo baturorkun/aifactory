@@ -187,7 +187,10 @@
     },
     "retrieval": {
       "topK": "${RAG_TOP_K:-12}",
-      "efSearch": "${RAG_EF_SEARCH:-400}"
+      "efSearch": "${RAG_EF_SEARCH:-400}",
+      "sectionParts": "${RAG_SECTION_PARTS:-2}",
+      "rewrite": "${RAG_QUERY_REWRITE:-true}",
+      "rewriteModel": "${RAG_QUERY_REWRITE_MODEL:-}"
     },
     "auth": {
       "provider": "none",

@@ -42,6 +42,36 @@ With `--gdb` the twin runs until you stop it.
 """
 
 
+ARINC_SECTION = """# BFI hardware twin: developer guide
+
+## The ports and their formats
+
+### ARINC 429 in: UDP 5429
+
+- Each UDP datagram holds one or more whole ARINC 429 words: raw 32-bit
+  values, little-endian, 4 bytes each. A datagram whose length is not a
+  multiple of 4 is dropped and counted (`a429Dropped`).
+- Words go to the A429 Lite IP's receive channel the firmware reads: the
+  first channel whose receive FIFO it reads. bfi-sw 1.1.0 receives on
+  channel 0; later firmware on channel 1, where the bench board has the bus.
+  Words that arrive before the firmware reads any receive channel wait, with
+  the timetag of their arrival, and enter that channel then (`held`).
+- `--a429-rx <channel>` (0-4) puts them on that channel instead, whatever
+  the firmware reads: to see what a firmware does when the bus is on another
+  channel.
+- `endpoints.json` names the channel (`a429.rxChannel`, `rxChannelBy`:
+  `firmware` or `given`) once it is known; `summary.json` too (`a429Rx`).
+- The word is the ARINC 429 word as on the wire: label (bit-reversed) in
+  bits 0-7, data from bit 10, SSM in bits 29-30, odd parity in bit 31, the way
+  FlightDataSimulator encodes it.
+- The IP's label mask decides whether a word enters the RX FIFO (all labels
+  are enabled at power-on). An accepted word is followed in the FIFO by a
+  timetag word (see "The A429 Lite IP as modelled").
+- Another UDP port: `--a429-port <port>` inside the container, or map it with
+  `-p <host port>:5429/udp`.
+
+"""
+
 def by_section(chunks):
     return {chunk.metadata.get("section"): chunk for chunk in chunks}
 
@@ -89,6 +119,44 @@ class SectionTests(unittest.TestCase):
             if "#define" in body:
                 self.assertTrue(body.lstrip().startswith("```c") or body.startswith("# Registers"), body[:40])
                 self.assertTrue(body.rstrip().endswith("```"))
+
+
+class HeadingTests(unittest.TestCase):
+    """RQ-0042: a heading never makes a part on its own."""
+
+    def test_the_developer_guide_s_arinc_section_has_no_part_that_is_only_its_heading(self) -> None:
+        # bfi-simulator docs/twin-developer-guide.md, 2026-10-16: the section's
+        # one long list did not fit beside its heading, and part 1 was line 126
+        # alone, the heading, which a question on ARINC 429 matched.
+        parts = [c for c in chunk_markdown(ARINC_SECTION, "docs/twin-developer-guide.md", 1200)
+                 if (c.metadata.get("section") or "").endswith("ARINC 429 in: UDP 5429")]
+        self.assertTrue(parts)
+        first = parts[0]
+        self.assertIn("### ARINC 429 in: UDP 5429", first.text)
+        self.assertIn("Each UDP datagram holds one or more whole ARINC 429 words", first.text)
+        self.assertLess(first.metadata["startLine"], first.metadata["endLine"])
+
+    def test_a_heading_takes_the_first_block_however_long(self) -> None:
+        long_paragraph = "word " * 400  # well over the budget: it is split
+        code = "```\n" + "\n".join(f"line {n}" for n in range(150)) + "\n```"  # oversized, kept whole
+        for body in (long_paragraph, code):
+            chunks = chunk_markdown(f"# Doc\n\n## Part\n\n{body}\n", "doc.md", 600)
+            for chunk in chunks:
+                content = chunk.text.split("\n\n", 1)[1].strip()
+                self.assertFalse(content.startswith("#") and "\n" not in content, f"a part that is only a heading: {chunk.text!r}")
+            first = [c for c in chunks if c.metadata.get("section") == "Doc > Part"][0]
+            self.assertIn("## Part", first.text)
+            self.assertTrue("word" in first.text or "line 0" in first.text)
+
+    def test_a_section_with_nothing_under_its_heading_is_no_chunk(self) -> None:
+        chunks = chunk_markdown("# Doc\n\n## Empty\n\n### Inside\n\nText.\n", "doc.md", 600)
+        self.assertEqual([c.metadata.get("section") for c in chunks], ["Doc > Empty > Inside"])
+        self.assertTrue(chunks[0].text.startswith("doc.md > Doc > Empty > Inside\n\n"))
+
+    def test_a_file_of_headings_alone_is_one_chunk(self) -> None:
+        chunks = chunk_markdown("# Plan\n\n## Later\n", "plan.md", 600)
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("## Later", chunks[0].text)
 
 
 class IngestTests(unittest.TestCase):

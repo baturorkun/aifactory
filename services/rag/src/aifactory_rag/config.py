@@ -308,6 +308,22 @@ class RagRetrievalConfig(BaseModel):
     # about 10 ms instead of 3 (measured on 290k chunks, 13 Oct 2026).
     ef_search: int = Field(default=400, ge=1, le=1000, alias="efSearch")
     min_score: float | None = Field(default=None, alias="minScore")
+    # A hit that is one part of a section split into parts brings up to this
+    # many of the section's other parts, nearest first (RQ-0042): a section's
+    # heading matched in part 1 and its content sat in part 2. 0 turns it off.
+    section_parts: int = Field(default=2, ge=0, le=10, alias="sectionParts")
+    # The question is also searched as an English search query, and the terms
+    # the model names are looked for in file paths (RQ-0042): "arinc 429 ip
+    # davranislari" put the twin's A429Lite.cs ninth among its repository's
+    # code, the English question second. rewriteModel picks a smaller model of
+    # the same provider for it; empty uses the answer's model.
+    rewrite: bool = Field(default=True, alias="rewrite")
+    rewrite_model: str | None = Field(default=None, alias="rewriteModel")
+
+    @field_validator("rewrite_model", mode="before")
+    @classmethod
+    def _blank_rewrite_model_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class RagAuthConfig(BaseModel):
