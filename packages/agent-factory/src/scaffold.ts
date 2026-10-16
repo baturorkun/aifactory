@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
 
-export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python';
+export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c';
 
 // A hardware-twin project is described by its simulator, not by a language
 // template. The two axes are mutually exclusive at `factory new`.
@@ -27,7 +27,16 @@ export type NewProjectResult = {
   simulator?: Simulator;
 };
 
-export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python'];
+export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python', 'c'];
+
+// The templates built with CMake (RQ-0043).
+function isCTemplate(template: string | undefined): boolean {
+  return template === 'c';
+}
+
+// The CI images have a C compiler but no CMake (RQ-0043).
+const NATIVE_TOOLCHAIN_INSTALL =
+  'if ! command -v cmake >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends cmake make gcc; fi';
 export const SIMULATORS: Simulator[] = ['simics', 'renode'];
 const DEFAULT_HOST_TYPE: Record<Simulator, HostType> = { simics: 'windows', renode: 'linux' };
 function resolveHostType(value: string | undefined, fallback: HostType): HostType {
@@ -475,7 +484,7 @@ function renodeTwinJobs(projectName: string): string[] {
   ];
 }
 
-function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean, simulator?: Simulator): void {
+function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean, simulator?: Simulator, native = false): void {
   // The tag names the versions inside, not the simulator: image names and tags
   // are seen by people the twin is delivered to.
   const ciImage = simulator === 'renode' ? `${projectName}-ci:sim-${RENODE_CI_VERSION}-armgnu-${ARM_GNU_CI_VERSION}` : undefined;
@@ -583,6 +592,7 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       '  before_script:',
       '    - node --version',
       '    - npm --version',
+      ...(native ? ['    # The gates of a C project build with CMake, which the image lacks.', '    - ' + NATIVE_TOOLCHAIN_INSTALL] : []),
       '    - corepack enable',
       '    - corepack prepare pnpm@9.15.9 --activate',
       '    - |',
@@ -914,7 +924,7 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
   );
 }
 
-function writeGithubActions(projectRoot: string, projectName: string): void {
+function writeGithubActions(projectRoot: string, projectName: string, native = false): void {
   const workflowsDirectory = resolve(projectRoot, '.github/workflows');
   mkdirSync(workflowsDirectory, { recursive: true });
   writeFileSync(
@@ -996,6 +1006,15 @@ function writeGithubActions(projectRoot: string, projectName: string): void {
       '          corepack enable',
       '          corepack prepare pnpm@9.15.9 --activate',
       '',
+      ...(native
+        ? [
+            '      - name: Install CMake and the C compiler',
+            '        run: |',
+            '          # The gates of a C project build with CMake, which the image lacks.',
+            '          ' + NATIVE_TOOLCHAIN_INSTALL,
+            '',
+          ]
+        : []),
       '      - name: Install AI Factory and project dependencies',
       '        run: |',
       '          # actions/checkout marks the workspace safe under a temporary HOME that',
@@ -1425,6 +1444,154 @@ function writePythonTemplate(projectRoot: string): void {
   );
 
   writeFileSync(resolve(projectRoot, 'src/__init__.py'), '', 'utf8');
+}
+
+// A CMake project in C11 (RQ-0043): a library with its public headers, a
+// program on top of it, and a test CTest runs. No test framework and nothing
+// downloaded: the gates must work on an offline lab machine.
+function writeCTemplate(projectRoot: string, projectName: string): void {
+  for (const dir of ['src', 'tests', 'cmake', 'include/' + projectName]) {
+    mkdirSync(resolve(projectRoot, dir), { recursive: true });
+  }
+
+  patchPackageScripts(projectRoot, {
+    build: 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel',
+    test: 'ctest --test-dir build --output-on-failure',
+  });
+
+  writeFileSync(
+    resolve(projectRoot, 'CMakeLists.txt'),
+    [
+      'cmake_minimum_required(VERSION 3.20)',
+      `project(${projectName} VERSION 0.1.0 LANGUAGES C)`,
+      '',
+      'set(CMAKE_C_STANDARD 11)',
+      'set(CMAKE_C_STANDARD_REQUIRED ON)',
+      'set(CMAKE_C_EXTENSIONS OFF)',
+      'set(CMAKE_EXPORT_COMPILE_COMMANDS ON)',
+      '',
+      'option(WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)',
+      '',
+      '# Warnings on for every target of the project.',
+      'function(project_warnings target)',
+      '  if(MSVC)',
+      '    target_compile_options(${target} PRIVATE /W4 $<$<BOOL:${WARNINGS_AS_ERRORS}>:/WX>)',
+      '  else()',
+      '    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic $<$<BOOL:${WARNINGS_AS_ERRORS}>:-Werror>)',
+      '  endif()',
+      'endfunction()',
+      '',
+      '# The code, as a library the program and the tests link.',
+      `add_library(\${PROJECT_NAME}_core src/greeting.c)`,
+      'target_include_directories(${PROJECT_NAME}_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)',
+      'project_warnings(${PROJECT_NAME}_core)',
+      '',
+      `add_executable(\${PROJECT_NAME} src/main.c)`,
+      'target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}_core)',
+      'project_warnings(${PROJECT_NAME})',
+      '',
+      '# Each test is a program that returns non-zero when a check fails.',
+      'enable_testing()',
+      `add_executable(test_greeting tests/test_greeting.c)`,
+      'target_link_libraries(test_greeting PRIVATE ${PROJECT_NAME}_core)',
+      'project_warnings(test_greeting)',
+      'add_test(NAME greeting COMMAND test_greeting)',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const include = `${projectName}/greeting.h`;
+  writeFileSync(
+    resolve(projectRoot, 'include', include),
+    [
+      '#ifndef GREETING_H',
+      '#define GREETING_H',
+      '',
+      '#include <stddef.h>',
+      '',
+      '/* Write the greeting for a name into out ("world" when name is NULL or',
+      '   empty). Returns the length it needed, as snprintf does. */',
+      'int greeting(char *out, size_t size, const char *name);',
+      '',
+      '#endif /* GREETING_H */',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    resolve(projectRoot, 'src/greeting.c'),
+    [
+      `#include "${include}"`,
+      '',
+      '#include <stdio.h>',
+      '',
+      'int greeting(char *out, size_t size, const char *name) {',
+      '    return snprintf(out, size, "Hello, %s!", (name && name[0]) ? name : "world");',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    resolve(projectRoot, 'src/main.c'),
+    [
+      '#include <stdio.h>',
+      '',
+      `#include "${include}"`,
+      '',
+      'int main(int argc, char **argv) {',
+      '    char text[128];',
+      '    greeting(text, sizeof text, argc > 1 ? argv[1] : NULL);',
+      '    puts(text);',
+      '    return 0;',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    resolve(projectRoot, 'tests/test_greeting.c'),
+    [
+      '#include <stdio.h>',
+      '#include <string.h>',
+      '',
+      `#include "${include}"`,
+      '',
+      'static int failures = 0;',
+      '',
+      'static void check(int ok, const char *what) {',
+      '    if (!ok) {',
+      '        fprintf(stderr, "FAIL: %s\\n", what);',
+      '        ++failures;',
+      '    }',
+      '}',
+      '',
+      'int main(void) {',
+      '    char text[64];',
+      '',
+      '    greeting(text, sizeof text, "Ada");',
+      '    check(strcmp(text, "Hello, Ada!") == 0, "a name is greeted");',
+      '',
+      '    greeting(text, sizeof text, NULL);',
+      '    check(strcmp(text, "Hello, world!") == 0, "no name greets the world");',
+      '',
+      '    check(greeting(text, 4, "Ada") == 11 && strlen(text) == 3, "a short buffer is cut, the length needed returned");',
+      '    return failures == 0 ? 0 : 1;',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  writeFileSync(resolve(projectRoot, 'cmake/.gitkeep'), '', 'utf8');
+  writeFileSync(
+    resolve(projectRoot, '.clang-format'),
+    ['BasedOnStyle: LLVM', 'IndentWidth: 4', 'ColumnLimit: 110', ''].join('\n'),
+    'utf8',
+  );
+  const gitignore = resolve(projectRoot, '.gitignore');
+  writeFileSync(gitignore, readFileSync(gitignore, 'utf8') + ['# CMake output', 'build/', ''].join('\n'), 'utf8');
 }
 
 function writeSimulatorHostType(projectRoot: string, hostType: HostType): void {
@@ -2485,6 +2652,19 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       '- Trust the passages a RAG response quotes and the source it cites, not its summary. Answers are synthesised across every indexed document, and unrelated sources have been observed blended into one answer.',
       '- Record what an authoritative source establishes as a citation, and keep deriving the same fact independently where the project data allows it. Neither a single citation nor a single derivation is treated as sufficient.',
       '',
+      ...(!options.simulator && isCTemplate(options.template)
+        ? [
+            '## Building and Testing (C11, CMake)',
+            '',
+            '- `pnpm build` configures into `build/` and compiles; `pnpm test` runs the tests through CTest. They are the `build` and `tests` quality gates.',
+            '- The code is a library, `<project>_core`, built from `src/` with its public headers in `include/<project>/`; `src/main` is the program on top of it. Tests link the library, never the program.',
+            '- Warnings are errors (`WARNINGS_AS_ERRORS`, on). Fix a warning; do not silence it, and do not turn the option off to pass a gate.',
+            '- The language standard and its extensions are set once in `CMakeLists.txt`. Do not change them in passing; a different standard is a requirement of its own.',
+            '- Every test program is registered with `add_test` and returns non-zero when a check fails. A test framework, like any dependency, comes in through CMake in a requirement that says so; a build step never downloads anything.',
+            '- `build/` is generated and never committed. Format code with `.clang-format` when clang-format is available.',
+            '',
+          ]
+        : []),
       ...(options.simulator
         ? [
             '## Three Axes of a Hardware-Twin Project',
@@ -2538,8 +2718,9 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   if (!existsSync(agentsPath)) writeFileSync(agentsPath, generatedAgentGuidelines, 'utf8');
   if (hasSuperpowersCapability(options)) ensureSuperpowersTokenPolicy(agentsPath);
   writeReferencesReadme(projectRoot);
-  writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts', options.simulator as Simulator | undefined);
-  writeGithubActions(projectRoot, projectName);
+  const native = !options.simulator && isCTemplate(options.template);
+  writeGitlabCi(projectRoot, projectName, options.template === 'vanilla-ts', options.simulator as Simulator | undefined, native);
+  writeGithubActions(projectRoot, projectName, native);
 
   if (options.template === 'vanilla-ts') {
     writeFactoryConfig(projectRoot, promptsPath, 'vanilla-typescript', ['public', 'src', 'tests', 'Dockerfile', 'nginx.conf', '.dockerignore', '.gitlab-ci.yml', '.github/workflows', ...TYPESCRIPT_CONFIG_PATHS], {
@@ -2548,6 +2729,12 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
     });
     writeVanillaTsTemplate(projectRoot, projectName, tscScript);
     writeContainerFiles(projectRoot, projectName);
+  } else if (native) {
+    writeFactoryConfig(projectRoot, promptsPath, 'c', ['src', 'include', 'tests', 'cmake', 'CMakeLists.txt', '.clang-format'], {
+      build: 'pnpm build',
+      test: 'pnpm test',
+    });
+    writeCTemplate(projectRoot, projectName);
   } else if (options.template === 'python') {
     writeFactoryConfig(projectRoot, promptsPath, 'python', ['src', 'tests'], {
       typeCheck: 'pnpm typecheck',
