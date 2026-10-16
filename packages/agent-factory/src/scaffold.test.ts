@@ -618,7 +618,8 @@ test('renode template scaffolds a local hardware-twin project with the neutral p
     // CI runs in an image with Renode and the toolchain, built by hand from
     // ci/Dockerfile on the runner host; bullseye is gone from the mirrors.
     const renodeCi = read('.gitlab-ci.yml');
-    assert.match(renodeCi, /AIFACTORY_RUNNER_IMAGE: "[a-z0-9-]+-ci:renode-1\.17\.0-armgnu-15\.2\.rel1"/);
+    assert.match(renodeCi, /AIFACTORY_RUNNER_IMAGE: "[a-z0-9-]+-ci:sim-1\.17\.0-armgnu-15\.2\.rel1"/);
+    assert.doesNotMatch(renodeCi.match(/AIFACTORY_RUNNER_IMAGE: "[^":\n]*:([^"\n]*)"/)?.[1] ?? '', /renode/i, 'the image tag does not name the simulator');
     assert.match(renodeCi, /^build_ci_image:\n {2}stage: ci_image/m);
     assert.match(renodeCi, /^ {6}docker build --build-arg "ARM_GNU_TARGET=\$target" -t "\$AIFACTORY_RUNNER_IMAGE" ci\/$/m);
     assert.match(renodeCi, /armGnuTarget/, 'the image is built for the toolchain probes/toolchain.json names');

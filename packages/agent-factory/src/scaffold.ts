@@ -476,7 +476,9 @@ function renodeTwinJobs(projectName: string): string[] {
 }
 
 function writeGitlabCi(projectRoot: string, projectName: string, deployable: boolean, simulator?: Simulator): void {
-  const ciImage = simulator === 'renode' ? `${projectName}-ci:renode-${RENODE_CI_VERSION}-armgnu-${ARM_GNU_CI_VERSION}` : undefined;
+  // The tag names the versions inside, not the simulator: image names and tags
+  // are seen by people the twin is delivered to.
+  const ciImage = simulator === 'renode' ? `${projectName}-ci:sim-${RENODE_CI_VERSION}-armgnu-${ARM_GNU_CI_VERSION}` : undefined;
   writeFileSync(
     resolve(projectRoot, '.gitlab-ci.yml'),
     [
