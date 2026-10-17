@@ -33,6 +33,12 @@ import {
   type FixContext,
 } from '../prompts/builders';
 import { parseRequirement } from '../requirements/parser';
+import { embeddedPhasesOf } from '../requirement-lifecycle';
+
+// The pipeline runs an embedded requirement's own phases, never fewer.
+function embeddedPhasesForRun(runDir: string, config: FactoryConfig) {
+  return embeddedPhasesOf(parseRequirement(readManifest(runDir).requirementId, config.paths.requirements), config);
+}
 import { extractJSON } from '../utils/json';
 import {
   buildCodePatchResponseSchema,
@@ -685,6 +691,7 @@ export async function runPipeline(
         artifactPaths: readManifest(runDir).artifacts,
         commands: effectiveConfig.targetProject.commands,
         commandTimeoutMs: effectiveConfig.targetProject.commandTimeoutMs,
+        embeddedPhases: embeddedPhasesForRun(runDir, effectiveConfig),
       });
       updateGateResults(runDir, gateResults);
 
@@ -857,6 +864,7 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
       artifactPaths: readManifest(runDir).artifacts,
       commands: config.targetProject.commands,
       commandTimeoutMs: config.targetProject.commandTimeoutMs,
+      embeddedPhases: embeddedPhasesForRun(runDir, config),
     });
     updateGateResults(runDir, gateResults);
 
@@ -876,6 +884,7 @@ async function runQualityGateRepair(options: QualityRepairOptions): Promise<Gate
       artifactPaths: readManifest(runDir).artifacts,
       commands: config.targetProject.commands,
       commandTimeoutMs: config.targetProject.commandTimeoutMs,
+      embeddedPhases: embeddedPhasesForRun(runDir, config),
     });
     updateGateResults(runDir, gateResults);
   }
