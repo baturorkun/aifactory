@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFil
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CommandError, PROJECT_ROOT, buildHost, hostSettings, loadEnvFile, requireTool, runOnHost } from './vivado-host.mjs';
+import { parseTestYaml, parseTwinSection, twinStage } from './twin.mjs';
 
 const HELP = `Usage: node scripts/flow.mjs <stage> [design...] [--mode project|non_project] [--jobs n] [--requirement-phases]
 
@@ -13,7 +14,10 @@ Stages
           one Vivado stage (xsa: project mode only)
   build   synthesis to bitstream, and the XSA in project mode
   sw      the Vitis application of each design that has one (VITIS in project.tcl)
-  all     sim, build, sw
+  twin    the application on the board's hardware twin (the latest release of
+          the twin image the board file names), checked against
+          designs/<design>/test.yaml; Docker where TWIN_* in .env says
+  all     sim, build, sw, twin
   clean   out/<design> only
 
 Without a design every design under designs/ is taken; --mode narrows them to
@@ -26,7 +30,7 @@ and says so. Elsewhere, on main and tags, every stage runs.`;
 
 const VIVADO_STAGES = new Set(['sim', 'synth', 'impl', 'bit', 'xsa', 'build', 'clean']);
 // The requirement phase each stage belongs to.
-const STAGE_PHASE = { check: 'spec', sim: 'sim', synth: 'build', impl: 'build', bit: 'build', xsa: 'build', build: 'build', sw: 'build', all: 'build' };
+const STAGE_PHASE = { check: 'spec', sim: 'sim', synth: 'build', impl: 'build', bit: 'build', xsa: 'build', build: 'build', sw: 'build', twin: 'twin' };
 
 // The phases the requirement of this CI branch names, or undefined when the
 // branch is not a requirement branch or the requirement names none.
@@ -41,7 +45,7 @@ export function requirementPhases(env, root = PROJECT_ROOT) {
   if (!line) return undefined;
   return { requirement: match[1], phases: line[1].split(',').map((phase) => phase.trim()).filter(Boolean) };
 }
-const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'all']);
+const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'twin', 'all']);
 
 // ------------------------------------------------------------
 // Designs and their project.tcl
@@ -97,9 +101,15 @@ export function designCheck(root = PROJECT_ROOT) {
   const boards = {};
   const boardDir = join(root, 'boards');
   for (const file of existsSync(boardDir) ? readdirSync(boardDir).filter((name) => name.endsWith('.yaml')) : []) {
-    const values = boardValues(readFileSync(join(boardDir, file), 'utf8'));
+    const text = readFileSync(join(boardDir, file), 'utf8');
+    const values = boardValues(text);
     for (const key of ['vendor', 'tool', 'tool_version', 'part']) {
       if (!values[key]) problems.push(`boards/${file}: no ${key}`);
+    }
+    try {
+      parseTwinSection(text, file.replace(/\.yaml$/, ''));
+    } catch (error) {
+      problems.push(error.message);
     }
     boards[file.replace(/\.yaml$/, '')] = values;
   }
@@ -123,6 +133,14 @@ export function designCheck(root = PROJECT_ROOT) {
       problems.push(`${where}: BD ${design.BD} does not exist`);
     }
     if (design.MODE === 'non_project' && design.BD) problems.push(`${where}: a non_project design has no block design (BD)`);
+    const testPath = join(root, 'designs', design.name, 'test.yaml');
+    if (existsSync(testPath)) {
+      try {
+        parseTestYaml(readFileSync(testPath, 'utf8'));
+      } catch (error) {
+        problems.push(`designs/${design.name}/${error.message}`);
+      }
+    }
     if (design.VITIS) {
       if (design.VITIS !== 'unified') problems.push(`${where}: VITIS is "${design.VITIS}"; the flow builds with Vitis Unified ("unified")`);
       if (design.MODE !== 'project') problems.push(`${where}: VITIS needs a project-mode design (the XSA comes from it)`);
@@ -223,7 +241,7 @@ export function parseArguments(argv) {
   return { stage, designs, mode, jobs, fromRequirement };
 }
 
-export function main(argv = process.argv.slice(2), env = loadEnvFile()) {
+export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   const options = parseArguments(argv[0] === '--' ? argv.slice(1) : argv);
   if (options.help) {
     console.log(HELP);
@@ -260,9 +278,22 @@ export function main(argv = process.argv.slice(2), env = loadEnvFile()) {
     return;
   }
 
-  const settings = hostSettings(env);
+  // Each host's settings are read only when a stage needs that host.
+  let vivadoHost;
+  let twinHost;
+  const vivado = () => (vivadoHost ??= hostSettings(env, 'VIVADO'));
+  const renode = () => (twinHost ??= hostSettings(env, 'TWIN'));
+  const board = (design) => {
+    const path = join(PROJECT_ROOT, 'boards', `${design.BOARD}.yaml`);
+    if (!existsSync(path)) throw new CommandError(`No boards/${design.BOARD}.yaml for ${design.name}.`);
+    return readFileSync(path, 'utf8');
+  };
   for (const design of selected) {
+    const settings = options.stage === 'twin' ? undefined : vivado();
     switch (options.stage) {
+      case 'twin':
+        await twinStage(renode(), design, board(design), env);
+        break;
       case 'sw':
         if (design.VITIS) softwareStage(settings, design.name);
         else console.log(`\n▸ ${design.name}: no software (VITIS is not set)`);
@@ -273,7 +304,10 @@ export function main(argv = process.argv.slice(2), env = loadEnvFile()) {
         break;
       case 'all':
         vivadoStage(settings, design.name, 'all', options.jobs);
-        if (design.VITIS) softwareStage(settings, design.name);
+        if (design.VITIS) {
+          softwareStage(settings, design.name);
+          await twinStage(renode(), design, board(design), env);
+        }
         break;
       default:
         vivadoStage(settings, design.name, options.stage, options.jobs);
@@ -285,10 +319,8 @@ export function main(argv = process.argv.slice(2), env = loadEnvFile()) {
 // import.meta.url but not for argv[1], and a mismatch would skip main() and
 // exit 0 without running anything.
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(resolve(process.argv[1]))).href) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = error instanceof CommandError ? error.exitCode : 2;
-  }
+  });
 }

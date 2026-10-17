@@ -290,6 +290,21 @@ phases in order, each with its gates: `spec` (`designCheck`), `sim`
 and hold slack >= 0 and no DRC error; `firmwareBuild`: the ELF exists). A
 failed phase stops the run, and the run records the furthest phase it reached.
 
+The `twin` phase runs the design's ELF on the board's hardware twin (RQ-0045).
+The twin is a project of its own that releases an image, as
+`hardware-twin/bfi-sumilator` does for the BFI and bfi-sw runs its firmware
+on it; `boards/<board>.yaml` names it (`twin:` with `gitlab`, `project`,
+`registry` and the `console` file). `pnpm flow twin [design]` takes the twin's
+latest release (`TWIN_TAG` pins one) with `TWIN_GITLAB_TOKEN`, runs
+`<image> --elf … --seconds … --out …` in Docker (this machine's, or a Linux
+host's over SSH through `TWIN_REMOTE_*`), checks `designs/<design>/test.yaml`
+(`expect` / `fail_on` lines on the console, `summary` fields of the twin's
+JSON summary within `min` / `max`) and writes
+`out/<design>/artifacts/twin/result.json` with the verdict, the twin release
+and revision it ran on and the ELF's SHA-256. A board whose twin is not named
+yet, a design with no software or no `test.yaml`, has nothing to run and says
+so.
+
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a
 terminal without `--phases`, a checkbox list with the project's default
