@@ -47,6 +47,7 @@ export interface TargetGateOptions {
     fpgaBuild?: string;
     firmwareBuild?: string;
     twinTest?: string;
+    boardTest?: string;
   };
   /**
    * Set for a hardware-twin run. The phase decides which gates are meaningful:
@@ -437,7 +438,7 @@ function embeddedGates(
         reports.push({ gate, status: 'skipped', output: `Not run: the ${failedAt} phase failed.`, durationMs: 0 });
         continue;
       }
-      const command = commands[gate as 'designCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest'];
+      const command = commands[gate as 'designCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest' | 'boardTest'];
       const report = commandGate(gate, command, targetRoot, undefined, timeoutMs);
       reports.push(report);
       if (report.status === 'failed') failedAt = phase;

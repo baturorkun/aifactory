@@ -229,8 +229,9 @@ export const GateResultsSchema = z.object({
   hdlSim: GateResultSchema.optional(),
   fpgaBuild: GateResultSchema.optional(),
   firmwareBuild: GateResultSchema.optional(),
-  // The application on the digital twin (RQ-0045).
+  // The application on the digital twin (RQ-0045) and on the real board (RQ-0046).
   twinTest: GateResultSchema.optional(),
+  boardTest: GateResultSchema.optional(),
 });
 export type GateResults = z.infer<typeof GateResultsSchema>;
 
@@ -253,16 +254,22 @@ export const TWIN_PHASES: readonly TwinPhase[] = TwinPhaseSchema.options;
 
 // The order is the workflow of an embedded requirement: the design is written
 // and checked, its testbenches pass, it builds to a bitstream, an XSA and an
-// ELF with timing and DRC met, and the ELF runs on the digital twin. A run goes
-// through the phases in order and stops at the first whose gate fails.
-export const EmbeddedPhaseSchema = z.enum(['spec', 'sim', 'build', 'twin']);
+// ELF with timing and DRC met, the ELF runs on the digital twin, and on the
+// real board. A run goes through the phases in order and stops at the first
+// whose gate fails.
+export const EmbeddedPhaseSchema = z.enum(['spec', 'sim', 'build', 'twin', 'board']);
 export type EmbeddedPhase = z.infer<typeof EmbeddedPhaseSchema>;
 export const EMBEDDED_PHASES: readonly EmbeddedPhase[] = EmbeddedPhaseSchema.options;
+// What a requirement goes through when nothing says otherwise: everything but
+// the board, which is used now and then (by a requirement that names it, on
+// demand, every night) rather than on every change.
+export const DEFAULT_EMBEDDED_PHASES: readonly EmbeddedPhase[] = EMBEDDED_PHASES.filter((phase) => phase !== 'board');
 export const EMBEDDED_PHASE_GATES: Readonly<Record<EmbeddedPhase, readonly (keyof GateResults)[]>> = {
   spec: ['designCheck'],
   sim: ['hdlSim'],
   build: ['fpgaBuild', 'firmwareBuild'],
   twin: ['twinTest'],
+  board: ['boardTest'],
 };
 
 // The phases a requirement (or one run of it) goes through: the ones named,

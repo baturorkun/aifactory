@@ -8,7 +8,7 @@ import {
 import { join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
-  EMBEDDED_PHASES,
+  DEFAULT_EMBEDDED_PHASES,
   embeddedPhaseList,
   type EmbeddedPhase,
   type Requirement,
@@ -339,7 +339,7 @@ function draftMarkdown(input: {
     `branch: ${quoteMetadata(input.branch)}`,
     `createdFromCommit: ${quoteMetadata(input.createdFromCommit)}`,
     ...(twin ? ['kind: hardware-twin', 'twinPhase: probe', `probe: ${input.probe}`] : []),
-    ...(embedded ? ['kind: embedded', `phases: ${(input.phases ?? EMBEDDED_PHASES).join(', ')}`] : []),
+    ...(embedded ? ['kind: embedded', `phases: ${(input.phases ?? DEFAULT_EMBEDDED_PHASES).join(', ')}`] : []),
     ...(input.sourceIssue
       ? [
           `sourceIssueIid: ${input.sourceIssue.iid}`,
@@ -459,7 +459,7 @@ function validateReady(requirement: Requirement): void {
 export function embeddedPhasesOf(requirement: Requirement, config: FactoryConfig): EmbeddedPhase[] | undefined {
   if (config.targetProject.commands.designCheck === undefined) return undefined;
   return requirement.lifecycle?.phases
-    ?? (config.requirementDefaults.embeddedPhases ? embeddedPhaseList(config.requirementDefaults.embeddedPhases) : [...EMBEDDED_PHASES]);
+    ?? (config.requirementDefaults.embeddedPhases ? embeddedPhaseList(config.requirementDefaults.embeddedPhases) : [...DEFAULT_EMBEDDED_PHASES]);
 }
 
 export async function createDraftRequirement(
@@ -489,7 +489,7 @@ export async function createDraftRequirement(
     throw new Error('--phases only applies to an embedded requirement.');
   }
   const phases = kind === 'embedded'
-    ? embeddedPhaseList(options.phases ?? defaults.embeddedPhases ?? EMBEDDED_PHASES)
+    ? embeddedPhaseList(options.phases ?? defaults.embeddedPhases ?? DEFAULT_EMBEDDED_PHASES)
     : undefined;
   const resolvedPlatform = resolveRepositoryPlatform(
     config,
