@@ -130,6 +130,7 @@ pnpm factory new myproject --template empty
 pnpm factory new my-web-app --template vanilla-ts
 pnpm factory new my-python-app --template python
 pnpm factory new my-c-app --template c
+pnpm factory new my-fpga --template embedded
 pnpm factory new my-board-model --template simics
 ```
 
@@ -154,7 +155,7 @@ pnpm factory new myproject
 ```
 
 ```text
-Error: Missing --template. Choose one: empty, vanilla-ts, python, c
+Error: Missing --template. Choose one: empty, vanilla-ts, python, c, embedded
 ```
 
 ### Templates
@@ -256,6 +257,52 @@ machine that runs them; nothing is downloaded by the build. The generated
 `c_test` jobs that build and test the code on every branch, merge request and
 tag in `$C_BUILD_IMAGE` (`debian:bookworm`, CMake and the compiler installed
 when the image lacks them), with the test results as a JUnit report.
+
+#### `embedded`
+
+Creates an FPGA and firmware project built with Vivado and Vitis, from sources
+to a bitstream, an XSA and an ELF, without the GUI. Sources are text (HDL,
+XDC, Tcl, C); the tool projects, runs, checkpoints and workspaces are output
+under `out/` and never committed.
+
+```text
+flow.tcl                 vivado -mode batch -source flow.tcl -tclargs <design> <stage>
+common/                  flow_lib.tcl (stages, summary.json), gates.tcl, tool_check.tcl, boards/
+boards/zedboard.yaml     part, board part, tool_version, processor ports
+designs/led_counter/     plain RTL, non-project mode, self-checking testbench
+designs/hello_ps/        Zynq PS block design (project mode) and a Vitis Unified app
+scripts/flow.mjs         every stage, here or on the Vivado host, and the design check
+```
+
+`pnpm flow <stage> [design]` runs `check`, `sim`, `synth`, `impl`, `bit`,
+`xsa`, `build`, `sw`, `all` or `clean`. Vivado and Vitis run where `.env`
+says: `VIVADO_REMOTE_HOST` empty runs them on this machine; set, the sources
+go to that host over SSH (`VIVADO_HOST_TYPE` windows or linux,
+`VIVADO_REMOTE_USER`, `VIVADO_REMOTE_BASE_PATH`, `VIVADO_REMOTE_PROJECT_NAME`,
+`VIVADO_BIN`, `VITIS_BIN`) and `out/<design>/artifacts/` comes back: the
+bitstream, XSA, ELF, reports, logs and `summary.json` (WNS, WHS, utilisation,
+DRC errors, stage durations, tool version, build host). The expected Vivado
+version is the board file's `tool_version`, committed with the project.
+
+A requirement of an embedded project is of kind `embedded` and passes through
+phases in order, each with its gates: `spec` (`designCheck`), `sim`
+(`hdlSim`: every testbench prints `TEST PASSED`), `build` (`fpgaBuild`: setup
+and hold slack >= 0 and no DRC error; `firmwareBuild`: the ELF exists). A
+failed phase stops the run, and the run records the furthest phase it reached.
+
+Which phases a requirement goes through is chosen when it is created:
+`requirement new "<title>" --phases sim,build` (spec is always one), or, in a
+terminal without `--phases`, a checkbox list with the project's default
+(`requirementDefaults.embeddedPhases`) ticked. The choice is the `phases:`
+line of the requirement file. `handoff-finish` runs those phases;
+`handoff-finish <run> --phases sim` runs fewer this time and leaves the run
+open. The factory job in CI runs the requirement's phases, and the generated
+`.gitlab-ci.yml` runs the design check, the testbenches and the build of every
+design with its Vitis ELF on every push, merge request and tag: on a
+requirement branch the phases the requirement names, on main and tags all of
+them. A merge request is completed only after its pipeline passed. The jobs reach the
+Vivado host through `VIVADO_*` CI/CD variables (the SSH key and `known_hosts`
+as File variables), each with its own project there.
 
 #### `simics`
 

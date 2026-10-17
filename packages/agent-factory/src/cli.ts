@@ -61,7 +61,15 @@ import {
   setTwinPhase,
   writeTwinPhase,
 } from './orchestrator/probe';
-import { TWIN_PHASES } from '@aifactory/contracts';
+import { EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
+import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
+
+// What each embedded phase does, as the checkbox list shows it.
+const EMBEDDED_PHASE_LABELS: Record<EmbeddedPhase, string> = {
+  spec: 'spec   design check: board file, project.tcl, block design (seconds, no Vivado)',
+  sim: 'sim    testbenches on the Vivado host (about a minute)',
+  build: 'build  synthesis, place & route, bitstream, XSA, ELF; timing and DRC (minutes)',
+};
 import { resolveTargetProjectPath } from './project-context';
 
 const program = new Command();
@@ -120,26 +128,43 @@ requirement
   .option('--mode <mode>', 'Execution mode: handoff, pipeline, or direct (default: requirementDefaults.executionMode)')
   .option('--platform <platform>', 'Repository platform: github, gitlab, or none')
   .option('--fast', 'Use the fast AI pipeline when execution mode is pipeline')
-  .option('--kind <kind>', 'Requirement kind: standard, or hardware-twin for a board-verified model (default: requirementDefaults.kind)')
+  .option('--kind <kind>', 'Requirement kind: standard, hardware-twin for a board-verified model, or embedded for an FPGA/firmware design (default: requirementDefaults.kind)')
   .option('--probe <name>', 'hardware-twin only: probe directory name under probes/ (default: the title slug)')
   .option('--from-issue <number>', 'Open from an existing Issue: link it (sub-issue on GitHub, "relates to" on GitLab), close it on completion')
-  .action(async (title: string, opts: { mode?: string; fast?: boolean; platform?: string; kind?: string; probe?: string; fromIssue?: string }) => {
+  .option('--phases <list>', `Embedded: the phases this requirement goes through (${EMBEDDED_PHASES.join(', ')}; spec always). Asked with checkboxes when omitted in a terminal`)
+  .action(async (title: string, opts: { mode?: string; fast?: boolean; platform?: string; kind?: string; probe?: string; fromIssue?: string; phases?: string }) => {
     try {
       if (opts.mode !== undefined && !['handoff', 'pipeline', 'direct'].includes(opts.mode)) {
         throw new Error('Invalid mode. Choose handoff, pipeline, or direct.');
       }
-      if (opts.kind !== undefined && !['standard', 'hardware-twin'].includes(opts.kind)) {
-        throw new Error('Invalid kind. Choose standard or hardware-twin.');
+      if (opts.kind !== undefined && !['standard', 'hardware-twin', 'embedded'].includes(opts.kind)) {
+        throw new Error('Invalid kind. Choose standard, hardware-twin or embedded.');
+      }
+      const config = loadConfig();
+      const kind = (opts.kind as RequirementKind | undefined) ?? config.requirementDefaults.kind;
+      let phases: string | string[] | undefined = opts.phases;
+      if (kind === 'embedded' && phases === undefined && canPrompt()) {
+        const defaults = embeddedPhaseList(config.requirementDefaults.embeddedPhases ?? EMBEDDED_PHASES);
+        phases = await promptCheckboxes(
+          'Which phases does this requirement go through?',
+          EMBEDDED_PHASES.map((phase) => ({
+            value: phase,
+            label: EMBEDDED_PHASE_LABELS[phase],
+            checked: defaults.includes(phase),
+            locked: phase === 'spec',
+          })),
+        );
       }
       const result = await createDraftRequirement(
         title,
         opts.mode as RequirementExecutionMode | undefined,
-        loadConfig(),
+        config,
         {
           pipelineFast: opts.fast,
           platform: opts.platform,
           kind: opts.kind as RequirementKind | undefined,
           probe: opts.probe,
+          phases,
           fromIssue: opts.fromIssue === undefined ? undefined : Number(opts.fromIssue.replace(/^#/, '')),
         },
       );
@@ -149,6 +174,9 @@ requirement
       console.log(chalk.dim(`  Mode   : ${result.mode}`));
       if (result.kind === 'hardware-twin') {
         console.log(chalk.dim(`  Kind   : hardware-twin (probe: ${result.probe})`));
+      }
+      if (result.kind === 'embedded') {
+        console.log(chalk.dim(`  Kind   : embedded (phases ${(result.phases ?? []).join(' → ')})`));
       }
       console.log(chalk.dim(`  Fast   : ${result.pipelineFast ? 'enabled' : 'disabled'}`));
       if (result.repositoryProvider && result.workItem && result.changeRequest) {
@@ -577,16 +605,25 @@ program
   .command('handoff-finish <runId>')
   .description('Capture handoff changes, run quality gates, and finalize its run history')
   .option('--skip-gates', 'Capture changes without running quality gates', false)
-  .action(async (runId: string, opts: { skipGates: boolean }) => {
+  .option('--phases <list>', `Embedded projects: run these phases this time instead of the requirement's (${EMBEDDED_PHASES.join(', ')}; spec always)`)
+  .action(async (runId: string, opts: { skipGates: boolean; phases?: string }) => {
     try {
       const config = loadConfig();
+      if (opts.phases !== undefined && config.targetProject.commands.designCheck === undefined) {
+        throw new Error('--phases applies to an embedded project (one with targetProject.commands.designCheck).');
+      }
       const manifest = await finishHandoffRun(runId, config, {
         skipGates: opts.skipGates,
+        embeddedPhases: opts.phases === undefined ? undefined : embeddedPhaseList(opts.phases),
       });
       console.log();
       printRunSummary(manifest);
       if (manifest.status === 'passed') {
         console.log(chalk.green(`\n✓ Passed  — Handoff run: ${chalk.bold(runId)}\n`));
+        const missing = (manifest.embedded?.requirementPhases ?? []).filter((phase) => !(manifest.embedded?.phases ?? []).includes(phase));
+        if (missing.length > 0) {
+          console.log(chalk.dim(`  Not run this time: ${missing.join(', ')}. Finish again without --phases to run all of the requirement's phases; the pipeline runs them in any case.\n`));
+        }
       } else {
         console.log(chalk.yellow(`\n⚠ Needs fix — Handoff run: ${chalk.bold(runId)}`));
         console.log(chalk.dim(`  Logs: pnpm factory -- logs ${runId}\n`));

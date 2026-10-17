@@ -18,6 +18,7 @@ import {
   commitApprovedRun,
   completeRequirement,
   createDraftRequirement,
+  embeddedPhasesOf,
   requirementExecutionDecision,
   setRequirementFast,
   setRequirementMode,
@@ -271,6 +272,37 @@ test('new requirement reserves a draft on main and switches to its branch', asyn
     assert.match(
       git(repo.root, `--git-dir=${repo.remote}`, 'show-ref', result.branch),
       /refs\/heads\/factory\/RQ-0002/,
+    );
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('an embedded requirement records its phases, from --phases or the project default', async () => {
+  const repo = makeRepository();
+  try {
+    const config = {
+      ...repo.config,
+      targetProject: { ...repo.config.targetProject, commands: { designCheck: 'pnpm check' } },
+      requirementDefaults: { ...repo.config.requirementDefaults, kind: 'embedded' as const, embeddedPhases: ['spec' as const, 'sim' as const, 'build' as const] },
+    };
+    const chosen = await createDraftRequirement('UART baud', 'handoff', config, { environment: {}, phases: 'sim' });
+    assert.deepEqual(chosen.phases, ['spec', 'sim']);
+    const file = readFileSync(join(repo.root, chosen.requirementFile), 'utf8');
+    assert.match(file, /^kind: embedded$/m);
+    assert.match(file, /^phases: spec, sim$/m);
+    const parsed = parseRequirement(chosen.requirementId, config.paths.requirements);
+    assert.deepEqual(parsed.lifecycle?.phases, ['spec', 'sim']);
+    assert.deepEqual(embeddedPhasesOf(parsed, config), ['spec', 'sim']);
+
+    git(repo.root, 'checkout', 'main');
+    const byDefault = await createDraftRequirement('DMA channel', 'handoff', config, { environment: {} });
+    assert.deepEqual(byDefault.phases, ['spec', 'sim', 'build']);
+
+    git(repo.root, 'checkout', 'main');
+    await assert.rejects(
+      () => createDraftRequirement('Not embedded', 'handoff', repo.config, { environment: {}, phases: 'sim' }),
+      /--phases only applies to an embedded requirement/,
     );
   } finally {
     repo.cleanup();

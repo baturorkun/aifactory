@@ -7,7 +7,7 @@ import {
   mkdirSync,
 } from 'fs';
 import { isAbsolute, join, normalize, relative, resolve, sep } from 'path';
-import type { GateResults, TwinPhase } from '@aifactory/contracts';
+import { EMBEDDED_PHASES, EMBEDDED_PHASE_GATES, type EmbeddedPhase, type GateResults, type TwinPhase } from '@aifactory/contracts';
 import { boardParityGate, boardTraceGate, probeBuildGate, type ProbeLocation } from './probe';
 
 // ============================================================
@@ -40,6 +40,12 @@ export interface TargetGateOptions {
     typeCheck?: string;
     lint?: string;
     test?: string;
+    // Embedded workflow (RQ-0044). With designCheck set, the run is gated by
+    // the embedded phases instead of the TypeScript gates.
+    designCheck?: string;
+    hdlSim?: string;
+    fpgaBuild?: string;
+    firmwareBuild?: string;
   };
   /**
    * Set for a hardware-twin run. The phase decides which gates are meaningful:
@@ -50,6 +56,11 @@ export interface TargetGateOptions {
     phase: TwinPhase;
     probe: ProbeLocation;
   };
+  /**
+   * Embedded: the phases this run goes through (the requirement's, or fewer
+   * for a quick loop in the IDE). The others are skipped and say so.
+   */
+  embeddedPhases?: readonly EmbeddedPhase[];
 }
 
 // ============================================================
@@ -403,6 +414,37 @@ function selectGates(
   }
 }
 
+// An embedded run goes through its phases in order (spec, sim, build) and
+// stops at the first gate that fails: a design that does not check is not
+// simulated, and one whose testbenches fail is not sent to a build host for
+// tens of minutes. The later gates are reported as skipped, with the reason.
+function embeddedGates(
+  targetRoot: string,
+  commands: NonNullable<TargetGateOptions['commands']>,
+  timeoutMs?: number,
+  phases: readonly EmbeddedPhase[] = EMBEDDED_PHASES,
+): GateReport[] {
+  const reports: GateReport[] = [];
+  let failedAt: string | undefined;
+  for (const phase of EMBEDDED_PHASES) {
+    for (const gate of EMBEDDED_PHASE_GATES[phase]) {
+      if (!phases.includes(phase)) {
+        reports.push({ gate, status: 'skipped', output: `Not in the phases of this run (${phases.join(', ')}).`, durationMs: 0 });
+        continue;
+      }
+      if (failedAt) {
+        reports.push({ gate, status: 'skipped', output: `Not run: the ${failedAt} phase failed.`, durationMs: 0 });
+        continue;
+      }
+      const command = commands[gate as 'designCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild'];
+      const report = commandGate(gate, command, targetRoot, undefined, timeoutMs);
+      reports.push(report);
+      if (report.status === 'failed') failedAt = phase;
+    }
+  }
+  return reports;
+}
+
 /**
  * Runs all quality gates against a finished run directory.
  * @param runDir  Absolute path to the run directory (runs/<run-id>)
@@ -438,7 +480,14 @@ export async function runAllGates(
       gate, status: 'skipped', output: reason, durationMs: 0,
     }));
 
-  const reports: GateReport[] = [schemaCheck(runDir), ...selectGates(target?.twin, standard, skipped)];
+  const embedded = targetRoot !== undefined && target?.commands?.designCheck !== undefined;
+  const reports: GateReport[] = embedded
+    ? [
+        schemaCheck(runDir),
+        ...skipped('Embedded project: gated by its phases (designCheck, hdlSim, fpgaBuild, firmwareBuild).'),
+        ...embeddedGates(targetRoot, target?.commands ?? {}, target?.commandTimeoutMs, target?.embeddedPhases),
+      ]
+    : [schemaCheck(runDir), ...selectGates(target?.twin, standard, skipped)];
 
   // Persist full report
   writeFileSync(

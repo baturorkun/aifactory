@@ -116,6 +116,11 @@ const TargetCommandsSchema = z.object({
   // project written before RQ-0019 keeps working.
   probeSimulatorRun: z.string().optional(),
   probeSimicsRun: z.string().optional(),
+  // Embedded workflow (RQ-0044): one command per gate, run in phase order.
+  designCheck: z.string().optional(),
+  hdlSim: z.string().optional(),
+  fpgaBuild: z.string().optional(),
+  firmwareBuild: z.string().optional(),
 });
 
 const TargetProjectSchema = z.object({
@@ -351,9 +356,12 @@ const RagConfigSchema = z.object({
 // project whose every requirement is board-verified should not have to type
 // --kind each time; the flag stays as the way to say otherwise.
 const RequirementDefaultsSchema = z.object({
-  kind: z.enum(['standard', 'hardware-twin']).default('standard'),
+  kind: z.enum(['standard', 'hardware-twin', 'embedded']).default('standard'),
   executionMode: z.enum(['handoff', 'pipeline', 'direct']).default('handoff'),
   pipelineFast: z.boolean().default(false),
+  // Embedded projects: the phases a requirement goes through when
+  // `requirement new` is given no --phases.
+  embeddedPhases: z.array(z.enum(['spec', 'sim', 'build'])).optional(),
 });
 
 export const FactoryConfigSchema = z.object({

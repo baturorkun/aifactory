@@ -222,6 +222,13 @@ export const GateResultsSchema = z.object({
   probeBuild: GateResultSchema.optional(),
   boardTrace: GateResultSchema.optional(),
   boardParity: GateResultSchema.optional(),
+  // Embedded gates (RQ-0044), in the order of the phases they close: the
+  // design check (spec), the testbenches (sim), and the Vivado and Vitis
+  // builds (build).
+  designCheck: GateResultSchema.optional(),
+  hdlSim: GateResultSchema.optional(),
+  fpgaBuild: GateResultSchema.optional(),
+  firmwareBuild: GateResultSchema.optional(),
 });
 export type GateResults = z.infer<typeof GateResultsSchema>;
 
@@ -229,7 +236,7 @@ export type GateResults = z.infer<typeof GateResultsSchema>;
 // HARDWARE TWIN
 // ============================================================
 
-export const RequirementKindSchema = z.enum(['standard', 'hardware-twin']);
+export const RequirementKindSchema = z.enum(['standard', 'hardware-twin', 'embedded']);
 export type RequirementKind = z.infer<typeof RequirementKindSchema>;
 
 // The order is the workflow: a probe is written and built, the board runs it,
@@ -237,6 +244,61 @@ export type RequirementKind = z.infer<typeof RequirementKindSchema>;
 export const TwinPhaseSchema = z.enum(['probe', 'board', 'model', 'parity']);
 export type TwinPhase = z.infer<typeof TwinPhaseSchema>;
 export const TWIN_PHASES: readonly TwinPhase[] = TwinPhaseSchema.options;
+
+// ============================================================
+// EMBEDDED (RQ-0044)
+// ============================================================
+
+// The order is the workflow of an embedded requirement: the design is written
+// and checked, its testbenches pass, and it builds to a bitstream, an XSA and
+// an ELF with timing and DRC met. A run goes through the phases in order and
+// stops at the first whose gate fails.
+export const EmbeddedPhaseSchema = z.enum(['spec', 'sim', 'build']);
+export type EmbeddedPhase = z.infer<typeof EmbeddedPhaseSchema>;
+export const EMBEDDED_PHASES: readonly EmbeddedPhase[] = EmbeddedPhaseSchema.options;
+export const EMBEDDED_PHASE_GATES: Readonly<Record<EmbeddedPhase, readonly (keyof GateResults)[]>> = {
+  spec: ['designCheck'],
+  sim: ['hdlSim'],
+  build: ['fpgaBuild', 'firmwareBuild'],
+};
+
+// The phases a requirement (or one run of it) goes through: the ones named,
+// in workflow order, and always spec. "sim,build", ["build", "sim"] and
+// "spec, sim, build" are the same list.
+export function embeddedPhaseList(value: string | readonly string[]): EmbeddedPhase[] {
+  const names = (typeof value === 'string' ? value.split(',') : [...value]).map((name) => name.trim()).filter(Boolean);
+  for (const name of names) {
+    if (!(EMBEDDED_PHASES as readonly string[]).includes(name)) {
+      throw new Error(`Unknown phase "${name}". Choose from: ${EMBEDDED_PHASES.join(', ')}.`);
+    }
+  }
+  return EMBEDDED_PHASES.filter((phase) => phase === 'spec' || names.includes(phase));
+}
+
+// The furthest phase whose gates passed with no failure before it, or
+// undefined when the design check itself did not pass. A phase that was not
+// run (all its gates skipped) is passed over.
+export function embeddedPhaseReached(results: Partial<GateResults>): EmbeddedPhase | undefined {
+  let reached: EmbeddedPhase | undefined;
+  for (const phase of EMBEDDED_PHASES) {
+    const statuses = EMBEDDED_PHASE_GATES[phase].map((gate) => results[gate]);
+    if (statuses.some((status) => status === 'failed' || status === 'pending')) break;
+    if (statuses.every((status) => status === 'skipped' || status === undefined)) continue;
+    if (statuses.every((status) => status === 'passed' || status === 'skipped')) reached = phase;
+  }
+  return reached;
+}
+
+export const EmbeddedRunStateSchema = z.object({
+  // The furthest phase this run's gates reached; absent when none did.
+  phase: EmbeddedPhaseSchema.optional(),
+  // The phases this run went through, and the ones the requirement names.
+  // A run asked for fewer (handoff-finish --phases) stays open, so the same
+  // run can go through all of the requirement's phases later.
+  phases: z.array(EmbeddedPhaseSchema).optional(),
+  requirementPhases: z.array(EmbeddedPhaseSchema).optional(),
+});
+export type EmbeddedRunState = z.infer<typeof EmbeddedRunStateSchema>;
 
 export const TwinRunStateSchema = z.object({
   phase: TwinPhaseSchema,
@@ -284,6 +346,7 @@ export const RunManifestSchema = z.object({
   approvedAt: z.string().optional(),
   approvedBy: z.string().optional(),
   twin: TwinRunStateSchema.optional(),
+  embedded: EmbeddedRunStateSchema.optional(),
 });
 export type RunManifest = z.infer<typeof RunManifestSchema>;
 
@@ -314,6 +377,8 @@ export const RequirementLifecycleSchema = z.object({
   kind: RequirementKindSchema.default('standard'),
   twinPhase: TwinPhaseSchema.optional(),
   probe: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional(),
+  // Embedded: the phases this requirement goes through (RQ-0044).
+  phases: z.array(z.enum(['spec', 'sim', 'build'])).optional(),
   repositoryProvider: z.enum(['gitlab', 'github']).optional(),
   gitlabIssueIid: z.number().int().positive().optional(),
   gitlabIssueUrl: z.string().url().optional(),

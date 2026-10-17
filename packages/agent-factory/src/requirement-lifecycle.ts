@@ -7,10 +7,13 @@ import {
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import type {
-  Requirement,
-  RequirementExecutionMode,
-  RequirementKind,
+import {
+  EMBEDDED_PHASES,
+  embeddedPhaseList,
+  type EmbeddedPhase,
+  type Requirement,
+  type RequirementExecutionMode,
+  type RequirementKind,
 } from '@aifactory/contracts';
 import type { FactoryConfig } from './config';
 import {
@@ -42,6 +45,7 @@ export interface NewRequirementResult {
   pipelineFast: boolean;
   kind: RequirementKind;
   probe?: string;
+  phases?: EmbeddedPhase[];
   repositoryProvider?: 'gitlab' | 'github';
   workItem?: WorkItem;
   changeRequest?: ChangeRequest;
@@ -73,6 +77,8 @@ interface NewRequirementOptions {
   fromIssue?: number;
   kind?: RequirementKind;
   probe?: string;
+  /** Embedded: the phases this requirement goes through (spec is always one). */
+  phases?: string | string[];
   platformAdapter?: RepositoryPlatformAdapter;
   environment?: Record<string, string | undefined>;
 }
@@ -312,10 +318,12 @@ function draftMarkdown(input: {
   createdFromCommit: string;
   kind: RequirementKind;
   probe?: string;
+  phases?: EmbeddedPhase[];
   profile?: string;
   sourceIssue?: { iid: number; url: string; title: string };
 }): string {
   const twin = input.kind === 'hardware-twin';
+  const embedded = input.kind === 'embedded';
   // A draft that starts empty is rewritten from memory every time. Where the
   // project profile says what a requirement is made of, the draft says so.
   const simics = input.profile === 'simics';
@@ -331,6 +339,7 @@ function draftMarkdown(input: {
     `branch: ${quoteMetadata(input.branch)}`,
     `createdFromCommit: ${quoteMetadata(input.createdFromCommit)}`,
     ...(twin ? ['kind: hardware-twin', 'twinPhase: probe', `probe: ${input.probe}`] : []),
+    ...(embedded ? ['kind: embedded', `phases: ${(input.phases ?? EMBEDDED_PHASES).join(', ')}`] : []),
     ...(input.sourceIssue
       ? [
           `sourceIssueIid: ${input.sourceIssue.iid}`,
@@ -358,6 +367,22 @@ function draftMarkdown(input: {
           '## Validation',
           '',
           '<!-- The target that proves the boundary and the frozen gate that runs it. -->',
+          '',
+        ]
+      : []),
+    ...(embedded
+      ? [
+          '## Design',
+          '',
+          '<!-- Which design under designs/ this changes or adds, its board and part, and the Vivado mode (project or non_project). -->',
+          '',
+          '## Behaviour',
+          '',
+          '<!-- What the hardware and the software must do, and which testbench checks prove it. RTL changes are proposed here for an engineer to approve. -->',
+          '',
+          '## Build',
+          '',
+          '<!-- What the build must produce (bitstream, XSA, ELF) and any timing target beyond the constraints. -->',
           '',
         ]
       : []),
@@ -391,6 +416,13 @@ function draftMarkdown(input: {
           '- The frozen gate for this boundary is added to the suite, and every earlier boundary still passes.',
         ]
       : []),
+    ...(embedded
+      ? [
+          '- `pnpm check` passes: the board file, project.tcl and block design script agree, and no file holds an absolute path.',
+          '- Every testbench of the design prints TEST PASSED and no failure (hdlSim).',
+          '- The design builds on the Vivado host with setup and hold slack >= 0 and no DRC error (fpgaBuild), and its application ELF is built (firmwareBuild).',
+        ]
+      : []),
     ...(twin
       ? [
           `- \`probes/${input.probe}/\` holds the probe sources, its \`probe.json\`, the committed ELF and the board trace; the trace header carries the source hash the build embedded, and the boardTrace gate accepts it.`,
@@ -422,6 +454,14 @@ function validateReady(requirement: Requirement): void {
   }
 }
 
+// The phases an embedded requirement goes through: its own `phases`, else the
+// project default, else all. Undefined for a project that is not embedded.
+export function embeddedPhasesOf(requirement: Requirement, config: FactoryConfig): EmbeddedPhase[] | undefined {
+  if (config.targetProject.commands.designCheck === undefined) return undefined;
+  return requirement.lifecycle?.phases
+    ?? (config.requirementDefaults.embeddedPhases ? embeddedPhaseList(config.requirementDefaults.embeddedPhases) : [...EMBEDDED_PHASES]);
+}
+
 export async function createDraftRequirement(
   title: string,
   mode: RequirementExecutionMode | undefined,
@@ -445,6 +485,12 @@ export async function createDraftRequirement(
   if (kind !== 'hardware-twin' && options.probe) {
     throw new Error('--probe only applies to --kind hardware-twin.');
   }
+  if (kind !== 'embedded' && options.phases !== undefined) {
+    throw new Error('--phases only applies to an embedded requirement.');
+  }
+  const phases = kind === 'embedded'
+    ? embeddedPhaseList(options.phases ?? defaults.embeddedPhases ?? EMBEDDED_PHASES)
+    : undefined;
   const resolvedPlatform = resolveRepositoryPlatform(
     config,
     options.platform,
@@ -503,6 +549,7 @@ export async function createDraftRequirement(
         createdFromCommit,
         kind,
         probe,
+        phases,
         profile: config.targetProject.profile,
         sourceIssue: sourceIssue
           ? { iid: sourceIssue.iid, url: sourceIssue.url, title: sourceIssue.title }
@@ -531,6 +578,7 @@ export async function createDraftRequirement(
         pipelineFast: options.pipelineFast ?? defaults.pipelineFast,
         kind,
         probe,
+        phases,
         sourceIssue,
       };
       break;

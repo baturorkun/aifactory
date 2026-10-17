@@ -2,6 +2,7 @@ import { readFileSync, existsSync, readdirSync } from 'fs';
 import { resolve, join } from 'path';
 import {
   RequirementLifecycleSchema,
+  embeddedPhaseList,
   type Requirement,
   type RequirementLifecycle,
 } from '@aifactory/contracts';
@@ -122,6 +123,7 @@ export function updateRequirementMetadata(
 }
 
 function serializeMetadataValue(key: string, value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ');
   if (typeof value !== 'string') return String(value);
   if (['status', 'executionMode', 'repositoryProvider', 'kind', 'twinPhase', 'probe'].includes(key)) {
     return value;
@@ -190,6 +192,7 @@ function parseLifecycle(
     kind: metadata.kind || undefined,
     twinPhase: metadata.twinPhase || undefined,
     probe: metadata.probe || undefined,
+    phases: metadata.phases ? embeddedPhaseList(metadata.phases) : undefined,
     repositoryProvider: metadata.repositoryProvider || undefined,
     gitlabIssueIid: parseOptionalPositiveInteger(metadata.gitlabIssueIid),
     gitlabIssueUrl: metadata.gitlabIssueUrl || undefined,

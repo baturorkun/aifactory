@@ -2,6 +2,7 @@ import { copyFileSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'path';
 import {
   RunManifestSchema,
+  embeddedPhaseReached,
   type RunManifest,
   type AgentStepRecord,
   type GateResults,
@@ -197,8 +198,12 @@ export function readStepOutput<T = unknown>(runDir: string, filename: string): T
 // ============================================================
 
 export function updateGateResults(runDir: string, results: Partial<GateResults>): void {
-  updateManifest(runDir, (m) => ({
-    ...m,
-    gateResults: { ...m.gateResults, ...results },
-  }));
+  updateManifest(runDir, (m) => {
+    const gateResults = { ...m.gateResults, ...results };
+    // An embedded run (one that ran the design check) records the furthest
+    // phase its gates reached, wherever it ran: handoff, direct or pipeline.
+    return gateResults.designCheck === undefined
+      ? { ...m, gateResults }
+      : { ...m, gateResults, embedded: { ...m.embedded, phase: embeddedPhaseReached(gateResults) } };
+  });
 }

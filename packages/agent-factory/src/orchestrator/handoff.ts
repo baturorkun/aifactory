@@ -4,7 +4,8 @@ import { join, normalize, resolve, sep } from 'path';
 import type { FactoryConfig } from '../config';
 import { parseRequirement } from '../requirements/parser';
 import { runAllGates } from '@aifactory/quality-gates';
-import type { GateResults, RunManifest } from '@aifactory/contracts';
+import { EMBEDDED_PHASES, type EmbeddedPhase, type GateResults, type RunManifest } from '@aifactory/contracts';
+import { embeddedPhasesOf } from '../requirement-lifecycle';
 import { validateTargetPath } from '../workspace/apply';
 import {
   addArtifact,
@@ -158,7 +159,12 @@ export function beginImplementationRun(runId: string, config: FactoryConfig, mod
   // to be finishable again rather than stuck as "passed".
   const awaitingParity = manifest.status === 'passed' && manifest.twin !== undefined
     && manifest.gateResults.boardParity !== 'passed';
-  if ((manifest.status === 'passed' && !awaitingParity) || manifest.status === 'approved') {
+  // An embedded run asked for fewer phases than its requirement names
+  // (handoff-finish --phases); it stays finishable so the same run can go
+  // through all of them later.
+  const partialEmbedded = manifest.status === 'passed'
+    && (manifest.embedded?.requirementPhases ?? []).some((phase) => !(manifest.embedded?.phases ?? EMBEDDED_PHASES).includes(phase));
+  if ((manifest.status === 'passed' && !awaitingParity && !partialEmbedded) || manifest.status === 'approved') {
     throw new Error(`Handoff run ${runId} is already ${manifest.status}.`);
   }
   setRunStatus(runDir, 'running');
@@ -176,6 +182,9 @@ export function beginHandoffRun(runId: string, config: FactoryConfig): RunManife
 
 export interface FinishHandoffOptions {
   skipGates?: boolean;
+  // Embedded projects: run these phases instead of the requirement's
+  // (handoff-finish --phases), for a quicker loop in the IDE.
+  embeddedPhases?: EmbeddedPhase[];
 }
 
 export async function finishImplementationRun(
@@ -221,6 +230,7 @@ export async function finishImplementationRun(
     const twin = requirement.lifecycle?.kind === 'hardware-twin'
       ? loadTwinRequirement(manifest.requirementId, config)
       : undefined;
+    const embedded = embeddedPhasesOf(requirement, config);
     if (twin) {
       updateManifest(runDir, (currentManifest) => ({
         ...currentManifest,
@@ -247,7 +257,14 @@ export async function finishImplementationRun(
         commands: config.targetProject.commands,
         commandTimeoutMs: config.targetProject.commandTimeoutMs,
         twin: twin ? { phase: twin.phase, probe: twin.probe } : undefined,
+        embeddedPhases: embedded ? (options.embeddedPhases ?? embedded) : undefined,
       });
+      if (embedded) {
+        updateManifest(runDir, (current) => ({
+          ...current,
+          embedded: { ...current.embedded, phases: options.embeddedPhases ?? embedded, requirementPhases: embedded },
+        }));
+      }
     }
     updateGateResults(runDir, gateResults);
 
