@@ -69,6 +69,7 @@ const EMBEDDED_PHASE_LABELS: Record<EmbeddedPhase, string> = {
   spec: 'spec   design check: board file, project.tcl, block design (seconds, no Vivado)',
   sim: 'sim    testbenches on the Vivado host (about a minute)',
   build: 'build  synthesis, place & route, bitstream, XSA, ELF; timing and DRC (minutes)',
+  twin: 'twin   the ELF on the digital twin (Renode), console against test.yaml (seconds)',
 };
 import { resolveTargetProjectPath } from './project-context';
 

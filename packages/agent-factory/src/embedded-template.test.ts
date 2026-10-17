@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { embeddedPhaseList, embeddedPhaseReached } from '@aifactory/contracts';
 import { runAllGates, type GateReport } from '@aifactory/quality-gates';
@@ -51,7 +52,7 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     };
     assert.equal(config.targetProject.profile, 'embedded');
     assert.deepEqual(config.targetProject.commands, {
-      designCheck: 'pnpm check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw',
+      designCheck: 'pnpm check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw', twinTest: 'pnpm twin',
     });
     assert.ok(config.targetProject.commandTimeoutMs >= 3_600_000, 'a project-mode build fits in the gate timeout');
     assert.equal(config.requirementDefaults.kind, 'embedded');
@@ -63,13 +64,22 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
 
     // Every machine setting is named, none is filled in.
     const env = project.read('.env.example');
-    for (const name of ['VIVADO_HOST_TYPE', 'VIVADO_REMOTE_HOST', 'VIVADO_REMOTE_USER', 'VIVADO_REMOTE_BASE_PATH', 'VIVADO_REMOTE_PROJECT_NAME', 'VIVADO_BIN', 'VITIS_BIN']) {
+    for (const name of ['VIVADO_HOST_TYPE', 'VIVADO_REMOTE_HOST', 'VIVADO_REMOTE_USER', 'VIVADO_REMOTE_BASE_PATH', 'VIVADO_REMOTE_PROJECT_NAME', 'VIVADO_BIN', 'VITIS_BIN',
+      'TWIN_GITLAB_TOKEN', 'TWIN_TAG', 'TWIN_REMOTE_HOST', 'TWIN_REMOTE_USER', 'TWIN_REMOTE_BASE_PATH', 'TWIN_REMOTE_PROJECT_NAME']) {
       assert.match(env, new RegExp(`^${name}=`, 'm'), name);
     }
     assert.match(env, /^VIVADO_REMOTE_HOST=$/m);
     assert.match(env, /^VIVADO_BIN=$/m);
 
     assert.match(project.read('AGENTS.md'), /## The Embedded Workflow \(Vivado and Vitis\)/);
+    assert.match(project.read('AGENTS.md'), /The twin is the default test/);
+    assert.deepEqual((JSON.parse(project.read('factory.config.json')) as { requirementDefaults: { embeddedPhases: string[] } }).requirementDefaults.embeddedPhases, ['spec', 'sim', 'build', 'twin']);
+    // No ZedBoard twin exists yet: the section is there to fill, commented.
+    assert.match(project.read('boards/zedboard.yaml'), /^# twin:\n# {3}gitlab: /m);
+    assert.doesNotMatch(project.read('boards/zedboard.yaml'), /^twin:/m);
+    assert.match(project.read('designs/hello_ps/test.yaml'), /expect:\n {2}- "hello_ps: Hello from the Zynq PS"/);
+    assert.match(project.read('.gitignore'), /^twin-run\/$/m);
+    assert.equal(scripts.twin, 'node scripts/flow.mjs twin');
   } finally {
     project.done();
   }
@@ -137,7 +147,7 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
   const project = scaffold();
   try {
     const ci = project.read('.gitlab-ci.yml');
-    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- check\n {2}- sim\n {2}- build\n/m);
+    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- check\n {2}- sim\n {2}- build\n {2}- twin\n/m);
     const job = (name: string) => {
       const start = ci.indexOf(`\n${name}:`);
       assert.ok(start >= 0, `${name} exists`);
@@ -155,6 +165,14 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
       assert.match(job(name), /\$CI_COMMIT_TAG/, `${name} runs on tags`);
     }
     assert.doesNotMatch(ci, /--mode|embedded_build_rtl/);
+    // The twin runs the ELF the build job brought back, on its own Renode host project.
+    // As bfi-sw's twin-test: the runner's Docker runs the twin image.
+    const twin = job('embedded_twin');
+    assert.match(twin, /stage: twin\n {2}image: docker:27/);
+    assert.match(twin, /- job: embedded_build\n {6}artifacts: true/);
+    assert.match(twin, /apk add --no-cache nodejs/);
+    assert.match(twin, /node scripts\/flow\.mjs twin --requirement-phases/);
+    assert.match(twin, /- out\/\*\/artifacts\/twin\//);
     // Each Vivado job has its own project on the host, one ref at a time.
     assert.match(job('embedded_sim'), /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
     assert.match(job('embedded_sim'), /resource_group: "vivado-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
@@ -251,6 +269,7 @@ test('the phase reached is the last whose gates and every earlier one passed', (
 
 test('a phase list is put in workflow order, always with spec, and an unknown phase is refused', () => {
   assert.deepEqual(embeddedPhaseList('build,sim'), ['spec', 'sim', 'build']);
+  assert.deepEqual(embeddedPhaseList('twin,build'), ['spec', 'build', 'twin']);
   assert.deepEqual(embeddedPhaseList(['build']), ['spec', 'build']);
   assert.deepEqual(embeddedPhaseList('spec, sim, build'), ['spec', 'sim', 'build']);
   assert.throws(() => embeddedPhaseList('sim,board'), /Unknown phase "board"/);
@@ -300,6 +319,83 @@ test('in CI a requirement branch runs only the phases its requirement names', ()
     assert.match(result.stderr, /VIVADO_BIN is not set/);
     result = ci('build', 'main');
     assert.match(result.stderr, /VIVADO_BIN is not set/);
+  } finally {
+    project.done();
+  }
+});
+
+// The twin's own logic, imported from the generated project's script.
+async function twinModule(root: string) {
+  return import(pathToFileURL(join(root, 'scripts/twin.mjs')).href) as Promise<{
+    parseTestYaml: (text: string) => { timeout_s: number; expect: string[]; fail_on: string[]; summary: Record<string, { min?: number; max?: number; equals?: string }> };
+    parseTwinSection: (text: string, board?: string) => { gitlab: string; project: string; registry: string; console?: string } | undefined;
+    judgeRun: (run: { exitStatus: number; summary: unknown; consoleText?: string }, test: unknown) => { status: string; why: string | null; summary_checks: Record<string, { ok: boolean }> };
+    runScript: () => string;
+  }>;
+}
+
+const BFI_BOARD = [
+  'vendor: microchip', 'tool: libero', 'tool_version: "2024.1"', 'part: M2S060',
+  'twin:', '  gitlab: http://gitlab.bcintr.int', '  project: hardware-twin/bfi-sumilator', '  registry: gitlab.bcintr.int:5050', '  console: display.bin', '',
+].join('\n');
+
+test('the twin reads the board\'s twin and test.yaml, and judges a run as bfi-sw does', async () => {
+  const project = scaffold();
+  try {
+    const twin = await twinModule(project.root);
+    assert.equal(twin.parseTwinSection(project.read('boards/zedboard.yaml'), 'zedboard'), undefined, 'no ZedBoard twin yet');
+    assert.deepEqual(twin.parseTwinSection(BFI_BOARD, 'bfi'), {
+      gitlab: 'http://gitlab.bcintr.int', project: 'hardware-twin/bfi-sumilator', registry: 'gitlab.bcintr.int:5050', console: 'display.bin',
+    });
+    assert.throws(() => twin.parseTwinSection('twin:\n  gitlab: http://g\n', 'x'), /twin\.project is not set/);
+
+    const hello = twin.parseTestYaml(project.read('designs/hello_ps/test.yaml'));
+    assert.deepEqual(hello.expect, ['hello_ps: Hello from the Zynq PS']);
+    const bfi = twin.parseTestYaml('timeout_s: 2\nsummary:\n  sysTimeMs: { min: 1900, max: 2000 }\n  frames: { min: 1 }\n');
+    assert.deepEqual(bfi.summary, { sysTimeMs: { min: 1900, max: 2000 }, frames: { min: 1 } });
+    assert.throws(() => twin.parseTestYaml('timeout_s: 2\n'), /neither expect nor summary checks anything/);
+
+    // The run bfi-sw 1.1.0 gave on bfi-sumilator 0.5.0: 2 s simulated, 100 frames.
+    const ran = { exitStatus: 0, summary: { sysTimeMs: 2000, frames: 100 } };
+    assert.equal(twin.judgeRun(ran, bfi).status, 'pass');
+    assert.equal(twin.judgeRun({ ...ran, summary: { sysTimeMs: 1500, frames: 100 } }, bfi).status, 'fail');
+    assert.match(twin.judgeRun({ ...ran, summary: { sysTimeMs: 1500, frames: 100 } }, bfi).why ?? '', /sysTimeMs=1500/);
+    assert.equal(twin.judgeRun({ exitStatus: 1, summary: null }, bfi).status, 'error');
+    assert.equal(twin.judgeRun({ exitStatus: 0, summary: {}, consoleText: 'boot\n' }, hello).status, 'timeout');
+    assert.equal(twin.judgeRun({ exitStatus: 0, summary: {}, consoleText: 'hello_ps: Hello from the Zynq PS\nERROR: x\n' }, hello).status, 'fail');
+    assert.equal(twin.judgeRun({ exitStatus: 0, summary: {}, consoleText: 'hello_ps: Hello from the Zynq PS\n' }, hello).status, 'pass');
+
+    // The script on the Docker host: POSIX sh (docker:27 has no bash), the token removed at once.
+    const script = twin.runScript();
+    assert.match(script, /^#!\/bin\/sh/);
+    assert.doesNotMatch(script, /\[\[|function |\bsource\b/);
+    assert.match(script, /docker create "\$image" --elf \/io\/app\.elf --seconds "\$seconds" --out \/io\/run/);
+    assert.match(script, /trap cleanup EXIT/);
+    assert.match(script, /rm -f \.token\ndocker inspect/);
+  } finally {
+    project.done();
+  }
+});
+
+test('the twin stage says when there is nothing to run, and names what is missing', () => {
+  const project = scaffold();
+  try {
+    let result = project.flow('twin');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /hello_ps: twin: boards\/zedboard\.yaml names no twin yet/);
+    assert.match(result.stdout, /led_counter: twin: boards\/zedboard\.yaml names no twin yet/);
+
+    writeFileSync(join(project.root, 'boards/zedboard.yaml'), project.read('boards/zedboard.yaml') + BFI_BOARD.split('\n').slice(4).join('\n'));
+    result = project.flow('twin', 'led_counter');
+    assert.match(result.stdout, /led_counter: twin: no software \(VITIS is not set\)/);
+    result = project.flow('twin', 'hello_ps');
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no out\/hello_ps\/artifacts\/hello_ps_app\.elf; run the build and sw stages first/);
+    mkdirSync(join(project.root, 'out/hello_ps/artifacts'), { recursive: true });
+    writeFileSync(join(project.root, 'out/hello_ps/artifacts/hello_ps_app.elf'), 'ELF');
+    result = project.flow('twin', 'hello_ps');
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /TWIN_GITLAB_TOKEN is not set: a token on http:\/\/gitlab\.bcintr\.int with read_api and read_registry/);
   } finally {
     project.done();
   }

@@ -5,12 +5,13 @@ import { hostname, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Runs a command against the project's Vivado and Vitis installation,
-// wherever it is.
+// Runs a command against a tool host of the project, wherever it is: the
+// Vivado and Vitis host (VIVADO_* settings) or the Docker host that runs the
+// hardware twin's image (TWIN_*).
 //
-//   VIVADO_REMOTE_HOST empty  the command runs on this machine, in the project
-//   VIVADO_REMOTE_HOST set    the project's sources are archived, copied to that
-//                             host over SSH, and the command runs in the copy
+//   <PREFIX>_REMOTE_HOST empty  the command runs on this machine, in the project
+//   <PREFIX>_REMOTE_HOST set    the project's sources are archived, copied to that
+//                               host over SSH, and the command runs in the copy
 //
 // The copy keeps its out/ between runs, so a stage continues from the one
 // before it (a project, a checkpoint, a workspace). What a stage leaves in
@@ -50,47 +51,59 @@ export function loadEnvFile(env = { ...process.env }) {
 
 const value = (env, name) => (env[name] ?? '').trim();
 
-// The host and tool settings, checked. A remote host needs a user, a base
-// path and a project name; the tool locations are needed wherever the tools run.
-export function hostSettings(env) {
-  const host = value(env, 'VIVADO_REMOTE_HOST');
-  const hostType = value(env, 'VIVADO_HOST_TYPE') || (process.platform === 'win32' ? 'windows' : 'linux');
+// The host and tool settings of one tool host, checked. A remote host needs a
+// user, a base path and a project name; the tool locations are needed
+// wherever the tools run. `prefix` is VIVADO (Vivado and Vitis) or TWIN (the twin's Docker).
+export function hostSettings(env, prefix = 'VIVADO') {
+  const name = (suffix) => `${prefix}_${suffix}`;
+  const what = prefix === 'TWIN' ? 'Docker host for the twin' : 'Vivado host';
+  const host = value(env, name('REMOTE_HOST'));
+  const hostType = value(env, name('HOST_TYPE')) || (host ? 'linux' : process.platform === 'win32' ? 'windows' : 'linux');
   if (hostType !== 'windows' && hostType !== 'linux') {
-    throw new CommandError(`VIVADO_HOST_TYPE must be windows or linux, not "${hostType}".`);
+    throw new CommandError(`${name('HOST_TYPE')} must be windows or linux, not "${hostType}".`);
   }
   const settings = {
+    prefix,
     remote: host !== '',
     hostType,
     host,
-    user: value(env, 'VIVADO_REMOTE_USER'),
-    port: value(env, 'VIVADO_REMOTE_PORT') || '22',
-    basePath: value(env, 'VIVADO_REMOTE_BASE_PATH'),
-    projectName: value(env, 'VIVADO_REMOTE_PROJECT_NAME'),
-    identityFile: value(env, 'VIVADO_REMOTE_IDENTITY_FILE'),
-    knownHosts: value(env, 'VIVADO_REMOTE_KNOWN_HOSTS'),
+    user: value(env, name('REMOTE_USER')),
+    port: value(env, name('REMOTE_PORT')) || '22',
+    basePath: value(env, name('REMOTE_BASE_PATH')),
+    projectName: value(env, name('REMOTE_PROJECT_NAME')),
+    identityFile: value(env, name('REMOTE_IDENTITY_FILE')),
+    knownHosts: value(env, name('REMOTE_KNOWN_HOSTS')),
     vivado: value(env, 'VIVADO_BIN'),
     vitis: value(env, 'VITIS_BIN'),
   };
   if (settings.remote) {
-    for (const [key, name] of [['user', 'VIVADO_REMOTE_USER'], ['basePath', 'VIVADO_REMOTE_BASE_PATH'], ['projectName', 'VIVADO_REMOTE_PROJECT_NAME']]) {
-      if (!settings[key]) throw new CommandError(`${name} is not set, but VIVADO_REMOTE_HOST names a remote Vivado host. Add it to .env.`);
+    for (const [key, setting] of [['user', name('REMOTE_USER')], ['basePath', name('REMOTE_BASE_PATH')], ['projectName', name('REMOTE_PROJECT_NAME')]]) {
+      if (!settings[key]) throw new CommandError(`${setting} is not set, but ${name('REMOTE_HOST')} names a remote ${what}. Add it to .env.`);
     }
-    if (!/^[A-Za-z0-9._:[\]-]+$/.test(settings.host)) throw new CommandError('VIVADO_REMOTE_HOST contains unsupported characters.');
-    if (!/^[A-Za-z0-9._@\\-]+$/.test(settings.user)) throw new CommandError('VIVADO_REMOTE_USER contains unsupported characters.');
+    if (!/^[A-Za-z0-9._:[\]-]+$/.test(settings.host)) throw new CommandError(`${name('REMOTE_HOST')} contains unsupported characters.`);
+    if (!/^[A-Za-z0-9._@\\-]+$/.test(settings.user)) throw new CommandError(`${name('REMOTE_USER')} contains unsupported characters.`);
     if (!/^[A-Za-z0-9._-]+$/.test(settings.projectName)) {
-      throw new CommandError('VIVADO_REMOTE_PROJECT_NAME may contain only letters, numbers, dot, underscore and hyphen.');
+      throw new CommandError(`${name('REMOTE_PROJECT_NAME')} may contain only letters, numbers, dot, underscore and hyphen.`);
     }
     if (hostType === 'windows' && !/^(?:[A-Za-z]:[\\/]|\\\\)/.test(settings.basePath)) {
-      throw new CommandError('VIVADO_REMOTE_BASE_PATH must be an absolute Windows drive or UNC path on a windows host.');
+      throw new CommandError(`${name('REMOTE_BASE_PATH')} must be an absolute Windows drive or UNC path on a windows host.`);
     }
     if (hostType === 'linux' && !settings.basePath.startsWith('/')) {
-      throw new CommandError('VIVADO_REMOTE_BASE_PATH must be an absolute path on a linux host.');
+      throw new CommandError(`${name('REMOTE_BASE_PATH')} must be an absolute path on a linux host.`);
     }
     if (!/^\d+$/.test(settings.port) || Number(settings.port) < 1 || Number(settings.port) > 65535) {
-      throw new CommandError('VIVADO_REMOTE_PORT must be an integer between 1 and 65535.');
+      throw new CommandError(`${name('REMOTE_PORT')} must be an integer between 1 and 65535.`);
     }
   }
   return settings;
+}
+
+// Where the project lives on the host that runs a command: the copy on a
+// remote host, or this checkout.
+export function projectPathOnHost(settings) {
+  if (!settings.remote) return PROJECT_ROOT;
+  const separator = settings.hostType === 'windows' ? '\\' : '/';
+  return `${settings.basePath.replace(/[\\/]+$/, '')}${separator}${settings.projectName}`;
 }
 
 export function requireTool(settings, key, name) {
@@ -127,7 +140,10 @@ function includedTopLevelEntries() {
 
 function createArchive(archivePath) {
   const exclusions = ['.git', '.env', '.DS_Store', '._*', '__MACOSX', 'node_modules', 'out', 'runs', 'handoffs', 'references', '*.log'];
-  run('tar', ['-czf', archivePath, ...exclusions.map((item) => `--exclude=${item}`), ...includedTopLevelEntries()],
+  // macOS tar would add extended attributes that GNU tar on a Linux host
+  // reports, one warning per file.
+  const quiet = process.platform === 'darwin' ? ['--no-mac-metadata', '--no-xattrs'] : [];
+  run('tar', ['-czf', archivePath, ...quiet, ...exclusions.map((item) => `--exclude=${item}`), ...includedTopLevelEntries()],
     'Source archive', { cwd: PROJECT_ROOT, env: { ...process.env, COPYFILE_DISABLE: '1' } });
 }
 

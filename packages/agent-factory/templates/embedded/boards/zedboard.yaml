@@ -22,3 +22,13 @@ pins:
   led[0:7]: { loc: [T22, T21, U22, U21, V22, W22, U19, U14], std: LVCMOS33 }
 lab:
   programmer: xsdb
+# The board's hardware twin: a project of its own that releases an image (as
+# hardware-twin/bfi-sumilator does for the BFI). The twin phase runs the
+# design's ELF on its latest release. No ZedBoard twin exists yet; when it is
+# released, name it here:
+#
+# twin:
+#   gitlab: http://gitlab.example.com        # the twin project's GitLab
+#   project: hardware-twin/zedboard-twin     # its path
+#   registry: gitlab.example.com:5050        # its container registry
+#   console: uart1.log                       # the file under --out the console lands in

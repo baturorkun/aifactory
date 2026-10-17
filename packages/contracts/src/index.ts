@@ -229,6 +229,8 @@ export const GateResultsSchema = z.object({
   hdlSim: GateResultSchema.optional(),
   fpgaBuild: GateResultSchema.optional(),
   firmwareBuild: GateResultSchema.optional(),
+  // The application on the digital twin (RQ-0045).
+  twinTest: GateResultSchema.optional(),
 });
 export type GateResults = z.infer<typeof GateResultsSchema>;
 
@@ -250,16 +252,17 @@ export const TWIN_PHASES: readonly TwinPhase[] = TwinPhaseSchema.options;
 // ============================================================
 
 // The order is the workflow of an embedded requirement: the design is written
-// and checked, its testbenches pass, and it builds to a bitstream, an XSA and
-// an ELF with timing and DRC met. A run goes through the phases in order and
-// stops at the first whose gate fails.
-export const EmbeddedPhaseSchema = z.enum(['spec', 'sim', 'build']);
+// and checked, its testbenches pass, it builds to a bitstream, an XSA and an
+// ELF with timing and DRC met, and the ELF runs on the digital twin. A run goes
+// through the phases in order and stops at the first whose gate fails.
+export const EmbeddedPhaseSchema = z.enum(['spec', 'sim', 'build', 'twin']);
 export type EmbeddedPhase = z.infer<typeof EmbeddedPhaseSchema>;
 export const EMBEDDED_PHASES: readonly EmbeddedPhase[] = EmbeddedPhaseSchema.options;
 export const EMBEDDED_PHASE_GATES: Readonly<Record<EmbeddedPhase, readonly (keyof GateResults)[]>> = {
   spec: ['designCheck'],
   sim: ['hdlSim'],
   build: ['fpgaBuild', 'firmwareBuild'],
+  twin: ['twinTest'],
 };
 
 // The phases a requirement (or one run of it) goes through: the ones named,
@@ -378,7 +381,7 @@ export const RequirementLifecycleSchema = z.object({
   twinPhase: TwinPhaseSchema.optional(),
   probe: z.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional(),
   // Embedded: the phases this requirement goes through (RQ-0044).
-  phases: z.array(z.enum(['spec', 'sim', 'build'])).optional(),
+  phases: z.array(EmbeddedPhaseSchema).optional(),
   repositoryProvider: z.enum(['gitlab', 'github']).optional(),
   gitlabIssueIid: z.number().int().positive().optional(),
   gitlabIssueUrl: z.string().url().optional(),

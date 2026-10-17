@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { z } from 'zod';
+import { EmbeddedPhaseSchema } from '@aifactory/contracts';
 
 // ============================================================
 // MODEL CONFIG — discriminated union so TypeScript can narrow
@@ -121,6 +122,7 @@ const TargetCommandsSchema = z.object({
   hdlSim: z.string().optional(),
   fpgaBuild: z.string().optional(),
   firmwareBuild: z.string().optional(),
+  twinTest: z.string().optional(),
 });
 
 const TargetProjectSchema = z.object({
@@ -361,7 +363,7 @@ const RequirementDefaultsSchema = z.object({
   pipelineFast: z.boolean().default(false),
   // Embedded projects: the phases a requirement goes through when
   // `requirement new` is given no --phases.
-  embeddedPhases: z.array(z.enum(['spec', 'sim', 'build'])).optional(),
+  embeddedPhases: z.array(EmbeddedPhaseSchema).optional(),
 });
 
 export const FactoryConfigSchema = z.object({
