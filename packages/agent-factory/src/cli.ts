@@ -63,6 +63,9 @@ import {
 } from './orchestrator/probe';
 import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
+import { updateEmbeddedProject } from './template-update';
+import { ciVariables, readDotEnv, writeCiVariables } from './ci-variables';
+import { resolveRepositoryPlatform } from './repository-platform/resolve';
 
 // What each embedded phase does, as the checkbox list shows it.
 const EMBEDDED_PHASE_LABELS: Record<EmbeddedPhase, string> = {
@@ -936,17 +939,22 @@ program
   .option('--template <name>', 'Standard project skeleton: ' + PROJECT_TEMPLATES.join(', '))
   .option('--simulator <name>', 'Hardware-twin project for a simulator: ' + SIMULATORS.join(', '))
   .option('--host-type <os>', 'OS the simulator and build run on: windows, linux')
+  .option('--board <unit>', 'Embedded: the lab unit (lab/inventory.json) whose settings fill .env, e.g. zedboard')
   .option('--dir <path>', 'Parent directory for the new project', '..')
   .option('--force', 'Allow writing into an existing directory', false)
-  .action((projectName: string, opts: { template?: string; simulator?: string; hostType?: string; dir: string; force: boolean }) => {
+  .action((projectName: string, opts: { template?: string; simulator?: string; hostType?: string; board?: string; dir: string; force: boolean }) => {
     try {
       if (opts.template && opts.simulator) {
         throw new Error('--template (standard project) and --simulator (hardware-twin project) are mutually exclusive.');
+      }
+      if (opts.board && opts.template !== 'embedded') {
+        throw new Error('--board applies to --template embedded.');
       }
       const result = createTargetProject(projectName, {
         template: opts.template,
         simulator: opts.simulator,
         hostType: opts.hostType,
+        board: opts.board,
         dir: opts.dir,
         force: opts.force,
       });
@@ -960,6 +968,67 @@ program
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exit(1);
+    }
+  });
+
+// ============================================================
+// factory template update / factory ci-variables (RQ-0047)
+// ============================================================
+
+program
+  .command('template')
+  .description('Embedded projects: bring the template-owned files up to this aifactory')
+  .command('update')
+  .description('List (or with --write apply) what changes to reach the current embedded template')
+  .option('--write', 'Apply the changes', false)
+  .action((opts: { write: boolean }) => {
+    try {
+      const config = loadConfig();
+      const root = resolve(config.targetProject.root ?? '.');
+      const changes = updateEmbeddedProject(root, { write: opts.write });
+      if (changes.length === 0) {
+        console.log(chalk.green('✓ The project is on the current embedded template.'));
+        return;
+      }
+      for (const change of changes) {
+        console.log(`  ${change.kind.padEnd(8)} ${change.path}${change.kind === 'merge' ? chalk.dim(`  (${change.detail})`) : ''}`);
+      }
+      console.log(opts.write
+        ? chalk.green(`\n✓ ${changes.length} change(s) written. Review them with git diff and run pnpm check.`)
+        : chalk.dim(`\n${changes.length} change(s). Nothing written: add --write to apply them.`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('ci-variables')
+  .description('Write the host and board settings of .env into the GitLab project\'s CI/CD variables')
+  .option('--write', 'Create or update them (without it, only list them)', false)
+  .option('--with-secrets', 'Also write the tokens, masked', false)
+  .action(async (opts: { write: boolean; withSecrets: boolean }) => {
+    try {
+      const config = loadConfig();
+      const root = resolve(config.targetProject.root ?? '.');
+      const variables = ciVariables(readDotEnv(root), opts.withSecrets);
+      if (variables.length === 0) {
+        console.log('No host or board setting in .env to write.');
+        return;
+      }
+      if (!opts.write) {
+        for (const variable of variables) console.log(`  ${variable.key}${variable.secret ? '  (masked)' : `=${variable.value}`}`);
+        console.log(chalk.dim(`\n${variables.length} variable(s). Nothing written: add --write to create or update them.`));
+        return;
+      }
+      const platform = resolveRepositoryPlatform(config, 'gitlab');
+      if (platform.provider !== 'gitlab') throw new Error('ci-variables writes to GitLab; the project has no GitLab settings.');
+      const done = await writeCiVariables(platform.settings, variables);
+      for (const [key, what] of Object.entries(done)) console.log(`  ${what.padEnd(8)} ${key}`);
+      console.log(chalk.green(`\n✓ ${Object.keys(done).length} CI/CD variable(s) written to ${platform.settings.projectId}.`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
     }
   });
 

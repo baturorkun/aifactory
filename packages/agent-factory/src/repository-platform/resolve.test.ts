@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import { FactoryConfigSchema } from '../config';
 import { resolveRepositoryPlatform } from './resolve';
@@ -79,10 +80,12 @@ test('explicit platform selection validates requested platform', () => {
   );
 });
 
-test('auto-detection rejects ambiguous complete providers', () => {
+test('auto-detection rejects ambiguous complete providers when no origin remote decides', () => {
+  // A directory with no git remote: the origin cannot say which one (RQ-0047).
+  const noRemote = FactoryConfigSchema.parse({ ...config, targetProject: { root: tmpdir() } });
   assert.throws(
     () =>
-      resolveRepositoryPlatform(config, undefined, {
+      resolveRepositoryPlatform(noRemote, undefined, {
         GITLAB_URL: 'https://gitlab.example.test',
         GITLAB_PROJECT_ID: '42',
         GITLAB_TOKEN: 'token',
