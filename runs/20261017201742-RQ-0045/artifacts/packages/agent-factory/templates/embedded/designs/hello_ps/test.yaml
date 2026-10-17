@@ -1,0 +1,7 @@
+# What hello_ps must print, on the twin now and on the board later.
+# timeout_s is virtual time on the twin and wall time on the board.
+timeout_s: 5
+expect:
+  - "hello_ps: Hello from the Zynq PS"
+fail_on:
+  - "ERROR:"
