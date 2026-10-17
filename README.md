@@ -316,6 +316,26 @@ twin's schema. Only JTAG: flash is never written. The board is not in a
 requirement's default phases; it runs when a requirement names it, every night
 on the default branch (a pipeline schedule) and by hand on any merge request.
 
+**Starting configured.** `lab/inventory.json` describes the lab once (RQ-0047):
+the GitLab and group new projects live in, the Vivado host, the lab host with
+its hw_server and xsdb, the Docker host for twins, the bot's URL, and one entry
+per board unit (board file, PDU label, JTAG cable serial, console device). It
+holds no secret. `factory new <name> --template embedded --board zedboard`
+writes the new project's `.env` from it, with the host project names per
+person and the tokens empty for `factory env-check` to name; without `--board`
+the board settings stay empty. A project made from an older template is
+brought up to date with `factory template update` (it lists the changes;
+`--write` applies them): the scripts, the flow, the CI file, `.env.example` and
+`AGENTS.md` are replaced, the gates and package scripts merged, files a design
+lacks (such as `test.yaml`) added; design sources, board files, `.env` and
+requirements are left alone. `factory ci-variables --write` puts the host and
+board settings of `.env` into the GitLab project's CI/CD variables
+(`--with-secrets` adds the tokens, masked). Enabling a runner for a new
+project is done by hand in GitLab (Settings → CI/CD → Runners): a project
+token cannot enable a runner that belongs to other projects. When both GitLab
+and GitHub settings are complete, the factory uses the platform the `origin`
+remote is on.
+
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a
 terminal without `--phases`, a checkbox list with the project's default

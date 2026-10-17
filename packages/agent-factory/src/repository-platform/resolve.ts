@@ -1,3 +1,5 @@
+import { spawnSync } from 'child_process';
+import { resolve } from 'path';
 import type { FactoryConfig } from '../config';
 import type { GitHubPlatformSettings, GitLabPlatformSettings, ResolvedRepositoryPlatform } from './types';
 
@@ -69,7 +71,14 @@ export function resolveRepositoryPlatform(
     throw new Error(`GitHub configuration is incomplete. Missing: ${githubMissing.join(', ')}`);
   }
   if (gitlabComplete && githubComplete) {
-    throw new Error('Multiple repository platforms are configured. Use --platform <name>.');
+    // Both are set (a GitHub token in the shell for another project is enough):
+    // the project's own remote says which one it lives on.
+    const host = originHost(config);
+    const gitlabHost = hostOf(gitlabValues.GITLAB_URL);
+    const githubHost = githubWebHost(nonEmpty(configuredGitHub?.baseUrl) ?? nonEmpty(env.GITHUB_API_URL) ?? 'https://api.github.com');
+    if (host && host === gitlabHost) return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>);
+    if (host && host === githubHost) return githubSettings(config, githubValues as Record<keyof typeof githubValues, string>, env);
+    throw new Error('Multiple repository platforms are configured and the origin remote matches neither. Use --platform <name>.');
   }
   if (githubComplete) {
     return githubSettings(config, githubValues as Record<keyof typeof githubValues, string>, env);
@@ -78,6 +87,33 @@ export function resolveRepositoryPlatform(
     return gitlabSettings(config, gitlabValues as Record<keyof typeof gitlabValues, string>);
   }
   return { provider: 'none' };
+}
+
+function hostOf(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  // git@host:group/project.git, ssh://git@host/..., http(s)://host/...
+  const scp = /^[^@/]+@([^:/]+):/.exec(url);
+  if (scp) return scp[1].toLowerCase();
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+// The web host of a GitHub API URL: api.github.com is github.com, and a
+// GitHub Enterprise API (host/api/v3) is its host.
+function githubWebHost(apiUrl: string): string | undefined {
+  const host = hostOf(apiUrl);
+  return host === 'api.github.com' ? 'github.com' : host;
+}
+
+function originHost(config: FactoryConfig): string | undefined {
+  const result = spawnSync('git', ['remote', 'get-url', 'origin'], {
+    cwd: resolve(config.targetProject.root ?? '.'),
+    encoding: 'utf8',
+  });
+  return result.status === 0 ? hostOf(result.stdout.trim()) : undefined;
 }
 
 function gitlabSettings(

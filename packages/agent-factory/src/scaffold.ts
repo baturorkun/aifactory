@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
+import { embeddedEnvValues, fillEnv, loadLabInventory, personSlug } from './lab-inventory';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
 
@@ -18,6 +19,10 @@ export type NewProjectOptions = {
   availableSkills?: readonly string[];
   availablePlugins?: readonly string[];
   codexHome?: string;
+  /** Embedded: the lab unit (lab/inventory.json) whose board settings fill .env. */
+  board?: string;
+  /** The lab inventory to fill .env from; the default is aifactory's own. */
+  labInventoryPath?: string;
 };
 
 export type NewProjectResult = {
@@ -1663,6 +1668,28 @@ function writePythonTemplate(projectRoot: string): void {
   writeFileSync(resolve(projectRoot, 'src/__init__.py'), '', 'utf8');
 }
 
+// The new project's .env, from the lab inventory (RQ-0047): the hosts filled,
+// the board's settings when a unit is named, the tokens left empty for
+// env-check to name. Without an inventory there is nothing to fill.
+function writeEmbeddedEnv(projectRoot: string, projectName: string, options: NewProjectOptions): void {
+  const inventory = loadLabInventory(options.labInventoryPath);
+  if (!inventory) {
+    if (options.board) throw new Error('--board needs aifactory\'s lab/inventory.json, which is missing.');
+    return;
+  }
+  if (options.board) {
+    const unit = inventory.units[options.board];
+    if (unit && !existsSync(resolve(projectRoot, 'boards', `${unit.board}.yaml`))) {
+      const boards = readdirSync(resolve(projectRoot, 'boards')).map((file) => file.replace(/\.yaml$/, ''));
+      throw new Error(`Lab unit "${options.board}" uses board "${unit.board}", which the template has no board file for (it has: ${boards.join(', ')}).`);
+    }
+  }
+  const values = embeddedEnvValues(inventory, projectName, personSlug(projectRoot), options.board);
+  const envPath = resolve(projectRoot, '.env');
+  if (existsSync(envPath)) return;
+  writeFileSync(envPath, fillEnv(readFileSync(resolve(projectRoot, '.env.example'), 'utf8'), values), 'utf8');
+}
+
 // The embedded template (RQ-0044): the Vivado/Vitis flow, copied verbatim from
 // templates/embedded, with two starting designs for the ZedBoard's part (a
 // plain-RTL non-project one and a Zynq PS project-mode one with a Vitis app).
@@ -1687,6 +1714,11 @@ function writeEmbeddedTemplate(projectRoot: string): void {
   writeFileSync(
     envExample,
     readFileSync(envExample, 'utf8') + [
+      '',
+      '# --- Repository (issues and merge requests) ---------------------------------',
+      'GITLAB_URL=',
+      'GITLAB_PROJECT_ID=',
+      'GITLAB_TOKEN=',
       '',
       '# --- Vivado and Vitis (embedded template) ---------------------------------',
       '# Where the tools run. VIVADO_REMOTE_HOST empty runs them on this machine;',
@@ -3082,6 +3114,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.tcl', '**/*.xdc', '**/*.vhd', '**/*.vhdl', '**/*.v', '**/*.sv', '**/*.py', '**/*.c', '**/*.h', '**/*.ld'],
     );
     writeEmbeddedTemplate(projectRoot);
+    writeEmbeddedEnv(projectRoot, projectName, options);
   } else if (options.template === 'python') {
     writeFactoryConfig(projectRoot, promptsPath, 'python', ['src', 'tests'], {
       typeCheck: 'pnpm typecheck',

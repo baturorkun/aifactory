@@ -1,0 +1,44 @@
+{
+  "runId": "20261017211157-RQ-0047",
+  "requirementId": "RQ-0047",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261017211157-RQ-0047/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-17T21:11:57.024Z",
+  "updatedAt": "2026-10-17T21:55:18.655Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-17T21:12:02.132Z",
+      "finishedAt": "2026-10-17T21:18:20.631Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "lab/inventory.json",
+    "packages/agent-factory/src/ci-variables.ts",
+    "packages/agent-factory/src/cli.ts",
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/lab-inventory.ts",
+    "packages/agent-factory/src/repository-platform/resolve.test.ts",
+    "packages/agent-factory/src/repository-platform/resolve.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/template-update.ts",
+    "requirements/RQ-0047-embedded-projects-start-configured-lab-inventory-platform-template-update-ci-variables.md"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-17T21:55:18.659Z",
+  "approvedBy": "Batur Orkun"
+}

@@ -15,7 +15,8 @@ import { applyKey, renderCheckboxes, type CheckboxItem } from './utils/checkbox-
 
 function scaffold(template = 'embedded') {
   const parent = mkdtempSync(join(tmpdir(), 'aifactory-embedded-'));
-  const { projectRoot } = createTargetProject('fw', { dir: parent, template });
+  // No lab inventory: a test project must never point at the real lab hosts.
+  const { projectRoot } = createTargetProject('fw', { dir: parent, template, labInventoryPath: join(parent, 'no-inventory.json') });
   const read = (path: string) => readFileSync(join(projectRoot, path), 'utf8');
   const flow = (...args: string[]) => spawnSync(process.execPath, [join(projectRoot, 'scripts/flow.mjs'), ...args], {
     encoding: 'utf8',
