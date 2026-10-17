@@ -305,6 +305,17 @@ and revision it ran on and the ELF's SHA-256. A board whose twin is not named
 yet, a design with no software or no `test.yaml`, has nothing to run and says
 so.
 
+The `board` phase runs the bitstream and ELF on the real board over JTAG
+(RQ-0046): the lab bot switches the board's PDU outlet on (`BOARD_POWER_NAME`)
+and off again when it was off, xsdb on the lab host (`BOARD_REMOTE_*`,
+`XSDB_BIN`) programs the board through `BOARD_HW_SERVER` in the order of the
+team's `run_jtag.tcl`, selecting every target by the cable's serial
+(`BOARD_JTAG_CABLE`), and the console (`BOARD_SERIAL_PORT`) is checked with the
+design's `test.yaml`; `out/<design>/artifacts/board/result.json` has the
+twin's schema. Only JTAG: flash is never written. The board is not in a
+requirement's default phases; it runs when a requirement names it, every night
+on the default branch (a pipeline schedule) and by hand on any merge request.
+
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a
 terminal without `--phases`, a checkbox list with the project's default

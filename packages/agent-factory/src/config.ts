@@ -123,6 +123,7 @@ const TargetCommandsSchema = z.object({
   fpgaBuild: z.string().optional(),
   firmwareBuild: z.string().optional(),
   twinTest: z.string().optional(),
+  boardTest: z.string().optional(),
 });
 
 const TargetProjectSchema = z.object({

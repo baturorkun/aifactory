@@ -6,8 +6,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { deflateRawSync } from 'node:zlib';
 import test from 'node:test';
-import { embeddedPhaseList, embeddedPhaseReached } from '@aifactory/contracts';
+import { DEFAULT_EMBEDDED_PHASES, embeddedPhaseList, embeddedPhaseReached } from '@aifactory/contracts';
 import { runAllGates, type GateReport } from '@aifactory/quality-gates';
 import { createTargetProject, PROJECT_TEMPLATES } from './scaffold';
 import { applyKey, renderCheckboxes, type CheckboxItem } from './utils/checkbox-prompt';
@@ -52,7 +53,7 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     };
     assert.equal(config.targetProject.profile, 'embedded');
     assert.deepEqual(config.targetProject.commands, {
-      designCheck: 'pnpm check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw', twinTest: 'pnpm twin',
+      designCheck: 'pnpm check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw', twinTest: 'pnpm twin', boardTest: 'pnpm board',
     });
     assert.ok(config.targetProject.commandTimeoutMs >= 3_600_000, 'a project-mode build fits in the gate timeout');
     assert.equal(config.requirementDefaults.kind, 'embedded');
@@ -65,7 +66,8 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     // Every machine setting is named, none is filled in.
     const env = project.read('.env.example');
     for (const name of ['VIVADO_HOST_TYPE', 'VIVADO_REMOTE_HOST', 'VIVADO_REMOTE_USER', 'VIVADO_REMOTE_BASE_PATH', 'VIVADO_REMOTE_PROJECT_NAME', 'VIVADO_BIN', 'VITIS_BIN',
-      'TWIN_GITLAB_TOKEN', 'TWIN_TAG', 'TWIN_REMOTE_HOST', 'TWIN_REMOTE_USER', 'TWIN_REMOTE_BASE_PATH', 'TWIN_REMOTE_PROJECT_NAME']) {
+      'TWIN_GITLAB_TOKEN', 'TWIN_TAG', 'TWIN_REMOTE_HOST', 'TWIN_REMOTE_USER', 'TWIN_REMOTE_BASE_PATH', 'TWIN_REMOTE_PROJECT_NAME',
+      'BOT_API_URL', 'BOT_API_TOKEN', 'BOARD_POWER_NAME', 'BOARD_REMOTE_HOST', 'BOARD_HW_SERVER', 'BOARD_JTAG_CABLE', 'BOARD_SERIAL_PORT', 'XSDB_BIN']) {
       assert.match(env, new RegExp(`^${name}=`, 'm'), name);
     }
     assert.match(env, /^VIVADO_REMOTE_HOST=$/m);
@@ -79,6 +81,9 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     assert.doesNotMatch(project.read('boards/zedboard.yaml'), /^twin:/m);
     assert.match(project.read('designs/hello_ps/test.yaml'), /expect:\n {2}- "hello_ps: Hello from the Zynq PS"/);
     assert.match(project.read('.gitignore'), /^twin-run\/$/m);
+    assert.match(project.read('.gitignore'), /^board-run\/$/m);
+    assert.equal(scripts.board, 'node scripts/flow.mjs board');
+    assert.match(project.read('AGENTS.md'), /Naming the `board` phase in a requirement is its author's consent to power and program the board/);
     assert.equal(scripts.twin, 'node scripts/flow.mjs twin');
   } finally {
     project.done();
@@ -147,7 +152,7 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
   const project = scaffold();
   try {
     const ci = project.read('.gitlab-ci.yml');
-    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- check\n {2}- sim\n {2}- build\n {2}- twin\n/m);
+    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- check\n {2}- sim\n {2}- build\n {2}- twin\n {2}- board\n/m);
     const job = (name: string) => {
       const start = ci.indexOf(`\n${name}:`);
       assert.ok(start >= 0, `${name} exists`);
@@ -173,6 +178,15 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
     assert.match(twin, /apk add --no-cache nodejs/);
     assert.match(twin, /node scripts\/flow\.mjs twin --requirement-phases/);
     assert.match(twin, /- out\/\*\/artifacts\/twin\//);
+    // The board: one run at a time for the lab; nightly, when the requirement names it, and by hand.
+    const board = job('embedded_board');
+    assert.match(board, /resource_group: "lab-board"/);
+    assert.match(board, /node scripts\/flow\.mjs board --requirement-phases/);
+    assert.match(board, /\$CI_PIPELINE_SOURCE == "schedule"/);
+    assert.match(board, /- out\/\*\/artifacts\/board\//);
+    const onDemand = job('embedded_board_on_demand');
+    assert.match(onDemand, /when: manual\n {6}allow_failure: true/);
+    assert.match(onDemand, /- node scripts\/flow\.mjs board\n/);
     // Each Vivado job has its own project on the host, one ref at a time.
     assert.match(job('embedded_sim'), /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
     assert.match(job('embedded_sim'), /resource_group: "vivado-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
@@ -272,7 +286,10 @@ test('a phase list is put in workflow order, always with spec, and an unknown ph
   assert.deepEqual(embeddedPhaseList('twin,build'), ['spec', 'build', 'twin']);
   assert.deepEqual(embeddedPhaseList(['build']), ['spec', 'build']);
   assert.deepEqual(embeddedPhaseList('spec, sim, build'), ['spec', 'sim', 'build']);
-  assert.throws(() => embeddedPhaseList('sim,board'), /Unknown phase "board"/);
+  assert.deepEqual(embeddedPhaseList('board'), ['spec', 'board']);
+  assert.throws(() => embeddedPhaseList('sim,flash'), /Unknown phase "flash"/);
+  // The board is not in a requirement's default phases.
+  assert.deepEqual([...DEFAULT_EMBEDDED_PHASES], ['spec', 'sim', 'build', 'twin']);
 });
 
 test('the checkbox list moves, ticks, keeps spec ticked and accepts', () => {
@@ -396,6 +413,78 @@ test('the twin stage says when there is nothing to run, and names what is missin
     result = project.flow('twin', 'hello_ps');
     assert.equal(result.status, 2);
     assert.match(result.stderr, /TWIN_GITLAB_TOKEN is not set: a token on http:\/\/gitlab\.bcintr\.int with read_api and read_registry/);
+  } finally {
+    project.done();
+  }
+});
+
+async function boardModule(root: string) {
+  return import(pathToFileURL(join(root, 'scripts/board.mjs')).href) as Promise<{
+    findOutlet: (status: string, name: string) => { socket: string; on: boolean } | undefined;
+    readFromZip: (zip: Buffer, suffix: string) => Buffer | undefined;
+    processorType: (board: string) => string | undefined;
+    loadScript: (options: { hwServer: string; cable: string; directory: string; processor: unknown }) => string;
+    runScript: () => string;
+  }>;
+}
+
+// A zip with one deflated entry, as an XSA holds ps7_init.tcl.
+function zipOf(name: string, text: string): Buffer {
+  const data = deflateRawSync(Buffer.from(text));
+  const nameBytes = Buffer.from(name);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(8, 8); local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(text.length, 22); local.writeUInt16LE(nameBytes.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(8, 10); central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(text.length, 24); central.writeUInt16LE(nameBytes.length, 28); central.writeUInt32LE(0, 42);
+  const centralOffset = local.length + nameBytes.length + data.length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + nameBytes.length, 12); end.writeUInt32LE(centralOffset, 16);
+  return Buffer.concat([local, nameBytes, data, central, nameBytes, end]);
+}
+
+test('the board stage finds the outlet, reads the init from the XSA and programs only its own cable', async () => {
+  const project = scaffold();
+  try {
+    const board = await boardModule(project.root);
+    // The lab bot's power status, as it answered on 17 October.
+    const status = 'Power status:\nA (Gen ZU-5EV 1) → Off\nD (Zedboard - 1) → Off\nG (Aselsan BFI Prototip) → On';
+    assert.deepEqual(board.findOutlet(status, 'Zedboard - 1'), { socket: 'D', on: false });
+    assert.deepEqual(board.findOutlet(status, 'Aselsan BFI Prototip'), { socket: 'G', on: true });
+    assert.equal(board.findOutlet(status, 'Nexys'), undefined);
+
+    assert.equal(board.readFromZip(zipOf('ps7_init.tcl', 'proc ps7_init {} {}\n'), 'ps7_init.tcl')?.toString(), 'proc ps7_init {} {}\n');
+    assert.equal(board.readFromZip(zipOf('other.txt', 'x'), 'ps7_init.tcl'), undefined);
+    assert.equal(board.processorType(project.read('boards/zedboard.yaml')), 'zynq7000');
+
+    const processor = { init: 'ps7_init.tcl', run: ['ps7_init', 'ps7_post_config'], fpga: 'xc7z*', reset: 'APU*', core: '*Cortex-A9*#0' };
+    const load = board.loadScript({ hwServer: 'lab:3121', cable: '210248B849E0', directory: '/srv/p/board-run/hello_ps', processor });
+    // Every target is chosen on this cable: another board on the hw_server is never touched.
+    const selections = load.match(/targets -set -filter \{[^}]*\}/g) ?? [];
+    assert.ok(selections.length >= 4);
+    for (const selection of selections) assert.match(selection, /jtag_cable_serial =~ "210248B849E0\*"/);
+    assert.match(load, /rst -system[\s\S]*fpga \/srv\/p\/board-run\/hello_ps\/fpga\.bit[\s\S]*source \/srv\/p\/board-run\/hello_ps\/ps7_init\.tcl\n {4}ps7_init\n {4}ps7_post_config[\s\S]*dow \/srv\/p\/board-run\/hello_ps\/app\.elf\n {4}con/);
+    assert.doesNotMatch(load, /flash|program_flash/i);
+
+    const run = board.runScript();
+    assert.match(run, /^#!\/bin\/sh/);
+    assert.match(run, /cat "\$port" > console\.log &[\s\S]*"\$xsdb" load\.tcl/, 'the console is read before the board is programmed');
+  } finally {
+    project.done();
+  }
+});
+
+test('the board stage names a missing lab setting', () => {
+  const project = scaffold();
+  try {
+    let result = project.flow('board', 'led_counter');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /led_counter: board: no software/);
+    result = project.flow('board', 'hello_ps');
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /BOARD_HW_SERVER is not set/);
   } finally {
     project.done();
   }

@@ -4,6 +4,7 @@ import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CommandError, PROJECT_ROOT, buildHost, hostSettings, loadEnvFile, requireTool, runOnHost } from './vivado-host.mjs';
 import { parseTestYaml, parseTwinSection, twinStage } from './twin.mjs';
+import { boardStage } from './board.mjs';
 
 const HELP = `Usage: node scripts/flow.mjs <stage> [design...] [--mode project|non_project] [--jobs n] [--requirement-phases]
 
@@ -17,7 +18,9 @@ Stages
   twin    the application on the board's hardware twin (the latest release of
           the twin image the board file names), checked against
           designs/<design>/test.yaml; Docker where TWIN_* in .env says
-  all     sim, build, sw, twin
+  board   the bitstream and ELF on the real board over JTAG, its console checked
+          against test.yaml; the lab bot powers it (BOARD_* and BOT_* in .env)
+  all     sim, build, sw, twin (the board only when asked for)
   clean   out/<design> only
 
 Without a design every design under designs/ is taken; --mode narrows them to
@@ -30,7 +33,7 @@ and says so. Elsewhere, on main and tags, every stage runs.`;
 
 const VIVADO_STAGES = new Set(['sim', 'synth', 'impl', 'bit', 'xsa', 'build', 'clean']);
 // The requirement phase each stage belongs to.
-const STAGE_PHASE = { check: 'spec', sim: 'sim', synth: 'build', impl: 'build', bit: 'build', xsa: 'build', build: 'build', sw: 'build', twin: 'twin' };
+const STAGE_PHASE = { check: 'spec', sim: 'sim', synth: 'build', impl: 'build', bit: 'build', xsa: 'build', build: 'build', sw: 'build', twin: 'twin', board: 'board' };
 
 // The phases the requirement of this CI branch names, or undefined when the
 // branch is not a requirement branch or the requirement names none.
@@ -45,7 +48,7 @@ export function requirementPhases(env, root = PROJECT_ROOT) {
   if (!line) return undefined;
   return { requirement: match[1], phases: line[1].split(',').map((phase) => phase.trim()).filter(Boolean) };
 }
-const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'twin', 'all']);
+const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'twin', 'board', 'all']);
 
 // ------------------------------------------------------------
 // Designs and their project.tcl
@@ -281,6 +284,8 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   // Each host's settings are read only when a stage needs that host.
   let vivadoHost;
   let twinHost;
+  let boardHost;
+  const lab = () => (boardHost ??= hostSettings(env, 'BOARD'));
   const vivado = () => (vivadoHost ??= hostSettings(env, 'VIVADO'));
   const renode = () => (twinHost ??= hostSettings(env, 'TWIN'));
   const board = (design) => {
@@ -289,8 +294,11 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
     return readFileSync(path, 'utf8');
   };
   for (const design of selected) {
-    const settings = options.stage === 'twin' ? undefined : vivado();
+    const settings = options.stage === 'twin' || options.stage === 'board' ? undefined : vivado();
     switch (options.stage) {
+      case 'board':
+        await boardStage(lab(), design, board(design), env);
+        break;
       case 'twin':
         await twinStage(renode(), design, board(design), env);
         break;

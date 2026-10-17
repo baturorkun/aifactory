@@ -61,7 +61,7 @@ import {
   setTwinPhase,
   writeTwinPhase,
 } from './orchestrator/probe';
-import { EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
+import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
 
 // What each embedded phase does, as the checkbox list shows it.
@@ -69,7 +69,8 @@ const EMBEDDED_PHASE_LABELS: Record<EmbeddedPhase, string> = {
   spec: 'spec   design check: board file, project.tcl, block design (seconds, no Vivado)',
   sim: 'sim    testbenches on the Vivado host (about a minute)',
   build: 'build  synthesis, place & route, bitstream, XSA, ELF; timing and DRC (minutes)',
-  twin: 'twin   the ELF on the digital twin (Renode), console against test.yaml (seconds)',
+  twin: 'twin   the ELF on the board\'s hardware twin (its latest release), checked with test.yaml',
+  board: 'board  the real board over JTAG: the bot powers it, the console against test.yaml',
 };
 import { resolveTargetProjectPath } from './project-context';
 
@@ -145,7 +146,7 @@ requirement
       const kind = (opts.kind as RequirementKind | undefined) ?? config.requirementDefaults.kind;
       let phases: string | string[] | undefined = opts.phases;
       if (kind === 'embedded' && phases === undefined && canPrompt()) {
-        const defaults = embeddedPhaseList(config.requirementDefaults.embeddedPhases ?? EMBEDDED_PHASES);
+        const defaults = embeddedPhaseList(config.requirementDefaults.embeddedPhases ?? DEFAULT_EMBEDDED_PHASES);
         phases = await promptCheckboxes(
           'Which phases does this requirement go through?',
           EMBEDDED_PHASES.map((phase) => ({
