@@ -17,6 +17,8 @@ const UnitSchema = z.object({
   jtagCable: z.string().regex(/^[A-Za-z0-9]+$/),
   serialPort: z.string().min(1),
   serialBaud: z.number().int().positive().default(115200),
+  twinProject: z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+$/).optional(),
+  twinConsole: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
 });
 
 export const LabInventorySchema = z.object({
@@ -40,6 +42,7 @@ export const LabInventorySchema = z.object({
     xsdbBin: z.string().min(1),
   }),
   bot: z.object({ url: z.string().url() }).optional(),
+  twin: z.object({ gitlab: z.string().url(), registry: z.string().min(1) }).optional(),
   units: z.record(UnitSchema).default({}),
   known: z.record(z.object({ powerName: z.string().optional(), jtagCable: z.string().optional() }).passthrough()).default({}),
 });
@@ -83,6 +86,7 @@ export function embeddedEnvValues(
     TWIN_REMOTE_PORT: '22',
     TWIN_REMOTE_BASE_PATH: inventory.lab.twinBasePath,
     TWIN_REMOTE_PROJECT_NAME: hostProject,
+    ...(inventory.twin ? { TWIN_GITLAB_URL: inventory.twin.gitlab, TWIN_REGISTRY: inventory.twin.registry } : {}),
     ...(inventory.bot ? { BOT_API_URL: inventory.bot.url } : {}),
     ...(inventory.gitlab ? { GITLAB_URL: inventory.gitlab.url, GITLAB_PROJECT_ID: `${inventory.gitlab.group}/${projectName}` } : {}),
   };
@@ -109,12 +113,14 @@ export function embeddedEnvValues(
     BOARD_SERIAL_PORT: unit.serialPort,
     BOARD_SERIAL_BAUD: String(unit.serialBaud),
     XSDB_BIN: inventory.lab.xsdbBin,
+    ...(unit.twinProject ? { TWIN_PROJECT: unit.twinProject } : {}),
+    ...(unit.twinConsole ? { TWIN_CONSOLE: unit.twinConsole } : {}),
   };
 }
 
 // The settings every project of the lab shares, as they stand in the lab
 // GitLabs' instance-level CI/CD variables (RQ-0048): the Vivado host, the lab
-// host with its hw_server and xsdb, and the bot. Per-unit and per-person values
+// host with its hw_server and xsdb, the bot, and the twins' GitLab and registry. Per-unit and per-person values
 // are not among them.
 export function labWideCiValues(inventory: LabInventory): Record<string, string> {
   return {
@@ -132,6 +138,7 @@ export function labWideCiValues(inventory: LabInventory): Record<string, string>
     BOARD_HW_SERVER: inventory.lab.hwServer,
     XSDB_BIN: inventory.lab.xsdbBin,
     ...(inventory.bot ? { BOT_API_URL: inventory.bot.url } : {}),
+    ...(inventory.twin ? { TWIN_GITLAB_URL: inventory.twin.gitlab, TWIN_REGISTRY: inventory.twin.registry } : {}),
   };
 }
 

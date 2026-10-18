@@ -40,6 +40,15 @@
     "$comment": "The lab bot: PDU outlets by label, the lab hosts' devices. Its token is a secret (BOT_API_TOKEN).",
     "url": "http://192.168.1.253:3978"
   },
+  "twin": {
+    "$comment": [
+      "Where the hardware twins live (hardware-twin group), as bfi-sw names its twin:",
+      "TWIN_GITLAB_URL and TWIN_REGISTRY. TWIN_GITLAB_TOKEN is a secret. A unit's",
+      "twinProject / twinConsole name its own twin once one is released (RQ-0049)."
+    ],
+    "gitlab": "http://gitlab.bcintr.int",
+    "registry": "gitlab.bcintr.int:5050"
+  },
   "units": {
     "zedboard": {
       "board": "zedboard",

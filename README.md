@@ -293,8 +293,13 @@ failed phase stops the run, and the run records the furthest phase it reached.
 The `twin` phase runs the design's ELF on the board's hardware twin (RQ-0045).
 The twin is a project of its own that releases an image, as
 `hardware-twin/bfi-sumilator` does for the BFI and bfi-sw runs its firmware
-on it; `boards/<board>.yaml` names it (`twin:` with `gitlab`, `project`,
-`registry` and the `console` file). `pnpm flow twin [design]` takes the twin's
+on it. As in bfi-sw, `.env` and the CI/CD variables name it
+(`TWIN_GITLAB_URL`, `TWIN_PROJECT`, `TWIN_REGISTRY`, and `TWIN_CONSOLE` for the
+console file; RQ-0049); a board file's `twin:` section (`gitlab`, `project`,
+`registry`, `console`) fills what they leave empty, so a project with several
+boards can name a twin per board. The twins' GitLab and registry are lab-wide
+(the inventory, instance-level CI/CD variables); `TWIN_PROJECT` is the
+project's. `pnpm flow twin [design]` takes the twin's
 latest release (`TWIN_TAG` pins one) with `TWIN_GITLAB_TOKEN`, runs
 `<image> --elf … --seconds … --out …` in Docker (this machine's, or a Linux
 host's over SSH through `TWIN_REMOTE_*`), checks `designs/<design>/test.yaml`

@@ -7,8 +7,10 @@ import { CommandError, PROJECT_ROOT, buildHost, runOnHost } from './vivado-host.
 // checked against designs/<design>/test.yaml.
 //
 // The twin is not built here. It is a project of its own (a hardware twin,
-// like hardware-twin/bfi-sumilator) that releases an image; the board file
-// names it. As bfi-sw does with its twin, every run takes the twin's latest
+// like hardware-twin/bfi-sumilator) that releases an image. As bfi-sw does,
+// the environment names it (TWIN_GITLAB_URL, TWIN_PROJECT, TWIN_REGISTRY, and
+// TWIN_CONSOLE here); a board file's twin: section fills what the environment
+// leaves empty (RQ-0049). As bfi-sw does with its twin, every run takes the twin's latest
 // release (TWIN_TAG pins one) and records which one it was. The image keeps
 // the contract bfi-simulator's has:
 //
@@ -76,7 +78,7 @@ export function parseTestYaml(text) {
 // The board file's twin section: which twin, and where its console lands
 // ------------------------------------------------------------
 
-export function parseTwinSection(boardText, boardName = 'board') {
+function boardTwinFields(boardText) {
   const lines = boardText.split(/\r?\n/);
   const start = lines.findIndex((line) => /^twin:\s*$/.test(line));
   if (start < 0) return undefined;
@@ -87,19 +89,36 @@ export function parseTwinSection(boardText, boardName = 'board') {
   }
   const text = block.join('\n');
   const value = (key) => new RegExp(`^\\s+${key}:\\s*"?([^"\\s#]+)`, 'm').exec(text)?.[1];
-  const twin = {
-    gitlab: value('gitlab'),
-    project: value('project'),
-    registry: value('registry'),
-    console: value('console'),
-  };
+  return { gitlab: value('gitlab'), project: value('project'), registry: value('registry'), console: value('console') };
+}
+
+const TWIN_ENV = { gitlab: 'TWIN_GITLAB_URL', project: 'TWIN_PROJECT', registry: 'TWIN_REGISTRY', console: 'TWIN_CONSOLE' };
+
+function checkTwin(twin, where) {
   for (const key of ['gitlab', 'project', 'registry']) {
-    if (!twin[key]) throw new CommandError(`boards/${boardName}.yaml twin.${key} is not set (the twin's GitLab, project and container registry).`);
+    if (!twin[key]) throw new CommandError(`The twin's ${key} is not set: ${where(key)} (the twin's GitLab, project and container registry).`);
   }
-  if (!/^https?:\/\/[A-Za-z0-9.:-]+\/?$/.test(twin.gitlab)) throw new CommandError(`boards/${boardName}.yaml twin.gitlab must be the GitLab's URL, e.g. http://gitlab.example.com.`);
-  if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+$/.test(twin.project)) throw new CommandError(`boards/${boardName}.yaml twin.project must be a project path, e.g. hardware-twin/<twin>.`);
-  if (twin.console && !/^[A-Za-z0-9._-]+$/.test(twin.console)) throw new CommandError(`boards/${boardName}.yaml twin.console must be a file name the twin writes under --out.`);
+  if (!/^https?:\/\/[A-Za-z0-9.:-]+\/?$/.test(twin.gitlab)) throw new CommandError(`${where('gitlab')} must be the GitLab's URL, e.g. http://gitlab.example.com.`);
+  if (!/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+$/.test(twin.project)) throw new CommandError(`${where('project')} must be a project path, e.g. hardware-twin/<twin>.`);
+  if (twin.console && !/^[A-Za-z0-9._-]+$/.test(twin.console)) throw new CommandError(`${where('console')} must be a file name the twin writes under --out.`);
   return twin;
+}
+
+// The board file's twin: section alone (the design check reads it so).
+export function parseTwinSection(boardText, boardName = 'board') {
+  const twin = boardTwinFields(boardText);
+  if (!twin) return undefined;
+  return checkTwin(twin, (key) => `boards/${boardName}.yaml twin.${key}`);
+}
+
+// The twin a run uses: each field from the environment, else from the board
+// file. Without a twin project in either there is no twin.
+export function twinSettings(env, boardText, boardName = 'board') {
+  const board = boardTwinFields(boardText) ?? {};
+  const twin = {};
+  for (const [key, name] of Object.entries(TWIN_ENV)) twin[key] = (env[name] ?? '').trim() || board[key];
+  if (!twin.project) return undefined;
+  return checkTwin(twin, (key) => `${TWIN_ENV[key]} (or boards/${boardName}.yaml twin.${key})`);
 }
 
 // ------------------------------------------------------------
@@ -197,9 +216,9 @@ function sha256(path) {
 
 export async function twinStage(settings, design, boardText, env) {
   const label = `\n▸ ${design.name}: twin`;
-  const twin = parseTwinSection(boardText, design.BOARD);
+  const twin = twinSettings(env, boardText, design.BOARD);
   if (!twin) {
-    console.log(`${label}: boards/${design.BOARD}.yaml names no twin yet, nothing to run it on`);
+    console.log(`${label}: no twin for ${design.BOARD} yet (TWIN_PROJECT, or twin: in boards/${design.BOARD}.yaml), nothing to run it on`);
     return { status: 'skipped' };
   }
   if (!design.VITIS) {
