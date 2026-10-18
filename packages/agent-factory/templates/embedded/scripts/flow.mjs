@@ -201,22 +201,49 @@ function vivadoStage(settings, design, stage, jobs) {
   }
 }
 
+// The longest path the Vitis BSP writes on a Windows host, part by part: its
+// gcc is not long-path aware, so past MAX_PATH (260) the BSP build fails
+// with "opening dependency file ... No such file or directory". The parts
+// after the design are Vitis' own; the BSP's build directory adds about 25
+// characters on top, so the estimate must stay at or below WINDOWS_PATH_BUDGET.
+// On 18 October 236 failed and 211 built.
+export const WINDOWS_PATH_BUDGET = 225;
+export function vitisPathParts(basePath, projectName, design, cpu) {
+  return [
+    ['base path (VIVADO_REMOTE_BASE_PATH)', `${basePath.replace(/[\\/]+$/, '')}/`],
+    ['host project (VIVADO_REMOTE_PROJECT_NAME)', `${projectName}/`],
+    ['design, twice', `out/${design}/vitis/${design}_platform/`],
+    ['processor and domain', `${cpu}/standalone_${cpu}/bsp/`],
+    ["Vitis' deepest BSP object", 'libsrc/coresightps_dcc/src/CMakeFiles/coresightps_dcc.dir/xcoresightpsdcc.c.obj.d'],
+  ];
+}
+
+export function checkVitisPath(settings, design) {
+  if (!settings.remote || settings.hostType !== 'windows') return;
+  const parts = vitisPathParts(settings.basePath, settings.projectName, design.name, design.CPU || 'ps7_cortexa9_0');
+  const length = parts.reduce((total, [, text]) => total + text.length, 0);
+  if (length <= WINDOWS_PATH_BUDGET) return;
+  const table = parts.map(([what, text]) => `  ${String(text.length).padStart(3)}  ${what}: ${text}`).join('\n');
+  throw new CommandError(`SW FAILED: on the Windows host the Vitis BSP would write paths of about ${length} characters (budget ${WINDOWS_PATH_BUDGET}, the limit is 260 and Vitis' gcc cannot pass it). Shorten one of the parts you choose:\n${table}`, 1);
+}
+
 function softwareStage(settings, design) {
+  checkVitisPath(settings, design);
   const vitis = requireTool(settings, 'vitis', 'VITIS_BIN');
-  console.log(`\n▸ ${design}: sw (Vitis on ${buildHost(settings)})`);
+  console.log(`\n▸ ${design.name}: sw (Vitis on ${buildHost(settings)})`);
   try {
-    runOnHost(settings, [vitis, '-s', `designs/${design}/sw/create_vitis.py`], {
-      directories: [`out/${design}`],
-      pulls: [`out/${design}/artifacts`],
-      description: `Vitis build of ${design}`,
+    runOnHost(settings, [vitis, '-s', `designs/${design.name}/sw/create_vitis.py`], {
+      directories: [`out/${design.name}`],
+      pulls: [`out/${design.name}/artifacts`],
+      description: `Vitis build of ${design.name}`,
     });
   } finally {
-    recordHost(design, settings);
+    recordHost(design.name, settings);
   }
   // `vitis -s` exits 0 even when the script fails: the ELF is the evidence.
-  const elf = join(PROJECT_ROOT, 'out', design, 'artifacts', `${design}_app.elf`);
+  const elf = join(PROJECT_ROOT, 'out', design.name, 'artifacts', `${design.name}_app.elf`);
   if (!existsSync(elf)) {
-    throw new CommandError(`SW FAILED: ${design} produced no out/${design}/artifacts/${design}_app.elf; see the Vitis output above.`, 1);
+    throw new CommandError(`SW FAILED: ${design.name} produced no out/${design.name}/artifacts/${design.name}_app.elf; see the Vitis output above.`, 1);
   }
 }
 
@@ -303,7 +330,7 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
         await twinStage(renode(), design, board(design), env);
         break;
       case 'sw':
-        if (design.VITIS) softwareStage(settings, design.name);
+        if (design.VITIS) softwareStage(settings, design);
         else console.log(`\n▸ ${design.name}: no software (VITIS is not set)`);
         break;
       case 'xsa':
@@ -313,7 +340,7 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
       case 'all':
         vivadoStage(settings, design.name, 'all', options.jobs);
         if (design.VITIS) {
-          softwareStage(settings, design.name);
+          softwareStage(settings, design);
           await twinStage(renode(), design, board(design), env);
         }
         break;

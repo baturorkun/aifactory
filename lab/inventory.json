@@ -12,11 +12,16 @@
     "group": "agentic"
   },
   "vivado": {
-    "$comment": "BUILDER: Windows 11, Vivado and Vitis 2025.2, reached over SSH.",
+    "$comment": [
+      "BUILDER: Windows 11, Vivado and Vitis 2025.2, reached over SSH.",
+      "basePath is C:\\ab, a junction to C:\\Users\\Batur\\aifactory-builds: Vitis' gcc",
+      "cannot pass the 260-character path limit, and the long folder name left too",
+      "little room for the BSP's objects (RQ-0048)."
+    ],
     "host": "192.168.1.3",
     "user": "batur",
     "hostType": "windows",
-    "basePath": "C:\\Users\\Batur\\aifactory-builds",
+    "basePath": "C:\\ab",
     "vivadoBin": "C:\\Xilinx\\2025.2\\Vivado\\bin\\vivado.bat",
     "vitisBin": "C:\\Xilinx\\2025.2\\Vitis\\bin\\vitis.bat",
     "version": "2025.2"

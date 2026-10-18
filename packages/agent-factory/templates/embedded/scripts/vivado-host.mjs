@@ -56,7 +56,7 @@ const value = (env, name) => (env[name] ?? '').trim();
 // wherever the tools run. `prefix` is VIVADO (Vivado and Vitis) or TWIN (the twin's Docker).
 export function hostSettings(env, prefix = 'VIVADO') {
   const name = (suffix) => `${prefix}_${suffix}`;
-  const what = prefix === 'TWIN' ? 'Docker host for the twin' : 'Vivado host';
+  const what = { TWIN: "twin's Docker host", BOARD: 'lab host' }[prefix] ?? 'Vivado host';
   const host = value(env, name('REMOTE_HOST'));
   const hostType = value(env, name('HOST_TYPE')) || (host ? 'linux' : process.platform === 'win32' ? 'windows' : 'linux');
   if (hostType !== 'windows' && hostType !== 'linux') {
@@ -123,6 +123,13 @@ function run(program, args, description, options = {}) {
   if (result.status !== 0) {
     throw new CommandError(`${description} failed with exit code ${result.status ?? 'unknown'}.`, result.status ?? 2);
   }
+}
+
+// scp's options. To a Windows host the SCP protocol (-O): with SFTP, the
+// default since OpenSSH 9, a Debian 12 client (the CI image) got every file
+// over 200 KiB back from Windows OpenSSH cut at exactly 204 800 bytes.
+export function scpOptions(settings) {
+  return [...(settings.hostType === 'windows' ? ['-O'] : []), ...sshOptions(settings, '-P')];
 }
 
 function sshOptions(settings, portFlag) {
@@ -240,7 +247,7 @@ export function runOnHost(settings, command, { pulls = [], directories = [], des
   let failure;
   try {
     createArchive(join(temporary, archiveName));
-    run('scp', [...sshOptions(settings, '-P'), join(temporary, archiveName), `${target}:${archiveName}`], 'Source upload');
+    run('scp', [...scpOptions(settings), join(temporary, archiveName), `${target}:${archiveName}`], 'Source upload');
     const entries = includedTopLevelEntries();
     const remoteCommand = settings.hostType === 'windows'
       ? powershellCommand(windowsScript(settings, archiveName, entries, command, directories))
@@ -255,7 +262,7 @@ export function runOnHost(settings, command, { pulls = [], directories = [], des
       const local = resolve(PROJECT_ROOT, pull);
       mkdirSync(dirname(local), { recursive: true });
       rmSync(local, { recursive: true, force: true });
-      const result = spawnSync('scp', [...sshOptions(settings, '-P'), '-r', `${target}:${remoteRoot}/${pull}`, local], { stdio: 'pipe' });
+      const result = spawnSync('scp', [...scpOptions(settings), '-r', `${target}:${remoteRoot}/${pull}`, local], { stdio: 'pipe' });
       if (result.status === 0) console.log(`Brought back ${pull}`);
       else if (!failure) throw new CommandError(`Could not bring back ${pull}: ${String(result.stderr).trim()}`);
     }

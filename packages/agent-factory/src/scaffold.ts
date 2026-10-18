@@ -154,6 +154,8 @@ function boardJobs(projectName: string): string[] {
     '  tags:',
     '    - linux',
     '  resource_group: "lab-board"',
+    '  variables:',
+    `    BOARD_REMOTE_PROJECT_NAME: "$CI_PROJECT_NAME-board-$CI_COMMIT_REF_SLUG"`,
     '  needs:',
     '    - job: embedded_build',
     '      artifacts: true',
