@@ -1,0 +1,35 @@
+{
+  "runId": "20261018134104-RQ-0049",
+  "requirementId": "RQ-0049",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261018134104-RQ-0049/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-18T13:41:04.013Z",
+  "updatedAt": "2026-10-18T13:41:35.618Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-18T13:41:09.086Z",
+      "finishedAt": "2026-10-18T13:41:35.618Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "lab/inventory.json",
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/lab-inventory.ts",
+    "requirements/RQ-0049-embedded-twin-settings-from-env-as-bfi-sw-twin-gitlab-url-twin-project-twin-registry.md"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
