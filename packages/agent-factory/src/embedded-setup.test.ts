@@ -151,6 +151,7 @@ test('ci-variables leaves out what the lab provides at instance level, but not a
   assert.ok(inventory, 'the lab inventory is present');
   const labWide = labWideCiValues(inventory);
   assert.equal(Object.keys(labWide).length, 14);
+  assert.equal(labWide.TWIN_GITLAB_URL, undefined, 'the twin is the project\'s');
   const env = {
     VIVADO_REMOTE_HOST: labWide.VIVADO_REMOTE_HOST, VIVADO_REMOTE_BASE_PATH: 'D:\\fw', XSDB_BIN: labWide.XSDB_BIN,
     BOARD_JTAG_CABLE: '210248B849E0', BOT_API_TOKEN: 'secret-token-1', TWIN_GITLAB_TOKEN: 'secret-token-2',

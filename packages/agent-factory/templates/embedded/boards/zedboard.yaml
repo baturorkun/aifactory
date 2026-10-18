@@ -24,8 +24,10 @@ lab:
   programmer: xsdb
 # The board's hardware twin: a project of its own that releases an image (as
 # hardware-twin/bfi-sumilator does for the BFI). The twin phase runs the
-# design's ELF on its latest release. No ZedBoard twin exists yet; when it is
-# released, name it here:
+# design's ELF on its latest release. No ZedBoard twin exists yet. As in
+# bfi-sw, it is named in .env / CI/CD variables (TWIN_GITLAB_URL,
+# TWIN_PROJECT, TWIN_REGISTRY, TWIN_CONSOLE); a project with several boards
+# can name a twin per board here instead, and the environment still wins:
 #
 # twin:
 #   gitlab: http://gitlab.example.com        # the twin project's GitLab

@@ -1,0 +1,36 @@
+# The ZedBoard (Avnet/Digilent, Zynq-7020). A new board copies this file.
+# Read by the flow (tool, tool_version, part) and by the design check; the
+# processor ports, console and programmer are for the board phase that follows.
+vendor: amd
+tool: vivado
+tool_version: "2025.2"
+part: xc7z020clg484-1
+board_part: "*:zedboard:*"   # without the board files, processing_system7's own ZedBoard preset is used
+processor:
+  type: zynq7000
+  cpu: ps7_cortexa9_0
+  preset: ZedBoard
+  ports:                      # role port -> physical port
+    ctrl: { phys: M_AXI_GP0, protocol: axi4, width: 32, dir: master }
+    mem: { phys: S_AXI_HP0, protocol: axi4, width: 64, dir: slave }
+    fabric_clk0: { phys: FCLK_CLK0, max_mhz: 250 }
+    fabric_reset0: { phys: FCLK_RESET0_N, active: low }
+  console: { uart: ps7_uart_1, baud: 115200 }
+clocks:
+  gclk: { pin: Y9, mhz: 100, std: LVCMOS33 }
+pins:
+  led[0:7]: { loc: [T22, T21, U22, U21, V22, W22, U19, U14], std: LVCMOS33 }
+lab:
+  programmer: xsdb
+# The board's hardware twin: a project of its own that releases an image (as
+# hardware-twin/bfi-sumilator does for the BFI). The twin phase runs the
+# design's ELF on its latest release. No ZedBoard twin exists yet. As in
+# bfi-sw, it is named in .env / CI/CD variables (TWIN_GITLAB_URL,
+# TWIN_PROJECT, TWIN_REGISTRY, TWIN_CONSOLE); a project with several boards
+# can name a twin per board here instead, and the environment still wins:
+#
+# twin:
+#   gitlab: http://gitlab.example.com        # the twin project's GitLab
+#   project: hardware-twin/zedboard-twin     # its path
+#   registry: gitlab.example.com:5050        # its container registry
+#   console: uart1.log                       # the file under --out the console lands in

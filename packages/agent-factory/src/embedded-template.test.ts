@@ -347,6 +347,7 @@ async function twinModule(root: string) {
   return import(pathToFileURL(join(root, 'scripts/twin.mjs')).href) as Promise<{
     parseTestYaml: (text: string) => { timeout_s: number; expect: string[]; fail_on: string[]; summary: Record<string, { min?: number; max?: number; equals?: string }> };
     parseTwinSection: (text: string, board?: string) => { gitlab: string; project: string; registry: string; console?: string } | undefined;
+    twinSettings: (env: Record<string, string>, text: string, board?: string) => { gitlab: string; project: string; registry: string; console?: string } | undefined;
     judgeRun: (run: { exitStatus: number; summary: unknown; consoleText?: string }, test: unknown) => { status: string; why: string | null; summary_checks: Record<string, { ok: boolean }> };
     runScript: () => string;
   }>;
@@ -365,7 +366,20 @@ test('the twin reads the board\'s twin and test.yaml, and judges a run as bfi-sw
     assert.deepEqual(twin.parseTwinSection(BFI_BOARD, 'bfi'), {
       gitlab: 'http://gitlab.bcintr.int', project: 'hardware-twin/bfi-sumilator', registry: 'gitlab.bcintr.int:5050', console: 'display.bin',
     });
-    assert.throws(() => twin.parseTwinSection('twin:\n  gitlab: http://g\n', 'x'), /twin\.project is not set/);
+    assert.throws(() => twin.parseTwinSection('twin:\n  gitlab: http://g\n', 'x'), /twin\.project/);
+
+    // As bfi-sw: the environment names the twin; the board file fills the rest.
+    const zed = project.read('boards/zedboard.yaml');
+    assert.equal(twin.twinSettings({}, zed, 'zedboard'), undefined, 'no twin project anywhere');
+    const bfiEnv = { TWIN_GITLAB_URL: 'http://gitlab.bcintr.int', TWIN_PROJECT: 'hardware-twin/bfi-sumilator', TWIN_REGISTRY: 'gitlab.bcintr.int:5050' };
+    assert.deepEqual(twin.twinSettings(bfiEnv, zed, 'zedboard'), {
+      gitlab: 'http://gitlab.bcintr.int', project: 'hardware-twin/bfi-sumilator', registry: 'gitlab.bcintr.int:5050', console: undefined,
+    });
+    assert.deepEqual(twin.twinSettings({ TWIN_PROJECT: 'hardware-twin/other', TWIN_CONSOLE: '' }, BFI_BOARD, 'bfi'), {
+      gitlab: 'http://gitlab.bcintr.int', project: 'hardware-twin/other', registry: 'gitlab.bcintr.int:5050', console: 'display.bin',
+    }, 'the environment wins field by field');
+    assert.deepEqual(twin.twinSettings({}, BFI_BOARD, 'bfi'), twin.parseTwinSection(BFI_BOARD, 'bfi'), 'the board file alone as before');
+    assert.throws(() => twin.twinSettings({ TWIN_PROJECT: 'hardware-twin/z' }, zed, 'zedboard'), /TWIN_GITLAB_URL \(or boards\/zedboard\.yaml twin\.gitlab\)/);
 
     const hello = twin.parseTestYaml(project.read('designs/hello_ps/test.yaml'));
     assert.deepEqual(hello.expect, ['hello_ps: Hello from the Zynq PS']);
@@ -400,8 +414,8 @@ test('the twin stage says when there is nothing to run, and names what is missin
   try {
     let result = project.flow('twin');
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /hello_ps: twin: boards\/zedboard\.yaml names no twin yet/);
-    assert.match(result.stdout, /led_counter: twin: boards\/zedboard\.yaml names no twin yet/);
+    assert.match(result.stdout, /hello_ps: twin: no twin for zedboard yet \(TWIN_PROJECT/);
+    assert.match(result.stdout, /led_counter: twin: no twin for zedboard yet \(TWIN_PROJECT/);
 
     writeFileSync(join(project.root, 'boards/zedboard.yaml'), project.read('boards/zedboard.yaml') + BFI_BOARD.split('\n').slice(4).join('\n'));
     result = project.flow('twin', 'led_counter');
