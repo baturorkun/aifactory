@@ -1,0 +1,38 @@
+{
+  "runId": "20261018132440-RQ-0049",
+  "requirementId": "RQ-0049",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261018132440-RQ-0049/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-18T13:24:40.549Z",
+  "updatedAt": "2026-10-18T13:27:23.498Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-18T13:24:43.794Z",
+      "finishedAt": "2026-10-18T13:27:23.497Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "lab/inventory.json",
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/lab-inventory.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/templates/embedded/boards/zedboard.yaml",
+    "packages/agent-factory/templates/embedded/scripts/twin.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
