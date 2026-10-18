@@ -35,10 +35,12 @@ set like every other host setting (.env locally, CI/CD variables in CI).
 - `.env.example` of an embedded project lists the four settings.
 - `lab/inventory.json` gains the lab-wide twin GitLab and registry
   (`gitlab.bcintr.int`, `gitlab.bcintr.int:5050`), and a unit may name its
-  twin project and console. A new project's `.env` takes them; the GitLab and
-  registry are lab-wide values `factory ci-variables` leaves out, and they are
-  instance-level CI/CD variables on both lab GitLabs, next to
-  `TWIN_GITLAB_TOKEN`. `TWIN_PROJECT` is the project's own.
+  twin project and console. A new project's `.env` takes them. All three
+  name one twin and are the project's, as in bfi-sw: `factory ci-variables`
+  writes them to the project, and they are not instance-level CI/CD
+  variables. Instance level holds only what no project changes (Batur, 18
+  October); one there would also override a project's own `.gitlab-ci.yml`
+  value.
 - The generated AGENTS.md and the board file's comment say where the twin is
   set.
 
@@ -51,5 +53,5 @@ set like every other host setting (.env locally, CI/CD variables in CI).
   it behaves as before.
 - With no twin project anywhere the stage skips and names `TWIN_PROJECT`.
 - A project generated from the inventory has `TWIN_GITLAB_URL` and
-  `TWIN_REGISTRY` in `.env`; `factory ci-variables` lists them as lab-wide.
+  `TWIN_REGISTRY` in `.env`; `factory ci-variables` writes them to the project.
 - embedded1, updated with `factory template update`, keeps passing its gates.

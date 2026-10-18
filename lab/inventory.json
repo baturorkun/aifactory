@@ -42,9 +42,10 @@
   },
   "twin": {
     "$comment": [
-      "Where the hardware twins live (hardware-twin group), as bfi-sw names its twin:",
-      "TWIN_GITLAB_URL and TWIN_REGISTRY. TWIN_GITLAB_TOKEN is a secret. A unit's",
-      "twinProject / twinConsole name its own twin once one is released (RQ-0049)."
+      "Where the hardware twins live today (hardware-twin group): a new project's .env",
+      "takes them as TWIN_GITLAB_URL and TWIN_REGISTRY. They are the project's settings,",
+      "as in bfi-sw (with TWIN_PROJECT they name one twin), not lab-wide CI/CD variables.",
+      "A unit's twinProject / twinConsole name its own twin once one is released (RQ-0049)."
     ],
     "gitlab": "http://gitlab.bcintr.int",
     "registry": "gitlab.bcintr.int:5050"

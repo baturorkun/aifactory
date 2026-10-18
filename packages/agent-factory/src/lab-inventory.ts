@@ -120,7 +120,9 @@ export function embeddedEnvValues(
 
 // The settings every project of the lab shares, as they stand in the lab
 // GitLabs' instance-level CI/CD variables (RQ-0048): the Vivado host, the lab
-// host with its hw_server and xsdb, the bot, and the twins' GitLab and registry. Per-unit and per-person values
+// host with its hw_server and xsdb, and the bot. The twin is not among them:
+// its GitLab, project and registry name one twin together and are the
+// project's, as in bfi-sw (RQ-0049). Per-unit and per-person values
 // are not among them.
 export function labWideCiValues(inventory: LabInventory): Record<string, string> {
   return {
@@ -138,7 +140,6 @@ export function labWideCiValues(inventory: LabInventory): Record<string, string>
     BOARD_HW_SERVER: inventory.lab.hwServer,
     XSDB_BIN: inventory.lab.xsdbBin,
     ...(inventory.bot ? { BOT_API_URL: inventory.bot.url } : {}),
-    ...(inventory.twin ? { TWIN_GITLAB_URL: inventory.twin.gitlab, TWIN_REGISTRY: inventory.twin.registry } : {}),
   };
 }
 
