@@ -330,7 +330,11 @@ brought up to date with `factory template update` (it lists the changes;
 lacks (such as `test.yaml`) added; design sources, board files, `.env` and
 requirements are left alone. `factory ci-variables --write` puts the host and
 board settings of `.env` into the GitLab project's CI/CD variables
-(`--with-secrets` adds the tokens, masked). Enabling a runner for a new
+(`--with-secrets` adds the tokens, masked). The lab's shared settings
+(Vivado host, lab host, hw_server, xsdb, bot, the bot and twin tokens and the
+CI SSH keys) are instance-level variables on both lab GitLabs, so it leaves out
+every value equal to the lab inventory's and the lab-wide tokens, and writes
+only what is the project's own (the board unit, or a host that differs). Enabling a runner for a new
 project is done by hand in GitLab (Settings → CI/CD → Runners): a project
 token cannot enable a runner that belongs to other projects. When both GitLab
 and GitHub settings are complete, the factory uses the platform the `origin`

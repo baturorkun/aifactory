@@ -112,6 +112,29 @@ export function embeddedEnvValues(
   };
 }
 
+// The settings every project of the lab shares, as they stand in the lab
+// GitLabs' instance-level CI/CD variables (RQ-0048): the Vivado host, the lab
+// host with its hw_server and xsdb, and the bot. Per-unit and per-person values
+// are not among them.
+export function labWideCiValues(inventory: LabInventory): Record<string, string> {
+  return {
+    VIVADO_HOST_TYPE: inventory.vivado.hostType,
+    VIVADO_REMOTE_HOST: inventory.vivado.host,
+    VIVADO_REMOTE_USER: inventory.vivado.user,
+    VIVADO_REMOTE_PORT: '22',
+    VIVADO_REMOTE_BASE_PATH: inventory.vivado.basePath,
+    VIVADO_BIN: inventory.vivado.vivadoBin,
+    VITIS_BIN: inventory.vivado.vitisBin,
+    BOARD_HOST_TYPE: inventory.lab.hostType,
+    BOARD_REMOTE_HOST: inventory.lab.host,
+    BOARD_REMOTE_USER: inventory.lab.user,
+    BOARD_REMOTE_BASE_PATH: inventory.lab.boardBasePath,
+    BOARD_HW_SERVER: inventory.lab.hwServer,
+    XSDB_BIN: inventory.lab.xsdbBin,
+    ...(inventory.bot ? { BOT_API_URL: inventory.bot.url } : {}),
+  };
+}
+
 // .env.example with the given values filled in: each `NAME=` line takes its
 // value, everything else (comments, other settings) stays as it is.
 export function fillEnv(example: string, values: Record<string, string>): string {

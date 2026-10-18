@@ -6,10 +6,11 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { ciVariables, readDotEnv, writeCiVariables } from './ci-variables';
+import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
 import { FactoryConfigSchema } from './config';
-import { LAB_INVENTORY_PATH, embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
+import { LAB_INVENTORY_PATH, embeddedEnvValues, fillEnv, labWideCiValues, loadLabInventory } from './lab-inventory';
 import { resolveRepositoryPlatform } from './repository-platform/resolve';
 import { createTargetProject } from './scaffold';
 import { updateEmbeddedProject } from './template-update';
@@ -21,6 +22,8 @@ test('the lab inventory describes the lab as found on 17 October, and holds no s
   assert.ok(inventory, 'lab/inventory.json is there');
   assert.equal(inventory.vivado.host, '192.168.1.3');
   assert.equal(inventory.vivado.version, '2025.2');
+  // The junction that keeps Vitis' BSP paths under the Windows limit (RQ-0048).
+  assert.equal(inventory.vivado.basePath, 'C:\\ab');
   assert.equal(inventory.lab.hwServer, '192.168.1.2:3121');
   assert.deepEqual(inventory.units.zedboard, {
     board: 'zedboard',
@@ -141,4 +144,53 @@ test('ci-variables takes the host and board settings, leaves secrets out unless 
   assert.equal(done.BOT_API_TOKEN, 'created');
   assert.ok(calls.some((call) => call.startsWith('POST  ') && call.includes('key=BOT_API_TOKEN') && call.includes('masked=true')));
   assert.ok(calls.some((call) => call.startsWith('PUT /VIVADO_REMOTE_HOST') && call.includes('masked=false') && call.includes('raw=true')));
+});
+
+test('ci-variables leaves out what the lab provides at instance level, but not a project value that differs', () => {
+  const inventory = loadLabInventory();
+  assert.ok(inventory, 'the lab inventory is present');
+  const labWide = labWideCiValues(inventory);
+  assert.equal(Object.keys(labWide).length, 14);
+  const env = {
+    VIVADO_REMOTE_HOST: labWide.VIVADO_REMOTE_HOST, VIVADO_REMOTE_BASE_PATH: 'D:\\fw', XSDB_BIN: labWide.XSDB_BIN,
+    BOARD_JTAG_CABLE: '210248B849E0', BOT_API_TOKEN: 'secret-token-1', TWIN_GITLAB_TOKEN: 'secret-token-2',
+  };
+  assert.deepEqual(ciVariables(env, true, labWide).map((variable) => variable.key), ['BOARD_JTAG_CABLE', 'VIVADO_REMOTE_BASE_PATH']);
+  assert.deepEqual(labWideKeys(env, labWide), ['BOT_API_TOKEN', 'TWIN_GITLAB_TOKEN', 'VIVADO_REMOTE_HOST', 'XSDB_BIN']);
+  assert.deepEqual(ciVariables(env, true).length, 6, 'without an inventory everything is written');
+});
+
+test('on a Windows host files come back whole, the Vitis path is checked first, and the board job names its host project', async () => {
+  const parent = temp();
+  try {
+    const { projectRoot } = createTargetProject('fw', { dir: parent, template: 'embedded', labInventoryPath: join(parent, 'none.json') });
+    const host = await import(pathToFileURL(join(projectRoot, 'scripts/vivado-host.mjs')).href) as { scpOptions: (s: unknown) => string[] };
+    const settings = { hostType: 'windows', port: '22', identityFile: '', knownHosts: '' };
+    // scp's SFTP mode cut every file over 200 KiB at 204 800 bytes from Windows OpenSSH.
+    assert.equal(host.scpOptions(settings)[0], '-O');
+    assert.ok(!host.scpOptions({ ...settings, hostType: 'linux' }).includes('-O'));
+
+    const flow = await import(pathToFileURL(join(projectRoot, 'scripts/flow.mjs')).href) as {
+      checkVitisPath: (s: unknown, d: unknown) => void;
+    };
+    const windows = { remote: true, hostType: 'windows' };
+    const design = { name: 'hello_ps', CPU: 'ps7_cortexa9_0' };
+    // The cases measured on 18 October: 236 failed in the BSP build, 211 and 210 built.
+    assert.throws(
+      () => flow.checkVitisPath({ ...windows, basePath: 'C:\\Users\\Batur\\aifactory-builds', projectName: 'embedded1-embedded_build-factory-rq-0001' }, design),
+      /about 236 characters[\s\S]*41 {2}host project \(VIVADO_REMOTE_PROJECT_NAME\)/,
+    );
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\Users\\Batur\\aifactory-builds', projectName: 'embedded1-batur' }, design);
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-embedded_build-factory-rq-0001' }, design);
+    flow.checkVitisPath({ remote: true, hostType: 'linux', basePath: '/very/long/'.repeat(30), projectName: 'x' }, design);
+
+    const ci = readFileSync(join(projectRoot, '.gitlab-ci.yml'), 'utf8');
+    for (const name of ['embedded_board', 'embedded_board_on_demand']) {
+      const start = ci.indexOf(`\n${name}:`);
+      const job = ci.slice(start, ci.indexOf('\n\n', start + 1));
+      assert.match(job, /BOARD_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-board-\$CI_COMMIT_REF_SLUG"/, name);
+    }
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
 });

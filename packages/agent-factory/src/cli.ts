@@ -64,7 +64,8 @@ import {
 import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
 import { updateEmbeddedProject } from './template-update';
-import { ciVariables, readDotEnv, writeCiVariables } from './ci-variables';
+import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
+import { labWideCiValues, loadLabInventory } from './lab-inventory';
 import { resolveRepositoryPlatform } from './repository-platform/resolve';
 
 // What each embedded phase does, as the checkbox list shows it.
@@ -1011,7 +1012,12 @@ program
     try {
       const config = loadConfig();
       const root = resolve(config.targetProject.root ?? '.');
-      const variables = ciVariables(readDotEnv(root), opts.withSecrets);
+      const env = readDotEnv(root);
+      const inventory = loadLabInventory();
+      const labWide = inventory ? labWideCiValues(inventory) : {};
+      const variables = ciVariables(env, opts.withSecrets, labWide);
+      const shared = labWideKeys(env, labWide);
+      if (shared.length > 0) console.log(chalk.dim(`  lab-wide, left out: ${shared.join(', ')}`));
       if (variables.length === 0) {
         console.log('No host or board setting in .env to write.');
         return;
