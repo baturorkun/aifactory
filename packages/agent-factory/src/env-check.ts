@@ -144,10 +144,13 @@ export function stageHosts(values: Map<string, string>): string[] {
     return `ssh ${port && port !== '22' ? `-p ${port} ` : ''}${user}@${host}`;
   };
   const hosts: string[] = [];
+  const access = (prefix: string) => (values.get(`${prefix}_ACCESS`) || 'ssh').toLowerCase();
   const vivado = login('VIVADO');
-  if (vivado) hosts.push(`${vivado.padEnd(34)} sim, build, sw (Vivado/Vitis host; your own account, key in administrators_authorized_keys when it is an administrator)`);
-  const board = login('BOARD');
-  if (board) hosts.push(`${board.padEnd(34)} board (lab host; only when you run the board phase yourself)`);
+  if (vivado && access('VIVADO') === 'bot') hosts.push(`${'bot'.padEnd(34)} sim, build, sw (the bot's agent ${values.get('VIVADO_BOT_AGENT') || '<agent>'} on the builder; no SSH, no key)`);
+  else if (vivado) hosts.push(`${vivado.padEnd(34)} sim, build, sw (Vivado/Vitis host; your own account, key in administrators_authorized_keys when it is an administrator)`);
+  const board = access('BOARD') === 'bot' ? null : login('BOARD');
+  if (access('BOARD') === 'bot') hosts.push(`${'bot'.padEnd(34)} board (power, console ${values.get('BOARD_CONSOLE') || '<agent/COM>'} through the bot, JTAG via hw_server; no SSH, no key)`);
+  else if (board) hosts.push(`${board.padEnd(34)} board (lab host; only when you run the board phase yourself)`);
   const twin = login('TWIN');
   if (twin && twin !== board) hosts.push(`${twin.padEnd(34)} twin (Docker host; only when you run the twin phase yourself)`);
   else if (twin) hosts[hosts.length - 1] = hosts[hosts.length - 1].replace('board (lab host;', 'board, twin (lab host;');

@@ -337,9 +337,13 @@ reached as its own user (`root`). A developer's public key goes on the
 Windows build host into `C:\ProgramData\ssh\administrators_authorized_keys`
 (an administrator) or `C:\Users\<you>\.ssh\authorized_keys` (not one);
 `ssh-copy-id` cannot write either on Windows, so it is added by hand or with
-one PowerShell line over a password login (`.env.example` shows it). On the
-lab host the key goes into root's `authorized_keys`, by the lab admin.
-`factory env-check` ends with the two logins to try. A project made from an older template is
+one PowerShell line over a password login (`.env.example` shows it). That is
+`VIVADO_ACCESS=ssh`; with `bot` the lab bot's Windows agent on the builder
+runs the tools and no key is needed. The lab host is reached as `root` only
+with `BOARD_ACCESS=ssh` (the lab admin and CI); developers use `bot`: power
+and the console (the bot's portmap bridge, `BOARD_CONSOLE`) through the bot,
+JTAG from the builder's xsdb to the hw_server. Both `bot` modes arrive with
+RQ-0055. `factory env-check` ends with the logins to try. A project made from an older template is
 brought up to date with `factory template update` (it lists the changes;
 `--write` applies them): the scripts, the flow, the CI file, `.env.example` and
 `AGENTS.md` are replaced, the gates and package scripts merged, files a design
