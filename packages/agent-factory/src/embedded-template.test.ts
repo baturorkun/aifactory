@@ -153,7 +153,7 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
   const project = scaffold();
   try {
     const ci = project.read('.gitlab-ci.yml');
-    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- check\n {2}- sim\n {2}- build\n {2}- twin\n {2}- board\n/m);
+    assert.match(ci, /^stages:\n {2}- ai_factory\n {2}- check\n {2}- sim\n {2}- build\n {2}- standard\n {2}- twin\n {2}- board\n/m);
     const job = (name: string) => {
       const start = ci.indexOf(`\n${name}:`);
       assert.ok(start >= 0, `${name} exists`);

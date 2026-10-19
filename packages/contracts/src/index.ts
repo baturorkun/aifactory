@@ -232,6 +232,9 @@ export const GateResultsSchema = z.object({
   // The application on the digital twin (RQ-0045) and on the real board (RQ-0046).
   twinTest: GateResultSchema.optional(),
   boardTest: GateResultSchema.optional(),
+  // The project's C against its coding standard (RQ-0053), after the build
+  // that leaves the compile database; skipped when the project has none.
+  codingStandard: GateResultSchema.optional(),
 });
 export type GateResults = z.infer<typeof GateResultsSchema>;
 
@@ -267,7 +270,7 @@ export const DEFAULT_EMBEDDED_PHASES: readonly EmbeddedPhase[] = EMBEDDED_PHASES
 export const EMBEDDED_PHASE_GATES: Readonly<Record<EmbeddedPhase, readonly (keyof GateResults)[]>> = {
   spec: ['designCheck'],
   sim: ['hdlSim'],
-  build: ['fpgaBuild', 'firmwareBuild'],
+  build: ['fpgaBuild', 'firmwareBuild', 'codingStandard'],
   twin: ['twinTest'],
   board: ['boardTest'],
 };
@@ -294,7 +297,8 @@ export function embeddedPhaseReached(results: Partial<GateResults>): EmbeddedPha
     const statuses = EMBEDDED_PHASE_GATES[phase].map((gate) => results[gate]);
     if (statuses.some((status) => status === 'failed' || status === 'pending')) break;
     if (statuses.every((status) => status === 'skipped' || status === undefined)) continue;
-    if (statuses.every((status) => status === 'passed' || status === 'skipped')) reached = phase;
+    // A gate without a result (a project without that gate's command, RQ-0053) does not hold the phase back.
+    if (statuses.every((status) => status === 'passed' || status === 'skipped' || status === undefined)) reached = phase;
   }
   return reached;
 }

@@ -95,6 +95,7 @@ export function codingStandardGuidelines(record: CodingStandard): string[] {
     `- This project follows the coding standard ${describeCodingStandard(record)}. \`coding-standard/index.md\` lists every rule in force (id, class, groups, one line); the full text of a rule, with its rationale and example, is in the RAG source \`${CODING_STANDARDS_SOURCE}\` (ask for the rule by id, e.g. "C-045"). The other groups of the standard are not in force here and are left out of retrieval.`,
     '- Write to the rules from the first line. Before finishing a requirement, read `coding-standard/index.md` once and check the code against the rules its change touches.',
     `- A rule that cannot be kept is recorded in \`coding-standard/waivers.yaml\` with every field (rule_id, file, line, rationale, reviewer, review_date, waiver_id, validity)${record.profile === 'dal-a' ? '; under profile dal-a every rule is mandatory and a waiver needs its reviewer and review date before the gate accepts it' : ''}. Never silence a finding with a suppression comment or a tool flag.`,
+    '- `pnpm standard` (the `codingStandard` gate, run after the build) checks the code with cppcheck\'s MISRA addon and the lexical checks and writes `out/coding-standard/report.md`; a rule the index marks `manual review` is checked by a reviewer, not a tool. Run it before `handoff-finish`; an unwaived violation fails the gate.',
     '- Changing the groups or the profile is a requirement of its own: it changes what the gate enforces.',
     '',
   ];

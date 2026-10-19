@@ -25,6 +25,9 @@ export type Rule = {
   /** The MISRA C rules the rationale cites, "10.3". */
   misra: string[];
   groups: string[];
+  /** How the rule is checked (RQ-0053): cppcheck for a MISRA rule, a named
+   * lexical check from the standard's checks.json, else manual. */
+  check: { tool: 'cppcheck'; id: string } | { tool: 'lexical'; id: string } | { tool: 'manual' };
 };
 
 export type Standard = {
@@ -34,7 +37,7 @@ export type Standard = {
   /** What the import had to correct in the document, for its next revision. */
   warnings: string[];
   groups: Record<string, string[]>;
-  counts: { rules: number; byGroup: Record<string, number>; withMisra: number };
+  counts: { rules: number; byGroup: Record<string, number>; withMisra: number; byCheck: { cppcheck: number; lexical: number; manual: number } };
   rules: Rule[];
 };
 
@@ -83,6 +86,7 @@ export function parseRules(items: BodyItem[]): ParsedRules {
       notes: field(next.rows, 'Notes'),
       misra: [...new Set([...rationale.matchAll(CITED)].map((match) => match[1]))],
       groups: [],
+      check: { tool: 'manual' },
     });
     const sequence = SEQUENCE.exec(item.text);
     sequences.push(sequence ? Number(sequence[1]) : null);
@@ -141,6 +145,20 @@ export function expandRanges(spec: string, ids: string[]): string[] {
   return ids.filter((id) => chosen.has(id));
 }
 
+// checks.json beside the generated files: {"lexical": {"C-128": "no-tabs"}}.
+// A rule citing a MISRA rule is cppcheck's; one named here is a lexical
+// check of scripts/coding-standard.mjs; the rest stay manual.
+export function assignChecks(rules: Rule[], lexical: Record<string, string>): void {
+  const ids = new Set(rules.map((rule) => rule.id));
+  const unknown = Object.keys(lexical).filter((id) => !ids.has(id));
+  if (unknown.length > 0) throw new Error(`checks.json names rule ${unknown.join(', ')}, which the document has not.`);
+  for (const rule of rules) {
+    if (rule.misra.length > 0) rule.check = { tool: 'cppcheck', id: rule.misra.map((number) => `misra-c2012-${number}`).join(', ') };
+    else if (lexical[rule.id]) rule.check = { tool: 'lexical', id: lexical[rule.id] };
+    else rule.check = { tool: 'manual' };
+  }
+}
+
 export function assignGroups(rules: Rule[], groups: GroupSpec[]): Record<string, string[]> {
   if (groups.length === 0) throw new Error('At least one --group <name>=<ranges> is needed.');
   const ids = rules.map((rule) => rule.id);
@@ -179,7 +197,7 @@ export function renderIndex(standard: Pick<Standard, 'id' | 'version'>, rules: R
   return [
     `# ${standard.id} ${standard.version} — rule index (${heading}, ${rules.length} rules)`,
     '',
-    ...rules.map((rule) => `- ${rule.id} — ${rule.class} — ${rule.groups.join(', ')} — ${line(rule.description)}`),
+    ...rules.map((rule) => `- ${rule.id} — ${rule.class} — ${rule.groups.join(', ')} — ${rule.check.tool === 'manual' ? 'manual review' : rule.check.tool} — ${line(rule.description)}`),
     '',
   ].join('\n');
 }
@@ -194,6 +212,10 @@ export function importStandard(options: ImportOptions): { standard: Standard; ou
   const { rules, warnings } = parseRules(bodyItems(documentXml(document)));
   if (rules.length === 0) throw new Error('No rule table found: a rule is a caption "… | C-001 | Class | …" over a table with a Description row.');
   const groups = assignGroups(rules, options.groups);
+  const outDir = resolve(options.outDir ?? join(STANDARDS_DIRECTORY, options.id));
+  const checksPath = join(outDir, 'checks.json');
+  const checks = existsSync(checksPath) ? (JSON.parse(readFileSync(checksPath, 'utf8')) as { lexical?: Record<string, string> }) : {};
+  assignChecks(rules, checks.lexical ?? {});
   const bytes = readFileSync(document);
   const standard: Standard = {
     id: options.id,
@@ -205,10 +227,14 @@ export function importStandard(options: ImportOptions): { standard: Standard; ou
       rules: rules.length,
       byGroup: Object.fromEntries(Object.entries(groups).map(([name, ids]) => [name, ids.length])),
       withMisra: rules.filter((rule) => rule.misra.length > 0).length,
+      byCheck: {
+        cppcheck: rules.filter((rule) => rule.check.tool === 'cppcheck').length,
+        lexical: rules.filter((rule) => rule.check.tool === 'lexical').length,
+        manual: rules.filter((rule) => rule.check.tool === 'manual').length,
+      },
     },
     rules,
   };
-  const outDir = resolve(options.outDir ?? join(STANDARDS_DIRECTORY, options.id));
   mkdirSync(outDir, { recursive: true });
   const files: string[] = [];
   const write = (name: string, content: string) => {

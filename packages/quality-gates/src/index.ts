@@ -48,6 +48,8 @@ export interface TargetGateOptions {
     firmwareBuild?: string;
     twinTest?: string;
     boardTest?: string;
+    // The coding standard check (RQ-0053): `pnpm standard` when the project follows one.
+    codingStandard?: string;
   };
   /**
    * Set for a hardware-twin run. The phase decides which gates are meaningful:
@@ -438,7 +440,7 @@ function embeddedGates(
         reports.push({ gate, status: 'skipped', output: `Not run: the ${failedAt} phase failed.`, durationMs: 0 });
         continue;
       }
-      const command = commands[gate as 'designCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest' | 'boardTest'];
+      const command = commands[gate as 'designCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest' | 'boardTest' | 'codingStandard'];
       const report = commandGate(gate, command, targetRoot, undefined, timeoutMs);
       reports.push(report);
       if (report.status === 'failed') failedAt = phase;
@@ -464,6 +466,11 @@ export async function runAllGates(
     ...(targetRoot
       ? [targetBuildCheck(targetRoot, target?.commands?.build, target?.commandTimeoutMs)]
       : [commandGate('build', undefined, projectRoot)]),
+    // The coding standard needs the compile database the build left (RQ-0053);
+    // a project without a standard has no command and is skipped with the reason.
+    ...(targetRoot && target?.commands?.codingStandard
+      ? [commandGate('codingStandard', target.commands.codingStandard, targetRoot, undefined, target?.commandTimeoutMs)]
+      : []),
     targetRoot
       ? targetTypeCheck(targetRoot, target?.commands?.typeCheck, target?.commandTimeoutMs)
       : typeCheck(runDir, projectRoot),

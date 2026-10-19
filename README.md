@@ -376,7 +376,20 @@ rules of the game: write to the rules, record a violation you cannot avoid
 in `waivers.yaml`, never silence a finding. Profile `dal-a` makes every rule
 mandatory and every waiver reviewed. A requirement of such a project drafts a
 "Coding Standard" section, and its handoff package carries the rule index.
-The gate that checks the rules is the next requirement.
+
+The `codingStandard` gate (RQ-0053) checks the code: `pnpm standard` runs
+`scripts/coding-standard.mjs` over the compile database the build left
+(`build/compile_commands.json`; for an embedded design
+`out/<design>/artifacts/sw/compile_commands.json`, which the sw stage writes
+from Vitis's database with the BSP headers brought back beside it). A rule
+citing a MISRA rule is checked by cppcheck's MISRA addon, a rule the
+standard's `checks.json` names by one of the script's lexical checks (tabs,
+file names, hex and suffix case, leading underscores, ASCII), and the rest
+are listed as manual review. A finding is fixed or waived in
+`coding-standard/waivers.yaml` with its reason (profile `dal-a`: reviewer and
+date too); inline suppressions are ignored. The report is
+`out/coding-standard/report.md` and `report.json`; in CI the `coding_standard`
+job runs after the build in a project that has `coding-standard/standard.json`.
 
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a

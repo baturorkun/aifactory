@@ -109,7 +109,7 @@ test('import writes rules.json, a rules.md per group and the index, the same twi
     const groups = [{ name: 'misra', ranges: 'C-001..C-002' }, { name: 'do178c', ranges: 'C-002' }, { name: 'bytecraft', ranges: 'C-003' }, { name: 'arm-m3', ranges: 'A-*' }];
     const first = importStandard({ document, id: 'std', version: 'Rev.AA', groups, outDir: join(standards, 'std') });
     assert.deepEqual(first.files, ['rules.json', 'misra.rules.md', 'do178c.rules.md', 'bytecraft.rules.md', 'arm-m3.rules.md', 'index.md']);
-    assert.deepEqual(first.standard.counts, { rules: 4, byGroup: { misra: 2, do178c: 1, bytecraft: 1, 'arm-m3': 1 }, withMisra: 2 });
+    assert.deepEqual(first.standard.counts, { rules: 4, byGroup: { misra: 2, do178c: 1, bytecraft: 1, 'arm-m3': 1 }, withMisra: 2, byCheck: { cppcheck: 2, lexical: 0, manual: 2 } });
     const misra = readFileSync(join(standards, 'std', 'misra.rules.md'), 'utf8');
     assert.match(misra, /^# std Rev\.AA — group misra \(2 rules\)/);
     assert.match(misra, /## C-002 \| Maintainability \| misra, do178c\n\n\*\*Secondary class:\*\* Readability\n\n\*\*Description:\*\* No dead code\.\n\n\*\*Rationale:\*\* .*\n\n\*\*MISRA:\*\* 2\.2\n\n\*\*Example:\*\*\n\n```c\nint x = 1;\nreturn x;\n```\n\n\*\*Notes:\*\* Keep it\./);

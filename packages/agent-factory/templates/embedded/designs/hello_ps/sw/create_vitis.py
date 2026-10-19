@@ -74,6 +74,23 @@ def update_summary(fields, duration):
         json.dump(summary, handle, indent=2)
 
 
+def copy_compile_database(app_name, platform_name, domain):
+    """The application's compile database and the platform's BSP headers, into
+    artifacts/sw, for the coding standard check on another machine (RQ-0053).
+    scripts/flow.mjs rewrites the database to the project's own paths."""
+    sw = os.path.join(ARTIFACTS, "sw")
+    os.makedirs(sw, exist_ok=True)
+    database = os.path.join(WORKSPACE, app_name, "build", "compile_commands.json")
+    if os.path.isfile(database):
+        shutil.copy2(database, os.path.join(sw, "compile_commands.vitis.json"))
+    include = os.path.join(WORKSPACE, platform_name, "export", platform_name, "sw", domain, "include")
+    target = os.path.join(sw, "bsp-include")
+    if os.path.isdir(include):
+        if os.path.isdir(target):
+            remove_tree(target)
+        shutil.copytree(include, target)
+
+
 def main():
     started = time.time()
     top = project_value("TOP")
@@ -133,6 +150,7 @@ def main():
     if not os.path.isfile(elf):
         sys.exit("SW FAILED: the application build produced no {}".format(os.path.relpath(elf, ROOT)))
     shutil.copy2(elf, elf_artifact)
+    copy_compile_database(app_name, platform_name, domain)
     update_summary({"elf": app_name + ".elf"}, time.time() - started)
     print("SW: {} built, out/{}/artifacts/{}.elf".format(app_name, DESIGN, app_name))
 
