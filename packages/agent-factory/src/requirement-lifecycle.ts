@@ -6,6 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
+import { describeCodingStandard, readCodingStandard, type CodingStandard } from './coding-standard';
 import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_EMBEDDED_PHASES,
@@ -320,6 +321,7 @@ function draftMarkdown(input: {
   probe?: string;
   phases?: EmbeddedPhase[];
   profile?: string;
+  codingStandard?: CodingStandard;
   sourceIssue?: { iid: number; url: string; title: string };
 }): string {
   const twin = input.kind === 'hardware-twin';
@@ -403,6 +405,14 @@ function draftMarkdown(input: {
           '## Model',
           '',
           '<!-- The devices, targets and profiles to write once the board trace is committed. -->',
+          '',
+        ]
+      : []),
+    ...(input.codingStandard
+      ? [
+          '## Coding Standard',
+          '',
+          `<!-- ${describeCodingStandard(input.codingStandard)}: the code of this requirement follows the rules in coding-standard/index.md (full text: RAG source coding-standards). Name the rules this change bears on, and any rule it cannot keep, which goes to coding-standard/waivers.yaml with its rationale. -->`,
           '',
         ]
       : []),
@@ -551,6 +561,7 @@ export async function createDraftRequirement(
         probe,
         phases,
         profile: config.targetProject.profile,
+        codingStandard: readCodingStandard(root),
         sourceIssue: sourceIssue
           ? { iid: sourceIssue.iid, url: sourceIssue.url, title: sourceIssue.title }
           : undefined,

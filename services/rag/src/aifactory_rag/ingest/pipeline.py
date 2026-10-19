@@ -26,6 +26,7 @@ from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, CodeChunk, chunk_cod
 from aifactory_rag.ingest.code_chunker import expected_chunker as code_chunker_for
 from aifactory_rag.ingest.markdown_chunker import MARKDOWN_CHUNKER, chunk_markdown, is_markdown
 from aifactory_rag.ingest.doors_chunker import DOORS_CHUNKER, chunk_doors, is_doors_export
+from aifactory_rag.ingest.rules_chunker import RULES_CHUNKER, chunk_rules, is_rules_file
 from aifactory_rag.ingest.doors_inputs import DoorsInput, DoorsInputError, DoorsTree, doors_inputs, sync_doors
 from aifactory_rag.ingest.code_graph import GRAPH_VERSION, FileGraph, extract_graph
 from aifactory_rag.ingest.git_inputs import (
@@ -977,6 +978,8 @@ def _chunks_for(text: str, relative_path: str, config: RagConfig) -> tuple[list[
     size, overlap = config.ingest.chunk_size, config.ingest.chunk_overlap
     if is_doors_export(relative_path):
         return chunk_doors(text, size), False
+    if is_rules_file(relative_path):
+        return chunk_rules(text, relative_path, size), False
     if is_markdown(relative_path):
         return chunk_markdown(text, relative_path, size), False
     if language_for(relative_path):
@@ -1035,6 +1038,8 @@ def expected_chunker(relative_path: str) -> str:
     (RQ-0023), by size for everything else."""
     if is_doors_export(relative_path):
         return DOORS_CHUNKER
+    if is_rules_file(relative_path):
+        return RULES_CHUNKER
     return MARKDOWN_CHUNKER if is_markdown(relative_path) else code_chunker_for(relative_path)
 
 

@@ -13,8 +13,11 @@ PAGE_MARKER = re.compile(r"\[page\s+(\d+)\]", re.IGNORECASE)
 
 # What can be a requirement's identifier (RQ-0038): a word that starts with a
 # letter, its parts joined by - _ or . (BFI-SRS-1296, BFI_HLR_235, REQ12). It
-# counts when it holds two letters and a digit, which leaves v2.3 and 3.5.1 out.
+# counts when it holds two letters and a digit, which leaves v2.3 and 3.5.1 out;
+# a coding-standard rule, one letter, a dash and digits (C-045, A-013), counts
+# too (RQ-0052), while v2.3 still does not: a dot is no rule separator.
 IDENTIFIER = re.compile(r"(?<![\w.-])[A-Za-z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*(?![\w-])")
+RULE_ID = re.compile(r"^[a-z]+[-_]\d+$")
 MAX_IDENTIFIERS = 20
 # How a chunk found by its identifier is marked, for the answer and its source list.
 FOUND_BY_IDENTIFIER = "identifier"
@@ -61,7 +64,8 @@ def identifiers_in(question: str) -> list[str]:
     found: list[str] = []
     for match in IDENTIFIER.finditer(question):
         token = match.group(0).lower()
-        if sum(character.isalpha() for character in token) >= 2 and any(character.isdigit() for character in token):
+        letters = sum(character.isalpha() for character in token)
+        if (letters >= 2 and any(character.isdigit() for character in token)) or RULE_ID.match(token):
             if token not in found:
                 found.append(token)
     return found[:MAX_IDENTIFIERS]

@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
 import { embeddedEnvValues, fillEnv, loadLabInventory, personSlug } from './lab-inventory';
+import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, chooseStandard, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
 
@@ -23,6 +24,14 @@ export type NewProjectOptions = {
   board?: string;
   /** The lab inventory to fill .env from; the default is aifactory's own. */
   labInventoryPath?: string;
+  /** c and embedded: the coding standard (standards/<id>) the project follows (RQ-0052). */
+  standard?: string;
+  /** The standard's groups in force; all of them when omitted. */
+  groups?: string[];
+  /** How strictly: default, or dal-a. */
+  profile?: string;
+  /** Where the imported standards are; the default is aifactory's standards/. */
+  standardsPath?: string;
 };
 
 export type NewProjectResult = {
@@ -2926,6 +2935,11 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
     assertValidTemplate(options.template ?? 'empty');
   }
 
+  if (options.standard && (options.simulator || !(isCTemplate(options.template) || options.template === 'embedded'))) {
+    throw new Error('--standard applies to --template c or embedded.');
+  }
+  const chosenStandard = chooseStandard(options);
+
   const parentDir = resolve(process.cwd(), options.dir ?? '..');
   const projectRoot = resolve(parentDir, projectName);
 
@@ -3001,6 +3015,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       '- Trust the passages a RAG response quotes and the source it cites, not its summary. Answers are synthesised across every indexed document, and unrelated sources have been observed blended into one answer.',
       '- Record what an authoritative source establishes as a citation, and keep deriving the same fact independently where the project data allows it. Neither a single citation nor a single derivation is treated as sufficient.',
       '',
+      ...(chosenStandard ? codingStandardGuidelines(codingStandardRecord(chosenStandard)) : []),
       ...(!options.simulator && isCTemplate(options.template)
         ? [
             '## Building and Testing (C11, CMake)',
@@ -3182,7 +3197,69 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   writeFileSync(resolve(projectRoot, 'runs/.gitkeep'), '', 'utf8');
   writeFileSync(resolve(projectRoot, 'templates/.gitkeep'), '', 'utf8');
 
+  if (chosenStandard) applyCodingStandard(projectRoot, chosenStandard);
+
   return options.simulator
     ? { projectName, projectRoot, simulator: options.simulator as Simulator }
     : { projectName, projectRoot, template: (options.template ?? 'empty') as ProjectTemplate };
+}
+
+// The project's coding standard (RQ-0052): coding-standard/ with the chosen
+// rules and the waivers file, the directory among the paths a requirement may
+// write, the coding-standards RAG source in .env, and the other groups' rule
+// files left out of retrieval.
+function applyCodingStandard(projectRoot: string, chosen: ChosenStandard): void {
+  writeCodingStandard(projectRoot, chosen);
+  if (!existsSync(resolve(projectRoot, 'factory.config.json'))) return;
+
+  const configPath = resolve(projectRoot, 'factory.config.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    targetProject: { allowedPaths?: string[] };
+    rag?: { grounding?: Record<string, unknown> };
+  };
+  config.targetProject.allowedPaths = [...new Set([...(config.targetProject.allowedPaths ?? []), CODING_STANDARD_DIRECTORY])];
+  // Set, excludePaths replaces the default (the project's own requirements,
+  // handoffs and runs), so those stay listed.
+  config.rag ??= {};
+  config.rag.grounding ??= {};
+  config.rag.grounding.excludePaths = ['requirements/**', 'handoffs/**', 'runs/**', ...excludedRuleFiles(chosen)];
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
+
+  const envPath = resolve(projectRoot, '.env');
+  const env = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+  const active = /^RAG_SOURCE_IDS=(.*)$/m.exec(env);
+  let next: string;
+  if (active) {
+    const ids = active[1].split(',').map((id) => id.trim()).filter(Boolean);
+    next = ids.includes(CODING_STANDARDS_SOURCE) ? env : env.replace(/^RAG_SOURCE_IDS=.*$/m, `RAG_SOURCE_IDS=${[...ids, CODING_STANDARDS_SOURCE].join(',')}`);
+  } else {
+    next = env.replace(/\n*$/, env ? '\n' : '') + [
+      '',
+      '# The coding standard\'s rules, one chunk per rule (RQ-0052). Add the project\'s own sources before it.',
+      `RAG_SOURCE_IDS=${CODING_STANDARDS_SOURCE}`,
+      '',
+    ].join('\n');
+  }
+  writeFileSync(envPath, next, 'utf8');
+}
+
+// A project made before it had a standard, or changing its groups, takes one
+// with `factory standard use <id> --groups …` from its root (RQ-0052): the
+// same files and settings as `factory new --standard`, and the AGENTS.md
+// section added or replaced.
+export function useCodingStandard(projectRoot: string, options: { standard: string; groups?: string[]; profile?: string; standardsPath?: string }): CodingStandard {
+  const config = JSON.parse(readFileSync(resolve(projectRoot, 'factory.config.json'), 'utf8')) as { targetProject?: { profile?: string } };
+  const profile = config.targetProject?.profile;
+  if (profile !== 'c' && profile !== 'embedded') throw new Error(`A coding standard applies to a c or embedded project; this one is "${profile ?? 'unknown'}".`);
+  const chosen = chooseStandard(options);
+  if (!chosen) throw new Error('--standard <id> names the standard.');
+  applyCodingStandard(projectRoot, chosen);
+  const record = codingStandardRecord(chosen);
+  const agentsPath = resolve(projectRoot, 'AGENTS.md');
+  const section = codingStandardGuidelines(record).join('\n');
+  const agents = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '# Agent Guidelines\n\n';
+  const existing = /^## Coding Standard\n[\s\S]*?(?=^## |(?![\s\S]))/m;
+  const next = existing.test(agents) ? agents.replace(existing, section) : agents.replace(/\n*$/, '\n\n') + section;
+  writeFileSync(agentsPath, next, 'utf8');
+  return record;
 }

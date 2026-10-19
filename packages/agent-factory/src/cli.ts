@@ -12,7 +12,7 @@ import {
   finishHandoffRun,
 } from './orchestrator/handoff';
 import { runDirectCodex } from './orchestrator/direct';
-import { createTargetProject, PROJECT_TEMPLATES, SIMULATORS } from './scaffold';
+import { createTargetProject, PROJECT_TEMPLATES, SIMULATORS, useCodingStandard } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import {
   installRagPython,
@@ -66,6 +66,8 @@ import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
 import { updateEmbeddedProject } from './template-update';
 import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
 import { labWideCiValues, loadLabInventory } from './lab-inventory';
+import { PROFILES, describeCodingStandard } from './coding-standard';
+import { importStandard, listStandards, loadStandard } from './standards/import';
 import { resolveRepositoryPlatform } from './repository-platform/resolve';
 
 // What each embedded phase does, as the checkbox list shows it.
@@ -941,9 +943,12 @@ program
   .option('--simulator <name>', 'Hardware-twin project for a simulator: ' + SIMULATORS.join(', '))
   .option('--host-type <os>', 'OS the simulator and build run on: windows, linux')
   .option('--board <unit>', 'Embedded: the lab unit (lab/inventory.json) whose settings fill .env, e.g. zedboard')
+  .option('--standard <id>', 'c, embedded: the coding standard the project follows (factory standard list)')
+  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (default: all of them)')
+  .option('--profile <name>', `How strictly the standard is enforced: ${PROFILES.join(', ')} (default: default)`)
   .option('--dir <path>', 'Parent directory for the new project', '..')
   .option('--force', 'Allow writing into an existing directory', false)
-  .action((projectName: string, opts: { template?: string; simulator?: string; hostType?: string; board?: string; dir: string; force: boolean }) => {
+  .action((projectName: string, opts: { template?: string; simulator?: string; hostType?: string; board?: string; standard?: string; groups?: string; profile?: string; dir: string; force: boolean }) => {
     try {
       if (opts.template && opts.simulator) {
         throw new Error('--template (standard project) and --simulator (hardware-twin project) are mutually exclusive.');
@@ -956,6 +961,9 @@ program
         simulator: opts.simulator,
         hostType: opts.hostType,
         board: opts.board,
+        standard: opts.standard,
+        groups: opts.groups?.split(',').map((name) => name.trim()).filter(Boolean),
+        profile: opts.profile,
         dir: opts.dir,
         force: opts.force,
       });
@@ -969,6 +977,73 @@ program
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exit(1);
+    }
+  });
+
+// ============================================================
+// factory standard import / list (RQ-0052)
+// ============================================================
+
+const standard = program
+  .command('standard')
+  .description('Coding standards: import a standard\'s document into rules and groups a project chooses from');
+
+standard
+  .command('import <document>')
+  .description('Read a standard\'s Word document into standards/<id>/ (rules.json, one <group>.rules.md per group, index.md)')
+  .requiredOption('--id <id>', 'The standard\'s id, e.g. cstd')
+  // Not --version: commander keeps that for the program's own version.
+  .requiredOption('--revision <revision>', 'The document revision, e.g. Rev.AA')
+  .requiredOption('--group <name=ranges>', 'A group and its rules, e.g. misra=C-001..C-107 or arm-m3=A-* (repeat per group)', (value: string, all: string[]) => [...all, value], [] as string[])
+  .option('--out <dir>', 'Where to write (default: aifactory\'s standards/<id>)')
+  .action((document: string, opts: { id: string; revision: string; group: string[]; out?: string }) => {
+    try {
+      const groups = opts.group.map((spec) => {
+        const [name, ranges] = spec.split('=', 2);
+        if (!name || !ranges) throw new Error(`--group ${spec}: expected <name>=<ranges>.`);
+        return { name: name.trim(), ranges: ranges.trim() };
+      });
+      const { standard: imported, outDir, files } = importStandard({ document, id: opts.id, version: opts.revision, groups, outDir: opts.out });
+      console.log(chalk.green(`✓ ${imported.id} ${imported.version}: ${imported.counts.rules} rules, ${imported.counts.withMisra} citing a MISRA rule.`));
+      for (const [name, count] of Object.entries(imported.counts.byGroup)) console.log(`  ${name.padEnd(12)} ${count} rules`);
+      for (const warning of imported.warnings) console.log(chalk.yellow(`  ⚠ ${warning}`));
+      console.log(chalk.dim(`  ${outDir}: ${files.join(', ')}`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+standard
+  .command('use <id>')
+  .description('From a c or embedded project: follow this standard (its groups, how strictly), as factory new --standard does')
+  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (default: all of them)')
+  .option('--profile <name>', `How strictly: ${PROFILES.join(', ')} (default: default)`)
+  .action((id: string, opts: { groups?: string; profile?: string }) => {
+    try {
+      const config = loadConfig();
+      const root = resolve(config.targetProject.root ?? '.');
+      const record = useCodingStandard(root, { standard: id, groups: opts.groups?.split(',').map((name) => name.trim()).filter(Boolean), profile: opts.profile });
+      console.log(chalk.green(`✓ ${describeCodingStandard(record)}: coding-standard/ written, AGENTS.md and .env updated.`));
+      console.log(chalk.dim('  Commit them under a requirement; the groups and profile are now what the gate will enforce.'));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+standard
+  .command('list')
+  .description('The imported standards and their groups')
+  .action(() => {
+    const ids = listStandards();
+    if (ids.length === 0) {
+      console.log('No standard imported yet: factory standard import <document.docx> --id <id> --revision <rev> --group <name>=<ranges> …');
+      return;
+    }
+    for (const id of ids) {
+      const loaded = loadStandard(id);
+      console.log(`${id} ${loaded.version}: ${loaded.counts.rules} rules; groups ${Object.entries(loaded.counts.byGroup).map(([name, count]) => `${name} (${count})`).join(', ')}`);
     }
   });
 
