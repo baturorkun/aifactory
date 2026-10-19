@@ -187,7 +187,14 @@ def _parse(path: Path) -> str:
         # A DOORS module export (RQ-0037): its own chunker reads the lines.
         return path.read_text(encoding="utf-8", errors="replace")
     if extension == ".json":
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            # Not JSON as written: comment lines (a devcontainer.json, a
+            # tsconfig.json) or a trailing comma. Read as text, still
+            # searchable, rather than refused (RQ-0050).
+            return raw
         return json.dumps(data, ensure_ascii=False, indent=2)
     if extension == ".csv":
         content = path.read_text(encoding="utf-8", errors="replace")
