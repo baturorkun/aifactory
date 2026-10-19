@@ -1,0 +1,49 @@
+{
+  "runId": "20261019135944-RQ-0053",
+  "requirementId": "RQ-0053",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261019135944-RQ-0053/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-19T13:59:44.126Z",
+  "updatedAt": "2026-10-19T14:00:15.956Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-19T13:59:44.691Z",
+      "finishedAt": "2026-10-19T14:00:15.956Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.html",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.pdf",
+    "packages/agent-factory/src/coding-standard-gate.test.ts",
+    "packages/agent-factory/src/coding-standard.ts",
+    "packages/agent-factory/src/config.ts",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/standards.test.ts",
+    "packages/agent-factory/src/standards/import.ts",
+    "packages/agent-factory/src/template-update.ts",
+    "packages/agent-factory/templates/embedded/designs/hello_ps/sw/create_vitis.py",
+    "packages/agent-factory/templates/embedded/scripts/coding-standard.mjs",
+    "packages/agent-factory/templates/embedded/scripts/flow.mjs",
+    "packages/contracts/src/index.ts",
+    "packages/quality-gates/src/index.ts",
+    "standards/cstd/checks.json",
+    "standards/cstd/index.md",
+    "standards/cstd/rules.json"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}

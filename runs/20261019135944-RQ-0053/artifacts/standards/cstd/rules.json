@@ -1,0 +1,3186 @@
+{
+  "id": "cstd",
+  "version": "Rev.AA",
+  "source": {
+    "path": "/mnt/fs2/5000-K EMNİYET KRİTİK PROJELER/5001-K ASELSAN BFI-SW/4. ENGINEERING/Draft Documents/Ready For Formal Review/Coding Std/5001-K-CSTD.docx",
+    "sha256": "bc906491c42d164b033d99d8943433289205c1c8b49e56ec873fd7bb69e760e8",
+    "bytes": 266112
+  },
+  "warnings": [
+    "A-005 is captioned A-004 in the document (rule 152): \"Immediate constants shall be named via EQU, except for {0,1,\"",
+    "A-006 is captioned A-005 in the document (rule 153): \"Any computed branch target shall have bit[0]=0; setting bit[\"",
+    "A-007 is captioned A-006 in the document (rule 154): \"TBB/TBH shall only be used in allowlisted dispatcher modules\"",
+    "A-008 is captioned A-007 in the document (rule 155): \"Direct writes to PC (e.g., mov pc,*, add pc,*, ldr pc,*) sha\"",
+    "A-009 is captioned A-008 in the document (rule 156): \"Any assembly function shall not exceed 80 SLOC (excluding bl\"",
+    "A-010 is captioned A-009 in the document (rule 157): \"Each assembly file shall place all code and data into explic\"",
+    "A-011 is captioned A-010 in the document (rule 158): \"Each assembly function/submodule shall include an assembly f\"",
+    "A-012 is captioned A-011 in the document (rule 159): \"Assembly shall only be permitted in allowlisted modules. Any\"",
+    "A-013 is captioned A-011 in the document (rule 160): \"All labels shall begin in column 1 to be recognized by the a\"",
+    "A-014 is captioned A-011 in the document (rule 161): \"The comment character shall delimit comments.\"",
+    "A-015 is captioned A-011 in the document (rule 162): \"Every operation in assembly code shall have a corresponding \"",
+    "A-016 is captioned A-011 in the document (rule 163): \"All assembly elements shall have a single exit point.\"",
+    "A-017 is captioned A-011 in the document (rule 164): \"All symbols that are defined externally to the assembly elem\""
+  ],
+  "groups": {
+    "misra": [
+      "C-001",
+      "C-002",
+      "C-003",
+      "C-004",
+      "C-005",
+      "C-006",
+      "C-007",
+      "C-008",
+      "C-009",
+      "C-010",
+      "C-011",
+      "C-012",
+      "C-013",
+      "C-014",
+      "C-015",
+      "C-016",
+      "C-017",
+      "C-018",
+      "C-019",
+      "C-020",
+      "C-021",
+      "C-022",
+      "C-023",
+      "C-024",
+      "C-025",
+      "C-026",
+      "C-027",
+      "C-028",
+      "C-029",
+      "C-030",
+      "C-031",
+      "C-032",
+      "C-033",
+      "C-034",
+      "C-035",
+      "C-036",
+      "C-037",
+      "C-038",
+      "C-039",
+      "C-040",
+      "C-041",
+      "C-042",
+      "C-043",
+      "C-044",
+      "C-045",
+      "C-046",
+      "C-047",
+      "C-048",
+      "C-049",
+      "C-050",
+      "C-051",
+      "C-052",
+      "C-053",
+      "C-054",
+      "C-055",
+      "C-056",
+      "C-057",
+      "C-058",
+      "C-059",
+      "C-060",
+      "C-061",
+      "C-062",
+      "C-063",
+      "C-064",
+      "C-065",
+      "C-066",
+      "C-067",
+      "C-068",
+      "C-069",
+      "C-070",
+      "C-071",
+      "C-072",
+      "C-073",
+      "C-074",
+      "C-075",
+      "C-076",
+      "C-077",
+      "C-078",
+      "C-079",
+      "C-080",
+      "C-081",
+      "C-082",
+      "C-083",
+      "C-084",
+      "C-085",
+      "C-086",
+      "C-087",
+      "C-088",
+      "C-089",
+      "C-090",
+      "C-091",
+      "C-092",
+      "C-093",
+      "C-094",
+      "C-095",
+      "C-096",
+      "C-097",
+      "C-098",
+      "C-099",
+      "C-100",
+      "C-101",
+      "C-102",
+      "C-103",
+      "C-104",
+      "C-105",
+      "C-106",
+      "C-107"
+    ],
+    "bytecraft": [
+      "C-108",
+      "C-109",
+      "C-110",
+      "C-111",
+      "C-112",
+      "C-113",
+      "C-114",
+      "C-115",
+      "C-116",
+      "C-117",
+      "C-118",
+      "C-119",
+      "C-120",
+      "C-121",
+      "C-122",
+      "C-123",
+      "C-124",
+      "C-125",
+      "C-126",
+      "C-127",
+      "C-128",
+      "C-129",
+      "C-130",
+      "C-131",
+      "C-132",
+      "C-133",
+      "C-134",
+      "C-135",
+      "C-136",
+      "C-137",
+      "C-138",
+      "C-139",
+      "C-140",
+      "C-141",
+      "C-142",
+      "C-143",
+      "C-144",
+      "C-145",
+      "C-146",
+      "C-147"
+    ],
+    "do178c": [
+      "C-001",
+      "C-002",
+      "C-003",
+      "C-004",
+      "C-005",
+      "C-006",
+      "C-007",
+      "C-008",
+      "C-009"
+    ],
+    "arm-m3": [
+      "A-001",
+      "A-002",
+      "A-003",
+      "A-004",
+      "A-005",
+      "A-006",
+      "A-007",
+      "A-008",
+      "A-009",
+      "A-010",
+      "A-011",
+      "A-012",
+      "A-013",
+      "A-014",
+      "A-015",
+      "A-016",
+      "A-017"
+    ]
+  },
+  "counts": {
+    "rules": 164,
+    "byGroup": {
+      "misra": 107,
+      "bytecraft": 40,
+      "do178c": 9,
+      "arm-m3": 17
+    },
+    "withMisra": 107,
+    "byCheck": {
+      "cppcheck": 107,
+      "lexical": 8,
+      "manual": 49
+    }
+  },
+  "rules": [
+    {
+      "id": "C-001",
+      "class": "Safety",
+      "secondary": "Security",
+      "description": "There shall be no occurrence of undefined or critical unspecified behavior.",
+      "rationale": "Safety, Security, Refer to Ref. [2] Rule 1.3,",
+      "example": "#include <stdint.h>\n\nint32_t incrementValue(int32_t value)\n{\n/* Non-compliant */\n/* Signed integer overflow causes undefined behavior */\n  value = INT32_MAX;\n  value = value + 1;\n\n  return value;\n}\n\nint32_t incrementValueCompliant(int32_t value)\n{\n/* Compliant */\n/* Overflow is prevented */\n  if (value < INT32_MAX)\n    {\n      value = value + 1;\n    }\n  return value;\n}",
+      "notes": "According to used C11 Standard version (Ref. [3], [4]) there are some defined undefined behaviors. This rule prevents any of those undefined behaviors that occur in the code.",
+      "misra": [
+        "1.3"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-1.3"
+      }
+    },
+    {
+      "id": "C-002",
+      "class": "Safety",
+      "secondary": null,
+      "description": "A project shall not contain unreachable code.",
+      "rationale": "Safety, Refer to Ref. [2] Rule 2.1, Refer to Ref.[1] 6.4.4.3.c",
+      "example": "#include <stdint.h>\n\nint32_t getStatus(void)\n{\n  int32_t status = 0;\n\n  /* Non-compliant: statement below return is unreachable */\n  return status;\n  status = 1;\n\n}\n\nint32_t getStatusCompliant(void)\n{\n  int32_t status = 0;\n\n  /* Compliant: no unreachable statement exists */\n  status = 1;\n\n  return status;\n}",
+      "notes": "Each code piece is to perform an intended behavior. Any unreachable i.e. extraneous code shall be removed from executable object file.\nAs an example, cases like default: clause in switch case shall be caused by a requirement otherwise it is considered extraneous.",
+      "misra": [
+        "2.1"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.1"
+      }
+    },
+    {
+      "id": "C-003",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "A project shall not contain dead code.",
+      "rationale": "Safety, Refer to Ref. [2] Rule 2.2, Refer to Ref.[1] 6.4.4.3.c",
+      "example": "#include <stdint.h>\n\nvoid updateValue(void)\n{\n  uint32_t valueNonCompliant = 0U;\n  uint32_t valueCompliant = 0U;\n\n/* Non-compliant: This assignment has no effect */\n  valueNonCompliant = 1U;\n  valueNonCompliant = 2U;\n\n/* Compliant: Each assignment contribute intended behavior */\n  valueCompliant = 1U;\n  valueCompliant = valueCompliant + 1U;\n\n  (void)valueNonCompliant;\n  (void)valueCompliant;\n}",
+      "notes": "Each code piece is to perform an intended behavior. Any unreachable i.e. extraneous code shall be removed from executable object file.",
+      "misra": [
+        "2.2"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.2"
+      }
+    },
+    {
+      "id": "C-004",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A project shall not contain unused type declarations.",
+      "rationale": "Refer to Ref. [2] Rule 2.3",
+      "example": "#include <stdint.h>\n\nint16_t processTypeDeclaration(void)\n{\n/* Non-compliant : local typedef is declared but not used */\n  typedef int16_t LocalTypeNonCompliant;\n\n/* Compliant: local typedef is used */\n  typedef int16_t LocalTypeCompliant;\n  LocalTypeCompliant resultValue = 67;\n\n  return resultValue;\n}",
+      "notes": "If a type is declared but not used, then it is unclear to a reviewer if the type is redundant or it has been left unused by mistake.",
+      "misra": [
+        "2.3"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.3"
+      }
+    },
+    {
+      "id": "C-005",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A project shall not contain unused tag declarations.",
+      "rationale": "Refer to Ref. [2] Rule 2.4",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: tag is declared but not used */\ntypedef struct RecordTag\n{\n  uint16_t key;\n  uint16_t value;\n}RecordTypeNonCompliant;\n\n/* Compliant: unnecessary tag is omitted */\ntypedef struct\n{\n  uint16_t key;\n  uint16_t value;\n}RecordTypeCompliant;",
+      "notes": "If a tag is declared but not used, it is unclear whether the declaration is redundant or was left unused by mistake. This may reduce readability and complicate review.",
+      "misra": [
+        "2.4"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.4"
+      }
+    },
+    {
+      "id": "C-006",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A project shall not contain unused macro definitions.",
+      "rationale": "Refer to Ref. [2] Rule 2.5",
+      "example": "#include <stdint.h>\n\n#define SIZE_VALUE 4U\n/* Non-compliant: macro is not used */\n#define DATA_VALUE 3U\nuint32_t getSizeValue(void)\n{\n/* Compliant: macro is used */\n   return SIZE_VALUE;\n}",
+      "notes": "If a macro is defined but not used, then it is unclear to a reviewer if the macro is redundant or it has been left unused by mistake.",
+      "misra": [
+        "2.5"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.5"
+      }
+    },
+    {
+      "id": "C-007",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A function shall not contain unused label declarations.",
+      "rationale": "Refer to Ref. [2] Rule 2.6",
+      "example": "#include <stdint.h>\n\nvoid processLabel(void)\n{\n  uint32_t value = 6U;\n\n/* Non-compliant: label is declared but never used */\nunusedLabel:\n  value = value + 1U;\n\n/* Compliant: no unnecessary label is declared */\n  value = value + 1U;\n\n}",
+      "notes": "If a label is declared but not used, then it is unclear to a reviewer if the label is redundant or it has been left unused by mistake",
+      "misra": [
+        "2.6"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.6"
+      }
+    },
+    {
+      "id": "C-008",
+      "class": "Maintainability",
+      "secondary": "Safety",
+      "description": "A function shall not contain unused parameters.",
+      "rationale": "Maintainability, Refer to Ref. [2] Rule 2.7",
+      "example": "#include <stdint.h>\n\nvoid processParameterNonCompliant(uint16_t *valuePtr,\nint16_t unusedValue)\n{\n/* Non-compliant: parameter is not used */\n  *valuePtr = 42U;\n}\n\nvoid processParameterCompliant(uint16_t *valuePtr,\nint16_t inputValue)\n{\n/* Compliant: all parameters are used */\n  *valuePtr = (uint16_t)inputValue;\n}",
+      "notes": "Most functions will be specified as using each of their parameters. If a function parameter is unused, it is possible that the implementation of the function does not match its specification. This rule highlights such potential mismatches.",
+      "misra": [
+        "2.7"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.7"
+      }
+    },
+    {
+      "id": "C-009",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A project shall not contain unused object definitions.",
+      "rationale": "Refer to Ref. [2] Rule 2.8",
+      "example": "#include <stdint.h>\n\nvoid processObjectDefinition(void)\n{\n/* Non-compliant: object is defined but not used */\n  uint16_t retryCountNonCompliant = 0U;\n\n/* Compliant: object is used */\n  uint16_t retryCountCompliant = 0U;\n  retryCountCompliant++;\n\n}",
+      "notes": "If an object is defined but unused, then it is unclear to a reviewer if the object is redundant or it has been left unused by mistake.",
+      "misra": [
+        "2.8"
+      ],
+      "groups": [
+        "misra",
+        "do178c"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-2.8"
+      }
+    },
+    {
+      "id": "C-010",
+      "class": "Readability",
+      "secondary": null,
+      "description": "The character sequences /* and // shall not be used within a comment.",
+      "rationale": "Refer to Ref. [2] Rule 3.1, Readability",
+      "example": "#include <stdint.h>\n\nvoid checkValue(int32_t value)\n{\n/* Non-compliant: comment contains // sequence */\n/* Previous logic was // if (value > 0) { value--; } */\n  value++;\n\n/* Compliant */\n/* Comment does not contain nested comment   markers */\n/* Previous decrement logic was removed */\n  value++;\n\n}",
+      "notes": "If a comment starting sequence, /* or //, occurs within a /* comment, is it quite likely to be caused by a missing */ comment ending sequence. If a comment starting sequence occurs within a // comment, it is probably because a region of code has been commented-out using //.",
+      "misra": [
+        "3.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-3.1"
+      }
+    },
+    {
+      "id": "C-011",
+      "class": "Readability",
+      "secondary": null,
+      "description": "Line-splicing shall not be used in // comments.",
+      "rationale": "Refer to Ref. [2] Rule 3.2, Readability",
+      "example": "#include <stdint.h>\n\nvoid updateCounter(void)\n{\n  uint32_t counter = 0U;\n\n/* Non-compliant: line-splicing is used in a // comment */\n// Counter update is disabled \\\n  counter++;\n\n/* Compliant: no line-splicing is used */\n// Counter update is documented here\n  counter++;\n\n}",
+      "notes": "The source line containing a // comment ends with a \\ character in the source character set, the\nnext line becomes part of the comment. This may result in unintentional removal of code.",
+      "misra": [
+        "3.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-3.2"
+      }
+    },
+    {
+      "id": "C-012",
+      "class": "Readability",
+      "secondary": null,
+      "description": "Octal and hexadecimal escape sequences shall be terminated.",
+      "rationale": "Refer to Ref. [2] Rule 4.1",
+      "example": "#include <stdint.h>\n\nvoid processEscapeSequence(void)\n{\n/* Non-compliant */\n/* Hexadecimal escape sequence is not properly terminated */\n  const char *textNonCompliant = \"\\x4142\";\n\n/* Compliant */\n/* Hexadecimal escape sequence is properly terminated */\n  const char *textCompliant = \"\\x41\"\"42\";\n\n}",
+      "notes": "If the source line containing a // comment ends with a \\ character in the source character set, the next line becomes part of the comment. This may result in unintentional removal of code.",
+      "misra": [
+        "4.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-4.1"
+      }
+    },
+    {
+      "id": "C-013",
+      "class": "Readability",
+      "secondary": "Portability",
+      "description": "Trigraphs shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 4.2, Readability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: trigraphs are used instead of braces */\nvoid initValueNonCompliant(void)\n??<\n  uint32_t value = 0U;\n??>\n\n/* Compliant: normal brace characters are used */\nvoid initValueCompliant(void)\n{\n  uint32_t value = 0U;\n}",
+      "notes": "Trigraphs are sequences of three characters that start with two question marks (??) and represent a single character. They were introduced in early C standards to allow programmers to type certain characters on keyboards that didn’t have them (e.g., {, }, #).",
+      "misra": [
+        "4.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-4.2"
+      }
+    },
+    {
+      "id": "C-014",
+      "class": "Portability",
+      "secondary": null,
+      "description": "External identifiers shall be distinct.",
+      "rationale": "Portability, Refer to Ref. [2] Rule 5.1",
+      "example": "/* In the following example, the definitions all occur in the same translation unit. The implementation in question supports 31 significant case-sensitive characters in external identifiers.*/\n\n/* Non-compliant */\n/*      1234567890123456789012345678901********* */\nint32_t engine_exhaust_gas_temperature_raw;\nint32_t engine_exhaust_gas_temperature_scaled;\n\n/*      1234567890123456789012345678901********* */\nint32_t engine_exhaust_gas_temp_raw;\nint32_t engine_exhaust_gas_temp_scaled; /* Compliant */\n\n/* In the following non-compliant example, the implementation supports 6 significant case-insensitive\ncharacters in external identifiers. The identifiers in the two translation units are different but are not\ndistinct in their significant characters. */\n\n/* file1.c */\nint32_t abc = 0;\n\n/* file2.c */\nint32_t ABC = 0;\n\n/* Compliant */\n/* file1.c */\n#include <stdint.h>\n\nint32_t exhaustGasTempRaw = 0;\n\n/* file2.c */\n#include <stdint.h>\n\nint32_t intakeAirTempScaled = 0;",
+      "notes": "In C99 and later the minimum requirement is that the first 31 characters of external identifiers are significant, with each universal character or corresponding extended source character\noccupying between 6 and 10 characters.",
+      "misra": [
+        "5.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.1"
+      }
+    },
+    {
+      "id": "C-015",
+      "class": "Consistency and Convention",
+      "secondary": "Readability",
+      "description": "Identifiers declared in the same scope and name space shall be distinct.",
+      "rationale": "Refer to Ref. [2] Rule 5.2",
+      "example": "#include <stdint.h>\n\n#if 0\nvoid processDataNonCompliant(void)\n{\nuint32_t counter = 0U;\n/* Non-compliant */\n/* Identifier is redeclared in the same scope */\nuint32_t counter = 1U;\n}\n\n#endif\n\nvoid processDataCompliant(void)\n{\nuint32_t counter = 0U;\nuint32_t retryCounter = 1U;\n}",
+      "notes": "In C99 and later the minimum requirement is that the first 63 characters are significant, with each universal character or extended source character counting as a single character.",
+      "misra": [
+        "5.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.2"
+      }
+    },
+    {
+      "id": "C-016",
+      "class": "Consistency and Convention",
+      "secondary": "Readability",
+      "description": "An identifier declared in an inner scope shall not hide an identifier declared in an outer scope.",
+      "rationale": "Refer to Ref. [2] Rule 5.3",
+      "example": "#include <stdint.h>\n\nstatic uint32_t systemState = 0U;\n\nvoid updateStateNonCompliant(void)\n{\n/* Non-compliant: inner scope id hides outer scope id */\nuint32_t systemState = 1U;\nsystemState++;\n}\n\nvoid updateStateCompliant(void)\n{\nuint32_t newSystemState = 1U;\nsystemState = newSystemState;\n}",
+      "notes": "In C99 and later the minimum requirement is that the first 63 characters are significant, with each universal character or extended source character counting as a single character.",
+      "misra": [
+        "5.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.3"
+      }
+    },
+    {
+      "id": "C-017",
+      "class": "Consistency and Convention",
+      "secondary": null,
+      "description": "Macro identifiers shall be distinct.",
+      "rationale": "Refer to Ref. [2] Rule 5.4",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: macro identifier is redefined */\n#define BUFFER_SIZE 64U\n#define BUFFER_SIZE 128U\n\nvoid initBufferNonCompliant(void)\n{\nuint32_t size = BUFFER_SIZE;\n}\n\n/* Compliant: macro identifiers are distinct */\n#define RX_BUFFER_SIZE 64U\n#define TX_BUFFER_SIZE 128U\n\nvoid initBufferCompliant(void)\n{\nuint32_t rxSize = RX_BUFFER_SIZE;\nuint32_t txSize = TX_BUFFER_SIZE;\n\n}",
+      "notes": "If macro identifiers are not distinct, preprocessing results may become ambiguous and difficult to review.",
+      "misra": [
+        "5.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.4"
+      }
+    },
+    {
+      "id": "C-018",
+      "class": "Consistency and Convention",
+      "secondary": null,
+      "description": "Identifiers shall be distinct from macro names.",
+      "rationale": "Refer to Ref. [2] Rule 5.5",
+      "example": "#include <stdint.h>\n\n#define TIMEOUT_MS 100U\n\n#if 0\nvoid waitForEventNonCompliant(void)\n{\n/* Non-compliant: identifier is the same as macro name */\nuint32_t TIMEOUT_MS = 50U;\n}\n\n#endif\n\nvoid waitForEventCompliant(void)\n{\nuint32_t timeoutValueMs = TIMEOUT_MS;\n}",
+      "notes": "Reusing the same name for both a macro and an identifier may cause confusion and unexpected preprocessing behavior.",
+      "misra": [
+        "5.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.5"
+      }
+    },
+    {
+      "id": "C-019",
+      "class": "Consistency and Convention",
+      "secondary": null,
+      "description": "A typedef name shall be a unique identifier.",
+      "rationale": "Refer to Ref. [2] Rule 5.6",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: typedef name is reused */\ntypedef uint8_t SignalType;\ntypedef uint16_t SignalType;\n\n/* Compliant: typedef names are unique */\ntypedef uint8_t Signal8Type;\ntypedef uint16_t Signal16Type;",
+      "notes": "Unique typedef names improve clarity and prevent confusion in declarations and interfaces.",
+      "misra": [
+        "5.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.6"
+      }
+    },
+    {
+      "id": "C-020",
+      "class": "Consistency and Convention",
+      "secondary": null,
+      "description": "A tag name shall be a unique identifier.",
+      "rationale": "Refer to Ref. [2] Rule 5.7",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: tag name is reused */\nstruct DeviceTag\n{\nuint8_t id;\n};\n\nenum DeviceTag\n{\nDEVICE_OFF = 0,\nDEVICE_ON = 1\n};\n\n/* Compliant: tag names are unique */\nstruct DeviceStructTag\n{\nuint8_t id;\n};\n\nenum DeviceStateTag\n{\nDEVICE_STATE_OFF = 0,\nDEVICE_STATE_ON = 1\n};",
+      "notes": "Unique tag names prevent ambiguity in structure and enumeration declarations.",
+      "misra": [
+        "5.7"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.7"
+      }
+    },
+    {
+      "id": "C-021",
+      "class": "Consistency and Convention",
+      "secondary": null,
+      "description": "Identifiers that define objects or functions with external linkage shall be unique.",
+      "rationale": "Refer to Ref. [2] Rule 5.8",
+      "example": "file1.c\n#include <stdint.h>\n\n/* Non-compliant */\n/* External object identifier is not unique */\nuint32_t systemStatus = 0U;\n\nfile2.c\n#include <stdint.h>\n\n/* Non-compliant */\n/* Same external object identifier is defined again */\nuint32_t systemStatus = 1U;",
+      "notes": "External linkage identifiers are visible across translation units; therefore, uniqueness shall be preserved project-wide.",
+      "misra": [
+        "5.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.8"
+      }
+    },
+    {
+      "id": "C-022",
+      "class": "Consistency and Convention",
+      "secondary": "Maintainability",
+      "description": "Identifiers that define objects or functions with internal linkage shall be unique.",
+      "rationale": "Refer to Ref. [2] Rule 5.9",
+      "example": "file1.c\n#include <stdint.h>\n\n/* Non-compliant */\n/* Internal linkage identifier duplicated in another file */\nstatic void ProcessData(void)\n{\n}\n\nfile2.c\n#include <stdint.h>\n\n/* Non-compliant */\n/* Same internal linkage identifier appears again */\nstatic void ProcessData(void)\n{\n}",
+      "notes": "Although internal linkage limits visibility to one translation unit, unique naming is still recommended for maintainability and reviewability.",
+      "misra": [
+        "5.9"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.9"
+      }
+    },
+    {
+      "id": "C-023",
+      "class": "Portability",
+      "secondary": "Safety",
+      "description": "A reserved identifier or reserved macro name shall not be declared.",
+      "rationale": "Refer to Ref. [2] Rule 5.10",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: reserved identifier is declared */\n#define __MAX_BUFFER_SIZE 64U\n/* Compliant: non-reserved identifier is declared */\n#define MAX_BUFFER_SIZE 64U",
+      "notes": "Reserved identifiers and macro names may conflict with compiler, standard library, or toolchain internals and shall therefore be avoided.",
+      "misra": [
+        "5.10"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-5.10"
+      }
+    },
+    {
+      "id": "C-024",
+      "class": "Portability",
+      "secondary": "Safety",
+      "description": "A “u” or “U” suffix shall be applied to all integer constants that are represented in an unsigned type.",
+      "rationale": "Refer to Ref. [2] Rule 7.2",
+      "example": "#include <stdint.h>\n\nvoid InitTimeout(void)\n{\n/* Non-compliant */\n/* Unsigned integer constant has no U suffix */\n  uint32_t timeout1 = 1000;\n\n/* Compliant: unsigned integer constant uses U suffix */\n  uint32_t timeout2 = 1000U;\n\n}",
+      "notes": "Applying the correct unsigned suffix makes the intended type explicit and helps prevent implicit signed/unsigned conversion issues.",
+      "misra": [
+        "7.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-7.2"
+      }
+    },
+    {
+      "id": "C-025",
+      "class": "Readability",
+      "secondary": null,
+      "description": "The lowercase character “l” shall not be used in a literal suffix.",
+      "rationale": "Refer to Ref. [2] Rule 7.3",
+      "example": "#include <stdint.h>\n\nvoid InitValue(void)\n{\n/* Non-compliant: lowercase l suffix is used */\n  uint32_t value1 = 100l;\n\n/* Compliant: uppercase L or U suffix is used */\n  uint32_t value2 = 100UL;\n\n}",
+      "notes": "The lowercase letter “l” can easily be confused with the digit “1”, reducing readability",
+      "misra": [
+        "7.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-7.3"
+      }
+    },
+    {
+      "id": "C-026",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "A string literal shall not be assigned to an object unless the object’s type is “pointer to const-qualified char”.",
+      "rationale": "Refer to Ref. [2] Rule 7.4",
+      "example": "#include <stdint.h>\n\nvoid PrintMessage(void)\n{\n/* Non-compliant */\n/* String literal assigned to non-const pointer */\n  char *message1 = \"System ready\";\n\n/* Compliant */\n/* String literal assigned to pointer to const char */\n  const char *message2 = \"System ready\";\n\n}",
+      "notes": "String literals are not modifiable; assigning them to a non-const-qualified pointer may lead to undefined behavior.",
+      "misra": [
+        "7.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-7.4"
+      }
+    },
+    {
+      "id": "C-027",
+      "class": "Portability",
+      "secondary": "Safety",
+      "description": "The argument of an integer constant macro shall have an appropriate form.",
+      "rationale": "Refer to Ref. [2] Rule 7.5",
+      "example": "#include <stdint.h>\n\n/* Compliant */\nuint32_t u1 = UINT32_C( 10 );\n/* Non-compliant - constant is suffixed */\nuint32_t u2 = UINT32_C( 10UL );\n/* Non-compliant - constant expression */\nuint16_t u4 = UINT16_C( -2 );\n/* Non-compliant - constant expression */\nint32_t s1 = INT32_C( -2 );\n/* Compliant */\nint32_t s2 = -INT32_C( 2 );\n\n/*In the following example, the constant has a value that cannot be represented in 16 bits. */\n\nuint_least16_t u5 = UINT16_C ( 0x10000 );\n/* Non-compliant,\neven if uint_least16_t is implemented as a 32-bit type */",
+      "notes": "Integer constant macros shall be written in a form that clearly preserves the intended width and signedness.",
+      "misra": [
+        "7.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-7.5"
+      }
+    },
+    {
+      "id": "C-028",
+      "class": "Portability",
+      "secondary": null,
+      "description": "The small integer variants of the minimum-width integer constant macros shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 7.6",
+      "example": "#include <stdint.h>\n\nvoid processIntegerConstant(void)\n{\n/* Non-compliant: small integer constant macro used */\nuint8_t valueNonCompliant = UINT8_C(100);\n\n/* Compliant: direct unsigned integer literal used */\nuint8_t valueCompliant = 100U;\n}",
+      "notes": "Use of small integer constant macro variants may reduce portability and increase the likelihood of unintended type-related behavior.",
+      "misra": [
+        "7.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-7.6"
+      }
+    },
+    {
+      "id": "C-029",
+      "class": "Consistency and Convention",
+      "secondary": "Readability",
+      "description": "Types shall be explicitly specified.",
+      "rationale": "Refer to Ref. [2] Rule 8.1",
+      "example": "#include <stdint.h>\n\n/* Non-compliant - implicit int type */\nextern x;\n/* Compliant - explicit type */\nextern int16_t x;\n/* Non-compliant - implicit int type */\nconst y;\n/* Compliant - explicit type */\nconst int16_t y;\n/* Non-compliant – implicit */\nextern f ( void );\n/* Compliant */\nextern int16_t f ( void );\n/* Non-compliant */\nextern void g ( char c, const k );\n/* Compliant */\nextern void g ( char c, const int16_t k );\n/* Non-compliant -*/\ntypedef ( *pfi ) ( void );\n/* Compliant */\ntypedef int16_t ( *pfi ) ( void );\n/* Non-compliant */\ntypedef void ( *pfv ) ( const x );\n/* Compliant */\ntypedef void ( *pfv ) ( int16_t x );",
+      "notes": "Explicit type specification improves readability and avoids ambiguity in declarations and interfaces.",
+      "misra": [
+        "8.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.1"
+      }
+    },
+    {
+      "id": "C-030",
+      "class": "Consistency and Convention",
+      "secondary": "Readability",
+      "description": "Function types shall be in prototype form with named parameters.",
+      "rationale": "Refer to Ref. [2] Rule 8.2",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: parameter name is not specified */\nextern void func2(int16_t);\n/* Non-compliant: not in prototype form */\nstatic int16_t func3();\n/* Compliant: prototype specifies named parameter */\nextern int16_t func1(int16_t inputValue);\n/* Compliant: prototype explicitly specifies 0 parameters */\nstatic int16_t func4(void);\n\nint16_t func1(int16_t inputValue)\n{\nreturn inputValue;\n}",
+      "notes": "Prototype form with named parameters improves interface clarity, enables stronger type checking, and supports safer function usage.",
+      "misra": [
+        "8.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.2"
+      }
+    },
+    {
+      "id": "C-031",
+      "class": "Consistency and Convention",
+      "secondary": "Maintainability",
+      "description": "All declarations of an object or function shall use the same names and type qualifiers.",
+      "rationale": "Refer to Ref. [2] Rule 8.3",
+      "example": "#include <stdint.h>\n\n/* Compliant: same parameter name and compatible type */\nextern void processValue(int32_t inputValue);\nextern void processValue(int32_t inputValue);\n\n/* Non-compliant: mismatched parameter name */\nextern void updateValue(int32_t firstValue);\nextern void updateValue(int32_t secondValue);\n\n/* Non-compliant: mismatched type qualifier */\nextern void readValue(int32_t * const dataPtr);\nextern void readValue(int32_t *dataPtr);",
+      "notes": "Using types and qualifiers consistently across declarations of the same object or function encourages stronger typing.\nSpecifying parameter names in function prototypes allows the function definition to be checked for interface consistency with its declarations.",
+      "misra": [
+        "8.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.3"
+      }
+    },
+    {
+      "id": "C-032",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "A compatible declaration shall be visible when an object or function with external linkage is defined.",
+      "rationale": "Refer to Ref. [2] Rule 8.4",
+      "example": "#include <stdint.h>\n/* Compliant */\nextern int16_t count;\nint16_t count = 0;\n/* Non-compliant - no declaration prior to this definition*/\nextern uint16_t speed = 6000u;\n/* Non-compliant - no declaration prior to this definition*/\nuint8_t pressure = 101u;\nextern void func1 ( void );\nextern void func2 ( int16_t x, int16_t y );\nextern void func3 ( int16_t x, int16_t y );\n/* Compliant */\nvoid func1 ( void ){}\n/* Compliant */\nvoid func2 ( int16_t x, int16_t y ){ }\n/* Non-compliant - parameter types different */\nvoid func3 ( int16_t x, uint16_t y ){}\n/* Non-compliant - No declaration of func4 before */\nvoid func4 ( void ){}\n/* Compliant */\n/* Rule does not apply to functions with internal linkage */\nstatic void func5 ( void ){}",
+      "notes": "A prior compatible declaration makes the interface explicit and enables consistent type checking across translation units.",
+      "misra": [
+        "8.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.4"
+      }
+    },
+    {
+      "id": "C-033",
+      "class": "Maintainability",
+      "secondary": "Consistency and Convention",
+      "description": "An external object or function shall be declared once in one and only one file.",
+      "rationale": "Refer to Ref. [2] Rule 8.5",
+      "example": "/* file: featureX.h */\n#ifndef FEATUREX_H\n#define FEATUREX_H\n#include <stdint.h>\n/* Compliant */\nextern int16_t featureXValue;\n#endif\n\n/* file: featureX.c */\n#include \"featureX.h\"\nint16_t featureXValue = 0;\n/* Non-compliant */\n/* file: file1.h */\nextern int16_t sharedValue;\n/* file: file2.h */\nextern int16_t sharedValue;",
+      "notes": "Declaring each external object or function in one and only one file improves interface control and avoids inconsistent declarations.",
+      "misra": [
+        "8.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.5"
+      }
+    },
+    {
+      "id": "C-034",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "An identifier with external linkage shall have exactly one external definition.",
+      "rationale": "Refer to Ref. [2] Rule 8.6",
+      "example": "/*In this example the object i is defined twice: */\n/* file1.c */\nint16_t i = 10;\n\n/* file2.c */\n/* Non-compliant - two definitions of i */\nint16_t i = 20;\n\n/* In this example the object j has one tentative definition and one external definition: */\n/* file3.c */\nint16_t j;     /* Tentative definition */\nint16_t j = 1; /* Compliant - external definition */\n\n/*The following example is non-compliant because the object k has two external definitions. The tentative definition in file4.c becomes an external definition at the end of the translation unit:*/\n/* file4.c */\nint16_t k;     /* Tentative definition - becomes external */\n\n/* file5.c */\nint16_t k = 0; /* External definition */",
+      "notes": "Multiple external definitions may cause linkage conflicts and unpredictable behavior at build or run time.",
+      "misra": [
+        "8.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.6"
+      }
+    },
+    {
+      "id": "C-035",
+      "class": "Consistency and Convention",
+      "secondary": "Maintainability",
+      "description": "The static storage class specifier shall be used in all declarations of objects and functions that have internal linkage.",
+      "rationale": "Refer to Ref. [2] Rule 8.8",
+      "example": "/* Non-compliant: object has internal linkage but declaration does not use static */\nstatic int32_t counterValue = 0;\nextern int32_t counterValue;\n/* Non-compliant: function definition omits static */\nstatic int32_t getValueNonCompliant(void);\nint32_t getValueNonCompliant(void)\n{\n  return 1;\n}\n/* Compliant: all declarations use static consistently */\nstatic int32_t getValueCompliant(void);\nstatic int32_t getValueCompliant(void)\n{\n  return 1;\n}",
+      "notes": "Consistent use of static makes internal linkage explicit and prevents unintended external visibility.",
+      "misra": [
+        "8.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.8"
+      }
+    },
+    {
+      "id": "C-036",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "An object shall be declared at block scope if its identifier only appears in a single function.",
+      "rationale": "Refer to Ref. [2] Rule 8.9",
+      "example": "/* Non-compliant: object is declared at file scope but used in only one function */\nstatic uint32_t monitorCounter = 0U;\nvoid updateMonitorNonCompliant(void)\n{\nmonitorCounter = monitorCounter + 1U;\n}\n/* Compliant: object is declared at block scope because it is only used in one function */\nvoid updateMonitorCompliant(void)\n{\nuint32_t monitorCounter = 0U;\nmonitorCounter = monitorCounter + 1U;\n\n}",
+      "notes": "Block-scope declarations reduce visibility, improve readability, and limit unintended use outside the relevant function.",
+      "misra": [
+        "8.9"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.9"
+      }
+    },
+    {
+      "id": "C-037",
+      "class": "Portability",
+      "secondary": "Safety",
+      "description": "An inline function shall be declared with the static storage class.",
+      "rationale": "Refer to Ref. [2] Rule 8.10",
+      "example": "file1.c\n/* Non-compliant: inline function not declared static */\ninline uint32_t getValue(uint32_t inputValue)\n{\n   return inputValue + 1U;\n}\nfile2.c\nextern uint32_t getValue(uint32_t inputValue);\nvoid processValue(void)\n{\n   uint32_t value = getValue(1U);\n}\nfile3.c\n/* Compliant: inline function is declared with static */\nstatic inline uint32_t getValue(uint32_t inputValue)\n{\n   return inputValue + 1U;\n}\nfile4.c\nvoid processValue(void)\n{\n/* Compliant: separate translation unit does not depend on external inline definition */\n   uint32_t value = 1U;\n}",
+      "notes": "Declaring inline functions as static avoids multiple-definition issues and improves portability across translation units.",
+      "misra": [
+        "8.10"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.10"
+      }
+    },
+    {
+      "id": "C-038",
+      "class": "Safety",
+      "secondary": "Consistency and Convention",
+      "description": "All declarations of an object with an explicit alignment specification shall specify the same alignment.",
+      "rationale": "Refer to Ref. [2] Rule 8.15",
+      "example": "file1.c\n/* Non-compliant: object declared with 8-byte alignment */\n_Alignas(8) extern uint32_t bufferValue;\nfile2.c\n\n/* Non-compliant: same-object defined different alignment */\n_Alignas(4) uint32_t bufferValue = 0U;\nfile3.c\n/* Compliant: object is declared with 8-byte alignment */\n_Alignas(8) extern uint32_t bufferValue;\nfile4.c\n/* Compliant: same object defined with the same alignment */\n_Alignas(8) uint32_t bufferValue = 0U;",
+      "notes": "Inconsistent alignment specifications for the same object may cause incorrect assumptions about storage layout and access.",
+      "misra": [
+        "8.15"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.15"
+      }
+    },
+    {
+      "id": "C-039",
+      "class": "Maintainability",
+      "secondary": "Safety",
+      "description": "There shall be no tentative definitions in a header file.",
+      "rationale": "Refer to Ref. [2] Rule 8.18",
+      "example": "/* Non-compliant */\nfile1.h\n#ifndef FILE1_H\n#define FILE1_H\n/* Tentative definition appears in header file */\nuint32_t systemCounter;\n#endif\n\nfile1.c\n#include \"file1.h\"\nvoid incrementCounter(void)\n{\n   systemCounter = systemCounter + 1U;\n}\n\nfile2.c\n#include \"file1.h\"\nvoid resetCounter(void)\n{\n   systemCounter = 0U;\n}\n\n/* Compliant */\nfile1.h\n\n#ifndef FILE1_H\n#define FILE1_H\n/* Only declaration appears in header file */\nextern uint32_t systemCounter;\nvoid incrementCounter(void);\nvoid resetCounter(void);\n#endif\n\nfile1.c\n#include \"file1.h\"\n/* Compliant: definition is placed in a source file */\nuint32_t systemCounter = 0U;\nvoid incrementCounter(void)\n{\nsystemCounter = systemCounter + 1U;\n}\n\nfile2.c\n#include \"file1.h\"\nvoid resetCounter(void)\n{\nsystemCounter = 0U;\n}",
+      "notes": "Tentative definitions in header files may lead to multiple definitions when the header is included in more than one translation unit.",
+      "misra": [
+        "8.18"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-8.18"
+      }
+    },
+    {
+      "id": "C-040",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The value of an object with automatic storage duration shall not be read before it has been set.",
+      "rationale": "Refer to Ref. [2] Rule 9.1",
+      "example": "#include <stdint.h>\n\nuint32_t getValueNonCompliant(uint32_t condition)\n{\n   uint32_t result;\n   if (condition > 0U)\n   {\n      result = 10U;\n   }\n/* Non-compliant: result may be read before being set */\n   return result;\n}\n\nuint32_t getValueCompliant(uint32_t condition)\n{\n/* Compliant: object is initialized before any read */\n   uint32_t result = 0U;\n   if (condition > 0U)\n   {\n      result = 10U;\n   }\n   return result;\n}",
+      "notes": "Reading an automatic object before initialization may result in indeterminate values and unsafe behavior.",
+      "misra": [
+        "9.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-9.1"
+      }
+    },
+    {
+      "id": "C-041",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "The initializer for an aggregate shall be enclosed in braces.",
+      "rationale": "Refer to Ref. [2] Rule 9.2",
+      "example": "typedef struct\n{\nuint32_t x;\nuint32_t y;\n} PointType;\n\n/* Non-compliant: initializer is not enclosed in braces */\nPointType pointNonCompliant = 1U;\n\n/* Compliant: initializer is enclosed in braces */\nPointType pointCompliant = { 1U, 2U };",
+      "notes": "Braced initializers make aggregate initialization explicit and easier to review.",
+      "misra": [
+        "9.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-9.2"
+      }
+    },
+    {
+      "id": "C-042",
+      "class": "Safety",
+      "secondary": "Readability",
+      "description": "Arrays shall not be partially initialized.",
+      "rationale": "Refer to Ref. [2] Rule 9.3",
+      "example": "/* Non-compliant: array is partially initialized */\nuint32_t valuesNonCompliant[4] = { 1U, 2U };\n\n/* Compliant: all array elements explicitly initialized */\nuint32_t valuesCompliant[4] = { 1U, 2U, 3U, 4U };",
+      "notes": "Partial initialization may hide unintended default values and shall be avoided in safety-critical code.",
+      "misra": [
+        "9.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-9.3"
+      }
+    },
+    {
+      "id": "C-043",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Operands shall not be of an inappropriate essential type.",
+      "rationale": "Refer to Ref. [2] Rule 10.1",
+      "example": "void processValue(void)\n{\n   int32_t signedValue = 1;\n   uint32_t unsignedValue = 1U;\n\n/* Non-compliant */\n/* Bitwise operator is applied to a signed operand */\n   if ((signedValue << 1) != 0)\n   {\n      signedValue = signedValue + 1;\n   }\n\n/* Compliant */\n/* Bitwise operator is applied to an unsigned operand */\n   if ((unsignedValue << 1U) != 0U)\n   {\n      unsignedValue = unsignedValue + 1U;\n   }\n}",
+      "notes": "Inappropriate essential types may cause unintended conversions, loss of meaning, or incorrect runtime behavior.",
+      "misra": [
+        "10.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.1"
+      }
+    },
+    {
+      "id": "C-044",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Expressions of essentially character type shall not be used inappropriately in addition and subtraction operations.",
+      "rationale": "Refer to Ref. [2] Rule 10.2",
+      "example": "#include <stdint.h>\n\nvoid processCharacter(void)\n{\n   char charValue = 'A';\n   uint32_t indexValue = 1U;\n   char nextCharacter;\n/* Non-compliant */\n/* Character type is used directly in arithmetic */\n   nextCharacter = charValue + 1;\n/* Compliant */\n/* Character arithmetic is explicit and justified */\n   nextCharacter = (char)((uint32_t)'A' + indexValue);\n\n}",
+      "notes": "Character types shall not be used as small integers unless this usage is explicit and well justified.",
+      "misra": [
+        "10.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.2"
+      }
+    },
+    {
+      "id": "C-045",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The value of an expression shall not be assigned to an object with a narrower essential type or of a different essential type category.",
+      "rationale": "Refer to Ref. [2] Rule 10.3",
+      "example": "#include <stdbool.h>\n#include <stdint.h>\n\nvoid updateValues(void)\n{\nuint32_t sourceValue = 1U;\nuint8_t smallValue = 0U;\nbool enableFlag = false;\n/* Non-compliant: narrower essential type */\nsmallValue = sourceValue;\n/* Non-compliant: different essential type category */\nenableFlag = sourceValue;\n/* Compliant */\nif (sourceValue <= UINT8_MAX)\n{\nsmallValue = (uint8_t)sourceValue;\n}\n\nenableFlag = (sourceValue != 0U);\n\n}",
+      "notes": "Assignment to a narrower or different essential type category may lose information or change the intended interpretation of the value.",
+      "misra": [
+        "10.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.3"
+      }
+    },
+    {
+      "id": "C-046",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Both operands of an operator in which the usual arithmetic conversions are performed shall have the same essential type category.",
+      "rationale": "Refer to Ref. [2] Rule 10.4",
+      "example": "#include <stdint.h>\n\nvoid processOperands(void)\n{\nint32_t  signedValue    = 10;\nint32_t  signedOffset   = 2;\nuint32_t unsignedValue  = 10U;\nuint32_t unsignedOffset = 2U;\nint32_t  signedResult   = 0;\nuint32_t unsignedResult = 0U;\n\n/* Non-compliant different essential categories are mixed */\nsignedResult = signedValue + unsignedValue;\n/* Compliant: both operands are signed */\nsignedResult = signedValue + signedOffset;\n/* Compliant: both operands are unsigned */\nunsignedResult = unsignedValue + unsignedOffset;\n\n}",
+      "notes": "Mixing different essential type categories in arithmetic expressions may produce unexpected conversion results.",
+      "misra": [
+        "10.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.4"
+      }
+    },
+    {
+      "id": "C-047",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The value of a composite expression shall not be assigned to an object with wider essential type.",
+      "rationale": "Refer to Ref. [2] Rule 10.6",
+      "example": "void updateValue(void)\n{\n   uint16_t valueA = 1U;\n   uint16_t valueB = 2U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant */\n/* Composite expression has narrower essential type */\n   resultValue = valueA + valueB;\n\n/* Compliant */\n/* Operands are widened before forming the expression */\n   resultValue = (uint32_t)valueA + (uint32_t)valueB;\n\n}",
+      "notes": "Assigning a composite expression to a wider essential type may conceal earlier type-related issues in the expression.",
+      "misra": [
+        "10.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.6"
+      }
+    },
+    {
+      "id": "C-048",
+      "class": "Safety",
+      "secondary": null,
+      "description": "If a composite expression is used as one operand of an operator in which the usual arithmetic conversions are performed then the other operand shall not have wider essential type.",
+      "rationale": "Refer to Ref. [2] Rule 10.7",
+      "example": "void processValue(void)\n{\n   uint16_t valueA = 1U;\n   uint16_t valueB = 2U;\n   uint32_t wideValue = 3U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant: composite expression is combined with an operand of wider essential type */\n   resultValue = (valueA + valueB) + wideValue;\n\n/* Compliant: both operands of the operator have the same essential type width */\n   resultValue = ( (uint32_t)valueA + (uint32_t)valueB )\n+ wideValue;\n\n}",
+      "notes": "Using a wider operand together with a composite expression may introduce unexpected implicit conversions.",
+      "misra": [
+        "10.7"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.7"
+      }
+    },
+    {
+      "id": "C-049",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The value of a composite expression shall not be cast to a different essential type category or a wider essential type.",
+      "rationale": "Refer to Ref. [2] Rule 10.8",
+      "example": "#include <stdint.h>\n\nvoid processCast(void)\n{\nuint16_t valueA = 1U;\nuint16_t valueB = 2U;\nuint32_t resultValue = 0U;\n\n/* Non-compliant */\n/* Composite expression is cast to a wider essential type */\nresultValue = (uint32_t)(valueA + valueB);\n\n/* Compliant */\n/* Operands converted before composite expression formed */\nresultValue = (uint32_t)valueA + (uint32_t)valueB;\n\n}",
+      "notes": "Casting a composite expression to a different essential type category or a wider essential type may hide loss of precision or type interpretation issues.",
+      "misra": [
+        "10.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-10.8"
+      }
+    },
+    {
+      "id": "C-050",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "Conversions shall not be performed between a pointer to a function and any other type.",
+      "rationale": "Refer to Ref. [2] Rule 11.1",
+      "example": "#include <stdint.h>\n\nstatic void processData(void)\n{\n   /* Do nothing */\n}\n\n/* Non-compliant: function pointer converted to an object pointer type */\nstatic void *addressNonCompliant = (void *)processData;\n\n/* Compliant: function pointer remains a function pointer */\nstatic void (*addressCompliant)(void) = processData;\n\nvoid usePointer(void)\n{\n   addressCompliant();\n}",
+      "notes": "Conversions between function pointers and other types are non-portable and may result in undefined or unsafe behavior.",
+      "misra": [
+        "11.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.1"
+      }
+    },
+    {
+      "id": "C-051",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "Conversions shall not be performed between a pointer to an incomplete type and any other type.",
+      "rationale": "Refer to Ref. [2] Rule 11.2",
+      "example": "#include <stdint.h>\n\ntypedef struct DeviceTag DeviceType;\n\nvoid nonCompliantExample(DeviceType *devicePtr)\n{\n/* Non-compliant */\n/* Pointer to incomplete type is converted to another pointer type */\nuint32_t *dataPtr = (uint32_t *)devicePtr;\n(void)dataPtr;\n}\n\nDeviceType *compliantExample(DeviceType *devicePtr)\n{\n/* Compliant: no conversion is performed */\nDeviceType *copyPtr = devicePtr;\nreturn copyPtr;\n}",
+      "notes": "Such conversions are non-transparent and may lead to unsafe or non-portable behavior.",
+      "misra": [
+        "11.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.2"
+      }
+    },
+    {
+      "id": "C-052",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "A conversion shall not be performed between a pointer to object type and a pointer to a different object type.",
+      "rationale": "Refer to Ref. [2] Rule 11.3",
+      "example": "#include <stdint.h>\n\nvoid processPointer(void)\n{\n   uint32_t dataValue = 0U;\n   uint32_t *sourcePtr = &dataValue;\n\n/* Non-compliant: pointer to object type is converted to a different object pointer type */\n   uint16_t *narrowPtr = (uint16_t *)sourcePtr;\n\n/* Compliant: pointer is assigned only to the same object pointer type */\n   uint32_t *sameTypePtr = sourcePtr;\n\n}",
+      "notes": "Converting between unrelated object pointer types may violate type assumptions and cause undefined behavior.",
+      "misra": [
+        "11.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.3"
+      }
+    },
+    {
+      "id": "C-053",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "A conversion shall not be performed between a pointer to object and an arithmetic type.",
+      "rationale": "Refer to Ref. [2] Rule 11.4",
+      "example": "#include <stdint.h>\n\nvoid processPointerConversion(void)\n{\n   uint32_t dataValue = 0U;\n   uint32_t *dataPtr = &dataValue;\n   uintptr_t addressValue = 0U;\n\n/* Non-compliant */\n/* Pointer to object is converted to an arithmetic type */\n   addressValue = (uintptr_t)dataPtr;\n\n/* Non-compliant */\n/* Arithmetic type is converted to a pointer to object */\n   dataPtr = (uint32_t *)addressValue;\n\n/* Compliant: object pointer is used without conversion */\n   dataPtr = &dataValue;\n   addressValue = 0U;",
+      "notes": "Pointer–integer conversions are implementation-dependent and shall be avoided except where explicitly justified by the target environment.",
+      "misra": [
+        "11.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.4"
+      }
+    },
+    {
+      "id": "C-054",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "A cast shall not be performed between pointer to void and an arithmetic type.",
+      "rationale": "Refer to Ref. [2] Rule 11.6",
+      "example": "#include <stdint.h>\n\nvoid processVoidPointerConversion(void)\n{\n   uint32_t dataValue = 0U;\n   void *dataPtr = &dataValue;\n   uintptr_t addressValue = 0U;\n\n/* Non-compliant */\n/* Pointer to void is cast to an arithmetic type */\n   addressValue = (uintptr_t)dataPtr;\n\n/* Non-compliant */\n/* Arithmetic type is cast to pointer to void */\n   dataPtr = (void *)addressValue;\n\n/* Compliant */\n/* Pointer to void is used without arithmetic conversion */\n   dataPtr = &dataValue;\n   addressValue = 0U;\n\n}",
+      "notes": "Such casts reduce portability and may break assumptions about address representation.",
+      "misra": [
+        "11.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.6"
+      }
+    },
+    {
+      "id": "C-055",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "A conversion shall not remove any const, volatile or _Atomic qualification from the type pointed to by a pointer.",
+      "rationale": "Refer to Ref. [2] Rule 11.8",
+      "example": "#include <stdint.h>\n\nvoid processQualifiedPointer(void)\n{\n   const uint32_t dataValue = 1U;\n   const uint32_t *sourcePtr = &dataValue;\n\n/* Non-compliant */\n/* Const qualification is removed by conversion */\n   uint32_t *nonCompliantPtr = (uint32_t *)sourcePtr;\n \n/* Compliant: qualification is preserved */\n   const uint32_t *compliantPtr = sourcePtr;\n\n}",
+      "notes": "Removing qualifiers may bypass intended access restrictions and invalidate design assumptions.",
+      "misra": [
+        "11.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.8"
+      }
+    },
+    {
+      "id": "C-056",
+      "class": "Consistency and Convention",
+      "secondary": "Safety",
+      "description": "The macro NULL shall be the only permitted form of integer null pointer constant.",
+      "rationale": "Refer to Ref. [2] Rule 11.9",
+      "example": "#include <stdint.h>\n\nvoid processNullPointer(void)\n{\n   uint32_t *dataPtr = NULL;\n\n/* Non-compliant */\n/* Integer literal 0 is used as a null pointer constant */\n   dataPtr = 0;\n\n/* Compliant */\n/* NULL macro is used as the null pointer constant */\n   dataPtr = NULL;\n}",
+      "notes": "A single null-pointer representation improves consistency and readability.",
+      "misra": [
+        "11.9"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.9"
+      }
+    },
+    {
+      "id": "C-057",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "Pointers shall not be implicitly compared to NULL.",
+      "rationale": "Refer to Ref. [2] Rule 11.11",
+      "example": "#include <stdint.h>\n\nvoid processPointer(uint32_t *dataPtr)\n{\n/* Non-compliant: pointer is implicitly compared to NULL */\n   if (dataPtr)\n   {\n      *dataPtr = 1U;\n   }\n\n/* Compliant: pointer is explicitly compared to NULL */\n   if (dataPtr != NULL)\n   {\n      *dataPtr = 2U;\n   }\n}",
+      "notes": "Explicit comparison improves readability and makes pointer intent clear during review.",
+      "misra": [
+        "11.11"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-11.11"
+      }
+    },
+    {
+      "id": "C-058",
+      "class": "Readability",
+      "secondary": "Maintainability",
+      "description": "The precedence of operators within expressions shall be made explicit.",
+      "rationale": "Refer to Ref. [2] Rule 12.1",
+      "example": "#include <stdint.h>\n\nvoid processExpression(void)\n{\n   uint32_t valueA = 1U;\n   uint32_t valueB = 2U;\n   uint32_t valueC = 3U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant: operator precedence not made explicit */\n   resultValue = valueA + valueB * valueC;\n\n/* Compliant */\n/* Operator precedence is made explicit with parentheses */\n   resultValue = valueA + (valueB * valueC);\n\n}",
+      "notes": "Explicit grouping with parentheses reduces ambiguity and review errors.",
+      "misra": [
+        "12.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-12.1"
+      }
+    },
+    {
+      "id": "C-059",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The right hand operand of a shift operator shall lie in the range zero to one less than the width in bits of the essential type of the left hand operand.",
+      "rationale": "Refer to Ref. [2] Rule 12.2",
+      "example": "#include <stdint.h>\n\nvoid processShiftOperation(void)\n{\n   uint32_t value       = 1U;\n   uint32_t resultValue = 0U;\n   uint32_t shiftCount  = 32U;\n\n/* Non-compliant */\n/* Shift count is not less than the bit-width of uint32_t */\n   resultValue = value << shiftCount;\n\n/* Compliant */\n/* Shift count is within the valid range 0 to 31 */\n   shiftCount = 3U;\n   resultValue = value << shiftCount;\n\n}",
+      "notes": "Out-of-range shift counts may cause undefined or implementation-dependent behavior.",
+      "misra": [
+        "12.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-12.2"
+      }
+    },
+    {
+      "id": "C-060",
+      "class": "Readability",
+      "secondary": "Maintainability",
+      "description": "The comma operator shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 12.3",
+      "example": "#include <stdint.h>\n\nvoid processCommaOperator(void)\n{\nuint32_t valueA = 0U;\nuint32_t valueB = 0U;\nuint32_t resultValue = 0U;\n\n/* Non-compliant: comma operator is used */\nresultValue = (valueA = 1U, valueB = 2U);\n\n/* Compliant: operations written as separate statements */\nvalueA = 1U;\nvalueB = 2U;\nresultValue = valueB;\n\n}",
+      "notes": "The comma operator obscures intent and reduces readability.",
+      "misra": [
+        "12.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-12.3"
+      }
+    },
+    {
+      "id": "C-061",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "The sizeof operator shall not have an operand which is a function parameter declared as “array of type”.",
+      "rationale": "Refer to Ref. [2] Rule 12.5",
+      "example": "#include <stddef.h>\n\nsize_t processArrayParamNonCompliant(uint32_t dataArray[10])\n{\n/* Non-compliant: arr parameter adjusted to pointer type */\n   return sizeof(dataArray);\n}\n\nsize_t processArrayParamCompliant(const uint32_t *dataPtr,\n                                  size_t dataSize)\n{\n   size_t index = 0U;\n   uint32_t sum = 0U;\n\n/* Compliant: actual size is passed explicitly */\n   for (index = 0U; index < dataSize; ++index)\n   {\n      sum += dataPtr[index];\n   }\n\n   return dataSize;\n}",
+      "notes": "Such parameters are adjusted to pointers, which may mislead the developer about the actual size being evaluated.",
+      "misra": [
+        "12.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-12.5"
+      }
+    },
+    {
+      "id": "C-062",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The value of an expression and its persistent side effects shall be the same under all permitted evaluation orders and shall be independent from thread interleaving.",
+      "rationale": "Refer to Ref. [2] Rule 13.2",
+      "example": "#include <stdint.h>\n\nvoid processEvaluationOrder(void)\n{\n   uint32_t indexValue  = 0U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant */\n/* Expression depends on evaluation order of side effects */\n   resultValue = indexValue++ + indexValue;\n\n/* Compliant */\n/* Side effects are separated into distinct statements */\n   indexValue = 0U;\n   resultValue = indexValue;\n   indexValue = indexValue + 1U;\n   resultValue = resultValue + indexValue;\n\n}",
+      "notes": "Expressions shall not rely on unspecified evaluation order or concurrent side-effect interactions.",
+      "misra": [
+        "13.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-13.2"
+      }
+    },
+    {
+      "id": "C-063",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "A full expression containing an increment (++) or decrement (--) operator shall have no other potential side effects other than that caused by the increment or decrement operator.",
+      "rationale": "Refer to Ref. [2] Rule 13.3",
+      "example": "#include <stdint.h>\n\nvoid processIncrementExpression(void)\n{\n   uint32_t value = 0U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant */\n/* Expression contains ++ and another side effect */\n   resultValue = value++ + (value = 10U);\n\n/* Compliant: increment side effect is isolated */\n   value = 0U;\n   resultValue = value;\n   value++;\n\n}",
+      "notes": "Restricting side effects in such expressions improves clarity and prevents subtle evaluation-order issues.",
+      "misra": [
+        "13.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-13.3"
+      }
+    },
+    {
+      "id": "C-064",
+      "class": "Readability",
+      "secondary": "Maintainability",
+      "description": "The result of an assignment operator shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 13.4",
+      "example": "#include <stdint.h>\n\nvoid processAssignmentResult(void)\n{\n   uint32_t value = 0U;\n   bool status = false;\n/* Non-compliant: result of assignment is used */\n   if ((value = 1U) != 0U)\n   {\n      status = true;\n   }\n/* Compliant: assignment and decision are separated */\n   value = 1U;\n   if (value != 0U)\n   {\n      status = true;\n   }\n}",
+      "notes": "Using assignment results inside larger expressions reduces readability and may hide defects.",
+      "misra": [
+        "13.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-13.4"
+      }
+    },
+    {
+      "id": "C-065",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The right hand operand of a logical && or || operator shall not contain persistent side effects.",
+      "rationale": "Refer to Ref. [2] Rule 13.5",
+      "example": "#include <stdint.h>\n\nvoid processLogicalOperator(void)\n{\n   bool statusA = true;\n   bool statusB = false;\n   uint32_t value = 0U;\n/* Non-compliant: rightop contains persistent side effect */\n   if (statusA && ((value = 1U) != 0U))\n   {\n      statusB = true;\n   }\n/* Compliant: side effect separated from logic expression */\n   value = 1U;\n\n   if (statusA && (value != 0U))\n   {\n      statusB = true;\n   }\n}",
+      "notes": "Short-circuit evaluation may suppress side effects and create control-flow-dependent behavior.",
+      "misra": [
+        "13.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-13.5"
+      }
+    },
+    {
+      "id": "C-066",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The operand of the sizeof operator shall not contain any expression which has potential side effects.",
+      "rationale": "Refer to Ref. [2] Rule 13.6",
+      "example": "#include <stdint.h>\n\nvoid processSizeofOperand(void)\n{\n   uint32_t dataArray[4] = { 0U, 0U, 0U, 0U };\n   uint32_t indexValue   = 0U;\n   size_t   sizeValue    = 0U;\n\n/* Non-compliant: sizeof operand contains side effect */\n   sizeValue = sizeof(dataArray[indexValue++]);\n\n/* Compliant: sizeof operand has no side effect */\n   sizeValue = sizeof(dataArray[0]);\n}",
+      "notes": "Side effects inside sizeof operands are misleading because the operand is not normally evaluated.",
+      "misra": [
+        "13.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-13.6"
+      }
+    },
+    {
+      "id": "C-067",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "The software shall not use floating-point data types or constants and operations.",
+      "rationale": "Refer to Ref. [2] Rule 14.1",
+      "example": "#include <stdint.h> +\n\n/* Non-compliant */\n/* Uses floating-point type and floating-point operation */\nfloat calculateSpeed(float distanceKm, float timeHour)\n{\n   return distanceKm / timeHour;\n}\n\n/* Compliant: uses integer arithmetic only */\nuint32_t calculateSpeedKMpH(uint32_t distanceKm, uint32_t timeHour)\n{\n   uint32_t speedKMpH = 0U;\n\n   if (timeHour != 0U)\n   {\n      speedKMpH = distanceKm / timeHour;\n   }\n\n   return speedKMpH;\n}",
+      "notes": "The project shall target a CPU that does not provide an FPU. Therefore, the additional math library is prevented from being used.",
+      "misra": [
+        "14.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-14.1"
+      }
+    },
+    {
+      "id": "C-068",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A for loop shall be well-formed.",
+      "rationale": "Refer to Ref. [2] Rule 14.2",
+      "example": "#include <stdint.h>\n\nvoid processForLoop(void)\n{\n   uint32_t sumValue = 0U;\n   uint32_t indexValue = 0U;\n   uint32_t stepValue = 1U;\n/* Non-compliant: loop control modified in the loop body */\n   for (indexValue = 0U; indexValue < 10U; indexValue++)\n   {\n      indexValue = indexValue + stepValue;\n      sumValue   = sumValue + indexValue;\n   }\n/* Compliant */\n/* Loop control is defined only in the for statement */\n   for (indexValue = 0U; indexValue < 10U; indexValue++)\n   {\n      sumValue = sumValue + indexValue;\n   }\n}",
+      "notes": "A well-formed for loop improves analyzability, readability, and predictability of iteration behavior.",
+      "misra": [
+        "14.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-14.2"
+      }
+    },
+    {
+      "id": "C-069",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Controlling expressions shall not be invariant.",
+      "rationale": "Refer to Ref. [2] Rule 14.3",
+      "example": "#include <stdint.h>\n\nvoid processInvariantCondition(void)\n{\n   uint32_t value = 0U;\n   bool status = false;\n/* Non-compliant: controlling expression is invariant */\n   while (true)\n{\n      value = value + 1U;\n      break;\n   }\n/* Compliant: controlling expression depend on loop state */\n   while (value < 10U)\n{\n      value = value + 1U;\n   }\n   if (value == 10U){\n      status = true;\n   }\n}",
+      "notes": "Invariant controlling expressions may create unintended infinite loops or unreachable branches.",
+      "misra": [
+        "14.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-14.3"
+      }
+    },
+    {
+      "id": "C-070",
+      "class": "Safety",
+      "secondary": "Readability",
+      "description": "The controlling expression of an if statement and the controlling expression of an iteration-statement shall have essentially Boolean type.",
+      "rationale": "Refer to Ref. [2] Rule 14.4",
+      "example": "#include <stdint.h>\n\nvoid processControlExpression(void)\n{\n   uint32_t value = 1U;\n   bool status = false;\n/* Non-compliant */\n/* Controlling expression not have essentially Boole type */\n   if (value)\n   {\n      status = true;\n   }\n/* Compliant */\n/* Controlling expression has essentially Boolean type */\n   if (value != 0U)\n   {\n      status = true;\n   }\n}",
+      "notes": "Boolean controlling expressions make decisions explicit and reduce implicit-conversion issues.",
+      "misra": [
+        "14.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-14.4"
+      }
+    },
+    {
+      "id": "C-071",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "The goto statement shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 15.1",
+      "example": "#include <stdint.h>\n\nvoid processGoto(void)\n{\n   uint32_t value = 0U;\n/* Non-compliant: goto is used */\ngoto exitLabel;\n   value = 1U;\nexitLabel:\n   value = value + 1U;\n/* Compliant: structured control flow is used */\n   value = 0U;\n   if (value == 0U)\n   {\n      value = value + 1U;\n   }\n}",
+      "notes": "goto complicates control flow and makes code more difficult to analyze and maintain.",
+      "misra": [
+        "15.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-15.1"
+      }
+    },
+    {
+      "id": "C-072",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "A function shall have a single point of exit at the end.",
+      "rationale": "Refer to Ref. [2] Rule 15.5",
+      "example": "#include <stdint.h>\n\nuint32_t getValueNonCompliant(bool status)\n{\n/* Non-compliant: multiple exit points are used */\n   if (status == true)\n{\n      return 1U;\n   }\n   return 0U;\n}\n\nuint32_t getValueCompliant(bool status)\n{\n   uint32_t resultValue = 0U;\n/* Compliant: single exit point at the end */\n   if (status == true)\n{\n      resultValue = 1U;\n   }\n   return resultValue;\n}",
+      "notes": "A single exit point simplifies review, tracing, and control-flow analysis.",
+      "misra": [
+        "15.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-15.5"
+      }
+    },
+    {
+      "id": "C-073",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "The body of an iteration-statement or a selection-statement shall be a compound-statement.",
+      "rationale": "Refer to Ref. [2] Rule 15.6",
+      "example": "#include <stdint.h>\n\nvoid processCompoundStatement(bool status)\n{\n   uint32_t value = 0U;\n\n/* Non-compliant: if body is not a compound statement */\n   if (status == true)\n{\n      value = 1U;\n   }\n/* Compliant: if body is a compound statement */\n   if (status == true)\n   {\n      value = 2U;\n   }\n}",
+      "notes": "Mandatory braces prevent accidental misbinding and improve readability during maintenance.",
+      "misra": [
+        "15.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-15.6"
+      }
+    },
+    {
+      "id": "C-074",
+      "class": "Maintainability",
+      "secondary": "Safety",
+      "description": "All switch statements shall be well-formed.",
+      "rationale": "Refer to Ref. [2] Rule 16.1",
+      "example": "#include <stdint.h>\n\nvoid processSwitchWellFormed(uint32_t selectValue)\n{\n   uint32_t resultValue = 0U;\n/* Non-compliant */\n/* Statement exists outside any switch-clause */\n   switch (selectValue)\n   {\n      resultValue = 1U;\n   case 0U:\n      resultValue = 2U;\n   break;\n\n   default:\n      resultValue = 3U;\n   break;\n   }\n/* Compliant: all statements are inside switch-clauses */\n   switch (selectValue)\n   {\n   case 0U:\n      resultValue = 4U;\n   break;\n\n   default:\n      resultValue = 5U;\n   break;\n   }\n}",
+      "notes": "Well-formed switch constructs improve analyzability and reduce fall-through-related defects.",
+      "misra": [
+        "16.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-16.1"
+      }
+    },
+    {
+      "id": "C-075",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "A switch label shall only be used when the most closely-enclosing compound statement is the body of a switch statement.",
+      "rationale": "Refer to Ref. [2] Rule 16.2",
+      "example": "#include <stdint.h>\n\nvoid processSwitchLabel(uint32_t selectValue)\n{\n   uint32_t resultValue = 0U;\n   switch (selectValue)\n{\n/* Non-compliant */\n/* Case label is placed inside nested compound statement */\n   {\n   case 0U:\n      resultValue = 1U;\n      break;\n   }\n/* Compliant */\n/* Case label is placed directly in the switch body */\n   case 1U:\n      resultValue = 2U;\n      break;\n   default:\n      resultValue = 3U;\n      break;\n   }\n}",
+      "notes": "This restriction preserves proper control-flow structure and prevents misleading label placement.",
+      "misra": [
+        "16.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-16.2"
+      }
+    },
+    {
+      "id": "C-076",
+      "class": "Safety",
+      "secondary": "Readability",
+      "description": "Every switch-clause shall be appropriately terminated.",
+      "rationale": "Refer to Ref. [2] Rule 16.3",
+      "example": "#include <stdint.h>\n\nvoid processSwitchTermination(uint32_t selectValue)\n{\n   uint32_t resultValue = 0U;\n   switch (selectValue)\n   {\n/* Non-compliant: switch-clause is not terminated */\n   case 0U:\n      resultValue = 1U;\n/* Compliant: switch-clause is terminated with break */\n   case 1U:\n      resultValue = 2U;\n      break;\n   }\n}",
+      "notes": "Proper termination prevents unintended fall-through and clarifies control flow.",
+      "misra": [
+        "16.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-16.3"
+      }
+    },
+    {
+      "id": "C-077",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "Every switch statement shall have a default label.",
+      "rationale": "Refer to Ref. [2] Rule 16.4",
+      "example": "#include <stdint.h>\n\nvoid processSwitchDefault(uint32_t selectValue)\n{\n   uint32_t resultValue = 0U;\n\n/* Non-compliant: switch has no default label */\n   switch (selectValue)\n{\n      case 0U:\n         resultValue = 1U;\n         break;\ncase 1U:\n         resultValue = 2U;\n         break;\n}\n/* Compliant: switch has a default label */\n   switch (selectValue)\n{\n      case 0U:\n         resultValue = 3U;\n         break;\ndefault:\n         resultValue = 4U;\n         break;\n   }\n}",
+      "notes": "A default label ensures that unexpected values are handled explicitly.",
+      "misra": [
+        "16.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-16.4"
+      }
+    },
+    {
+      "id": "C-078",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "Every switch statement shall have at least two switch-clauses.",
+      "rationale": "Refer to Ref. [2] Rule 16.6",
+      "example": "#include <stdint.h>\n\nvoid processSwitchClauseCount(uint32_t selectValue)\n{\n   uint32_t resultValue = 0U;\n/* Non-compliant: has only one switch-clause */\n   switch (selectValue)\n{\n   default:\n      resultValue = 1U;\n      break;\n   }\n/* Compliant: switch has at least two switch-clauses */\n   switch (selectValue)\n{\n   case 0U:\n      resultValue = 2U;\n      break;\ndefault:\n      resultValue = 3U;\n      break;\n}\n}",
+      "notes": "Very small switch statements are often clearer when expressed using simpler control constructs.",
+      "misra": [
+        "16.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-16.6"
+      }
+    },
+    {
+      "id": "C-079",
+      "class": "Safety",
+      "secondary": null,
+      "description": "A switch-expression shall not have essentially Boolean type.",
+      "rationale": "Refer to Ref. [2] Rule 16.7",
+      "example": "#include <stdint.h>\n\nvoid processBooleanSwitch(bool status)\n{\n   uint32_t resultValue = 0U;\n/* Non-compliant */\n/* Switch-expression has essentially Boolean type */\n   switch (status)\n   {\n   case false:\n      resultValue = 1U;\n      break;\n   default:\n      resultValue = 2U;\n      break;\n   }\n/* Compliant: Boolean decision is expressed with if */\n   if (status == true)\n   {\n      resultValue = 3U;\n   }\n   else\n   {\n      resultValue = 4U;\n   }\n}",
+      "notes": "Boolean decisions are generally clearer and safer when expressed using if statements.",
+      "misra": [
+        "16.7"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-16.7"
+      }
+    },
+    {
+      "id": "C-080",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "Functions shall not call themselves, either directly or indirectly.",
+      "rationale": "Refer to Ref. [2] Rule 17.2",
+      "example": "#include <stdint.h>\n\nuint32_t countDownNonCompliant(uint32_t value)\n{\n/* Non-compliant: direct recursive call is used */\n   if (value > 0U)\n{\n      return countDownNonCompliant(value - 1U);\n   }\n\n/* Rule.72: Multiple return is non-compliant */\n   return 0U; \n}\nuint32_t countDownCompliant(uint32_t value)\n{\n/* Compliant: iteration is used instead of recursion */\n   while (value > 0U)\n{\n      value = value - 1U;\n   }\n   return value;\n}",
+      "notes": "Recursion complicates stack usage analysis and may be unsuitable for constrained embedded systems.",
+      "misra": [
+        "17.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.2"
+      }
+    },
+    {
+      "id": "C-081",
+      "class": "Safety",
+      "secondary": "Consistency and Convention",
+      "description": "A function shall not be declared implicitly.",
+      "rationale": "Refer to Ref. [2] Rule 17.3",
+      "example": "#include <stdint.h>\n\n#if 0\nvoid processImplicitDeclaration(void)\n{\nuint32_t resultValue = 0U;\n\n/* Non-compliant: function used without a declaration */\nresultValue = getValue(1U);\n}\n#endif\n\n/* Compliant: function is declared before use */\nuint32_t getValue(uint32_t inputValue);\n\nuint32_t processExplicitDeclaration(void)\n{\nreturn getValue(1U);\n}\n\nuint32_t getValue(uint32_t inputValue)\n{\nreturn inputValue + 1U;\n}",
+      "notes": "A function shall be declared before it is used so that the compiler can perform proper type checking and interface validation.",
+      "misra": [
+        "17.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.3"
+      }
+    },
+    {
+      "id": "C-082",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "All exit paths from a function with non-void return type shall have an explicit return statement with an expression.",
+      "rationale": "Refer to Ref. [2] Rule 17.4",
+      "example": "#include <stdint.h>\n#include <stdbool.h>\n#include <stdint.h>\n\nuint32_t getStatusNonCompliant(bool status)\n{\n/* Non-compliant */\n/* One exit path has no explicit return expression */\nif (status == true)\n{\nreturn 1U;\n}\n}\nuint32_t getStatusCompliant(bool status)\n{\nuint32_t returnValue = 0U;\n\n/* Compliant */\n/* All exit paths assign an explicit return value */\nif (status == true)\n{\nreturnValue = 1U;\n}\nelse\n{\nreturnValue = 0U;\n}\nreturn returnValue;\n}",
+      "notes": "Every return path shall make the returned value explicit and reviewable.",
+      "misra": [
+        "17.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.4"
+      }
+    },
+    {
+      "id": "C-083",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "The function argument corresponding to a parameter declared to have an array type shall have an appropriate number of elements.",
+      "rationale": "Refer to Ref. [2] Rule 17.5",
+      "example": "#include <stdint.h>\n\nvoid processArray(uint32_t dataArray[4])\n{\n   uint32_t indexValue = 0U;\nfor (indexValue = 0U; indexValue < 4U; indexValue++)\n{\n      dataArray[indexValue] = indexValue;\n   }\n}\nvoid callProcessArray(void)\n{\n   uint32_t smallArray[2] = { 0U, 0U };\n   uint32_t validArray[4] = { 0U, 0U, 0U, 0U };\n\n/* Non-compliant: argument has too few elements */\n   processArray(smallArray);\n/* Compliant: Arg has the required number of elements */\n   processArray(validArray);\n}",
+      "notes": "Insufficient array size may cause out-of-bounds access or interface misuse.",
+      "misra": [
+        "17.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.5"
+      }
+    },
+    {
+      "id": "C-084",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "The value returned by a function having non-void return type shall be used.",
+      "rationale": "Refer to Ref. [2] Rule 17.7",
+      "example": "#include <stdint.h>\n\nuint32_t getErrorCode(void)\n{\n   return 1U;\n}\nvoid processReturnValue(void)\n{\n   uint32_t errorCode = 0U;\n   bool status = false;\n/* Non-compliant: return value is ignored */\n   getErrorCode();\n/* Compliant: return value is used */\n   errorCode = getErrorCode();\n   if (errorCode != 0U)\n   {\n      status = true;\n   }\n}",
+      "notes": "Ignoring a return value may discard status, diagnostic, or computed information required by the design.",
+      "misra": [
+        "17.7"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.7"
+      }
+    },
+    {
+      "id": "C-085",
+      "class": "Maintainability",
+      "secondary": "Safety",
+      "description": "A function parameter shall not be modified.",
+      "rationale": "Refer to Ref. [2] Rule 17.8",
+      "example": "#include <stdint.h>\n\nuint32_t updateValueNonCompliant(uint32_t inputValue)\n{\n/* Non-compliant: function parameter is modified */\n   inputValue = inputValue + 1U;\n\n   return inputValue;\n}\n\nuint32_t updateValueCompliant(uint32_t inputValue)\n{\n   uint32_t resultValue = 0U;\n\n/* Compliant: parameter is not modified directly */\n   resultValue = inputValue + 1U;\n\n   return resultValue;\n}",
+      "notes": "Modifying parameters may obscure data flow and reduce interface clarity.",
+      "misra": [
+        "17.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.8"
+      }
+    },
+    {
+      "id": "C-086",
+      "class": "Consistency and Convention",
+      "secondary": "Readability",
+      "description": "A function identifier shall only be used with either a preceding &, or with a parenthesized parameter list.",
+      "rationale": "Refer to Ref. [2] Rule 17.12",
+      "example": "#include <stdint.h>\n\nvoid processData(void){}\n\nvoid useFunctionIdentifier(void)\n{\n   void (*handlerPtr)(void) = (void *)0;\n\n/* Non-compliant */\n/* Function identifier is used without or parameter list */\n   handlerPtr = processData;\n\n/* Compliant */\n/* Function identifier is used with preceding & */\n   handlerPtr = &processData;\n\n/* Compliant */\n/* Function identifier is used with a parameter list */\n   processData();\n}",
+      "notes": "Restricting function identifier usage reduces ambiguity between function designators and calls.",
+      "misra": [
+        "17.12"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-17.12"
+      }
+    },
+    {
+      "id": "C-087",
+      "class": "Safety",
+      "secondary": null,
+      "description": "A pointer resulting from arithmetic on a pointer operand shall address an element of the same array as that pointer operand.",
+      "rationale": "Refer to Ref. [2] Rule 18.1",
+      "example": "#include <stdint.h>\n\nvoid processPointerArithmetic(void)\n{\n   uint32_t dataArray[2] = { 0U, 1U };\n   uint32_t *dataPtr = &dataArray[0];\n\n/* Non-compliant */\n/* Resulting pointer does not address an element of the same array */\n   dataPtr = dataPtr + 3;\n\n/* Compliant */\n/* Resulting pointer addresses an element of same array */\n   dataPtr = &dataArray[0];\n   dataPtr = dataPtr + 1;\n}",
+      "notes": "Pointer arithmetic outside the bounds of the same array may result in undefined behavior.",
+      "misra": [
+        "18.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.1"
+      }
+    },
+    {
+      "id": "C-088",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Subtraction between pointers shall only be applied to pointers that address elements of the same array.",
+      "rationale": "Refer to Ref. [2] Rule 18.2",
+      "example": "#include <stdint.h>\n\nvoid processPointerSubtraction(void)\n{\n   uint32_t firstArray[3] = { 0U, 1U, 2U };\n   uint32_t secondArray[3] = { 3U, 4U, 5U };\n   ptrdiff_t distanceValue = 0;\n\n/* Non-compliant: pointers refer to different arrays */\n   distanceValue = &firstArray[2] - &secondArray[0];\n\n/* Compliant: pointers refer to the same array */\n   distanceValue = &firstArray[2] - &firstArray[0];\n}",
+      "notes": "Pointer subtraction is only meaningful and defined within the same array object.",
+      "misra": [
+        "18.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.2"
+      }
+    },
+    {
+      "id": "C-089",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The relational operators >, >=, < and <= shall not be applied to expressions of pointer type except where they point into the same object.",
+      "rationale": "Refer to Ref. [2] Rule 18.3",
+      "example": "#include <stdint.h>\n\nvoid processPointerRelation(void)\n{\n   uint32_t firstArray[2] = { 0U, 1U };\n   uint32_t secondArray[2] = { 2U, 3U };\n   bool status = false;\n/* Non-compliant */\n/* Relational comparison is applied to pointers to different arrays */\n   if (&firstArray[0] < &secondArray[0])\n{\n      status = true;\n   }\n/* Compliant */\n/* Relational comparison is applied to pointers within the same array */\n   if (&firstArray[0] < &firstArray[1])\n{\n      status = true;\n   }\n}",
+      "notes": "Relational comparison of unrelated pointers is not portable and may be undefined.",
+      "misra": [
+        "18.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.3"
+      }
+    },
+    {
+      "id": "C-090",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "The +, -, += and -= operators shall not be applied to an expression of pointer type.",
+      "rationale": "Refer to Ref. [2] Rule 18.4",
+      "example": "#include <stdint.h>\n\nvoid processPointerOperator(void)\n{\n   uint32_t dataArray[3] = { 10U, 20U, 30U };\n   uint32_t *dataPtr = &dataArray[0];\n   uint32_t indexValue = 0U;\n   uint32_t resultValue = 0U;\n/* Non-compliant: pointer arithmetic operator is used */\n   dataPtr = dataPtr + 1;\n   resultValue = *dataPtr;\n/* Compliant */\n/* Indexing is used instead of pointer arithmetic */\n   indexValue = 1U;\n   resultValue = dataArray[indexValue];\n}",
+      "notes": "Avoiding pointer arithmetic improves readability and reduces address-manipulation errors.",
+      "misra": [
+        "18.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.4"
+      }
+    },
+    {
+      "id": "C-091",
+      "class": "Readability",
+      "secondary": "Maintainability",
+      "description": "Declarations shall contain no more than two levels of pointer nesting.",
+      "rationale": "Refer to Ref. [2] Rule 18.5",
+      "example": "#include <stdint.h>\n\nvoid processPointerNesting(void)\n{\n   uint32_t value = 0U;\n   uint32_t *ptrLevel1 = &value;\n   uint32_t **ptrLevel2 = &ptrLevel1;\n\n/* Non-compliant: more than 2 levels of pointer nesting */\n   uint32_t ***ptrLevel3 = &ptrLevel2;\n/* Compliant: pointer nesting is limited to two levels */\n   uint32_t **ptrCompliant = &ptrLevel1;\n}",
+      "notes": "Deep pointer nesting reduces readability and makes interfaces harder to understand and verify.",
+      "misra": [
+        "18.5"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.5"
+      }
+    },
+    {
+      "id": "C-092",
+      "class": "Safety",
+      "secondary": null,
+      "description": "The address of an object with automatic or thread-local storage shall not be copied to another object that persists after the first object has ceased to exist.",
+      "rationale": "Refer to Ref. [2] Rule 18.6",
+      "example": "#include <stdint.h>\n\nstatic uint32_t *storedPtr = (uint32_t *)0;\nvoid setPointerNonCompliant(void)\n{\n   uint32_t localValue = 0U;\n\n/* Non-compliant */\n/* Address of automatic object is copied to persistent object */\n   storedPtr = &localValue;\n}\n\nstatic uint32_t persistentValue = 0U;\nvoid setPointerCompliant(void)\n{\n/* Compliant: address of persistent object is copied */\n   storedPtr = &persistentValue;\n}",
+      "notes": "Such copies create dangling references and may cause invalid memory access.",
+      "misra": [
+        "18.6"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.6"
+      }
+    },
+    {
+      "id": "C-093",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "Flexible array members shall not be declared.",
+      "rationale": "Refer to Ref. [2] Rule 18.7",
+      "example": "#include <stdint.h>\n\ntypedef struct\n{\n   uint32_t length;\n/* Non-compliant: flexible array member is declared */\n   uint8_t data[];\n}BufferNonCompliantType;\n\ntypedef struct\n{\n   uint32_t length;\n/* Compliant: fixed-size array member is declared */\n   uint8_t data[8];\n}BufferCompliantType;",
+      "notes": "Flexible array members complicate size analysis and may reduce portability.",
+      "misra": [
+        "18.7"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.7"
+      }
+    },
+    {
+      "id": "C-094",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "Variable-length arrays shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 18.8",
+      "example": "#include <stdint.h>\n\nvoid processArrayLength(uint32_t length)\n{\n/* Non-compliant: variable-length array is used */\n   uint32_t dataArrayNonCompliant[length];\n\n/* Compliant: fixed-size array is used */\n   uint32_t dataArrayCompliant[8];\n}",
+      "notes": "Variable-length arrays complicate memory analysis and may introduce stack-usage uncertainty.",
+      "misra": [
+        "18.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.8"
+      }
+    },
+    {
+      "id": "C-095",
+      "class": "Safety",
+      "secondary": null,
+      "description": "An object with temporary lifetime shall not undergo array-to-pointer conversion.",
+      "rationale": "Refer to Ref. [2] Rule 18.9",
+      "example": "#include <stdint.h>\n\ntypedef struct\n{\n   uint32_t data[2];\n}BufferType;\n\nstatic BufferType getBuffer(void)\n{\n   BufferType buffer = { { 1U, 2U } };\n   return buffer;\n}\nvoid processTemporaryArray(void)\n{\n   uint32_t sourceArray[2] = { 1U, 2U };\n   uint32_t *dataPtr = (uint32_t *)0;\n\n/* Non-compliant */\n/* Array member of a temporary object undergoes array-to-pointer conversion */\n   dataPtr = getBuffer().data;\n/* Compliant */\n/* Array-to-pointer conversion is applied to an object with valid storage duration */\n   dataPtr = sourceArray;\n}",
+      "notes": "Using pointers derived from temporary objects may result in invalid references.",
+      "misra": [
+        "18.9"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.9"
+      }
+    },
+    {
+      "id": "C-096",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "Pointers to variably-modified array types shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 18.10",
+      "example": "#include <stdint.h>\n\nvoid processArrayPointer(uint32_t length)\n{\n   uint32_t fixedArray[4] = { 0U, 0U, 0U, 0U };\n\n/* Non-compliant */\n/* Pointer to variably-modified array type is used */\n   uint32_t (*ptrNonCompliant)[length]\n= (uint32_t (*)[length])0;\n\n/* Compliant */\n/* Pointer to fixed-size array type is used */\n   uint32_t (*ptrCompliant)[4] = &fixedArray;\n}",
+      "notes": "Such pointers reduce portability and complicate static analysis.",
+      "misra": [
+        "18.10"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-18.10"
+      }
+    },
+    {
+      "id": "C-097",
+      "class": "Safety",
+      "secondary": null,
+      "description": "An object shall not be assigned or copied to an overlapping object.",
+      "rationale": "Refer to Ref. [2] Rule 19.1",
+      "example": "#include <stdint.h>\n\nvoid processOverlappingCopy(void)\n{\nuint32_t dataArray[4] = { 1U, 2U, 3U, 4U };\nuint32_t tempArray[2] = { 0U, 0U };\nuint32_t index = 0U;\n\n/* Non-compliant: source and destination overlap */\nfor (index = 0U; index < 2U; ++index)\n{\ndataArray[index + 1U] = dataArray[index];\n}\n\n/* Compliant: copy a temporary non-overlapping object */\nfor (index = 0U; index < 2U; ++index)\n{\ntempArray[index] = dataArray[index];\n}\n\nfor (index = 0U; index < 2U; ++index)\n{\ndataArray[index + 1U] = tempArray[index];\n}\n}",
+      "notes": "Copying between overlapping objects may produce unexpected results and corrupt data.",
+      "misra": [
+        "19.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-19.1"
+      }
+    },
+    {
+      "id": "C-098",
+      "class": "Maintainability",
+      "secondary": "Safety",
+      "description": "The union keyword shall not be used.",
+      "rationale": "Refer to Ref. [2] Rule 19.2",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: union is used */\ntypedef union\n{\n   uint32_t rawValue;\n   uint8_t bytes[4];\n} DataNonCompliantType;\n\n/* Compliant: structure is used instead */\ntypedef struct\n{\n   uint32_t rawValue;\n   uint8_t firstByte;\n   uint8_t secondByte;\n   uint8_t thirdByte;\n   uint8_t fourthByte;\n}DataCompliantType;",
+      "notes": "Unions may obscure the active stored type and complicate interpretation, portability, and verification.",
+      "misra": [
+        "19.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-19.2"
+      }
+    },
+    {
+      "id": "C-099",
+      "class": "Consistency and Convention",
+      "secondary": "Readability",
+      "description": "#include directives shall only be preceded by preprocessor directives or comments.",
+      "rationale": "Refer to Ref. [2] Rule 20.1",
+      "example": "/* Non-compliant */\n/* file: File_NonCompliant.c */\n\n#include <stdint.h>\nuint32_t globalValue = 0U;\n#include \"file1.h\"\n\n/* Compliant */\n/* file: File_Compliant.c */\n#include <stdint.h>\n#include \"file1.h\"\n\nuint32_t globalValueCompliant = 0U;",
+      "notes": "This keeps preprocessing structure consistent and easier to review.",
+      "misra": [
+        "20.1"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.1"
+      }
+    },
+    {
+      "id": "C-100",
+      "class": "Portability",
+      "secondary": "Readability",
+      "description": "The ', \" or \\ characters and the /* or // character sequences shall not occur in a header file name.",
+      "rationale": "Refer to Ref. [2] Rule 20.2",
+      "example": "/* Non-compliant */\n#if 0\n/* Header file name contains a forbidden character */\n#include \"my'header.h\"\n#endif\n\n/* Compliant */\n/* Header file name contains only permitted characters */\n#include \"my_header.h\"",
+      "notes": "Restricting header file names avoids preprocessing ambiguity and improves portability.",
+      "misra": [
+        "20.2"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.2"
+      }
+    },
+    {
+      "id": "C-101",
+      "class": "Consistency and Convention",
+      "secondary": "Portability",
+      "description": "The #include directive shall be followed by either a <filename> or \"filename\" sequence.",
+      "rationale": "Refer to Ref. [2] Rule 20.3",
+      "example": "/* Non-compliant */\n#include file1.h\n\n/* Compliant */\n#include \"file1.h\"\n#include <stdint.h>",
+      "notes": "This restriction avoids preprocessing ambiguity and keeps include usage consistent and portable.",
+      "misra": [
+        "20.3"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.3"
+      }
+    },
+    {
+      "id": "C-102",
+      "class": "Consistency and Convention",
+      "secondary": "Safety",
+      "description": "A macro shall not be defined with the same name as a keyword.",
+      "rationale": "Refer to Ref. [2] Rule 20.4",
+      "example": "/* Non-compliant */\n#define for 10U\n\n/* Compliant */\n#define loopCountMax 10U",
+      "notes": "Using a keyword as a macro name may break readability and interfere with language syntax expectations.",
+      "misra": [
+        "20.4"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.4"
+      }
+    },
+    {
+      "id": "C-103",
+      "class": "Safety",
+      "secondary": "Readability",
+      "description": "Expressions resulting from the expansion of macro parameters shall be appropriately delimited.",
+      "rationale": "Refer to Ref. [2] Rule 20.7",
+      "example": "/* Non-compliant */\n/* Macro parameters are not appropriately delimited */\n#define SQUARE_NONCOMPLIANT(x) x * x\n\n/* Compliant */\n/* Macro parameters and full expression are delimited */\n#define SQUARE_COMPLIANT(x) ((x) * (x))\n\nvoid processMacroExpansion(void){\n   uint32_t resultNonCompliant = 0U;\n   uint32_t resultCompliant = 0U;\n\n   resultNonCompliant = SQUARE_NONCOMPLIANT(1U + 2U);\n   resultCompliant    = SQUARE_COMPLIANT(1U + 2U);\n}",
+      "notes": "Proper delimiting of macro expansions helps prevent unintended operator precedence and evaluation issues.",
+      "misra": [
+        "20.7"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.7"
+      }
+    },
+    {
+      "id": "C-104",
+      "class": "Safety",
+      "secondary": "Portability",
+      "description": "The controlling expression of a #if or #elif preprocessing directive shall evaluate to 0 or 1.",
+      "rationale": "Refer to Ref. [2] Rule 20.8",
+      "example": "/* Non-compliant */\n#define FEATURE_LEVEL 2\n#if FEATURE_LEVEL\n#endif\n/* Compliant */\n#define FEATURE_ENABLED 1\n#if (FEATURE_ENABLED == 1)\n#endif",
+      "notes": "Restricting preprocessing conditions to 0 or 1 improves clarity and avoids toolchain-dependent interpretations.",
+      "misra": [
+        "20.8"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.8"
+      }
+    },
+    {
+      "id": "C-105",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "All identifiers used in the controlling expression of #if or #elif preprocessing directives shall be #define‘d before evaluation.",
+      "rationale": "Refer to Ref. [2] Rule 20.9",
+      "example": "/* Non-compliant */\n#if FEATURE_ENABLED\n#endif\n/* Compliant */\n#define FEATURE_ENABLED 1\n#if (FEATURE_ENABLED == 1)\n#endif",
+      "notes": "Undefined identifiers in preprocessing expressions may lead to misleading or unintended conditional compilation.",
+      "misra": [
+        "20.9"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.9"
+      }
+    },
+    {
+      "id": "C-106",
+      "class": "Consistency and Convention",
+      "secondary": "Maintainability",
+      "description": "A line whose first token is # shall be a valid preprocessing directive.",
+      "rationale": "Refer to Ref. [2] Rule 20.13",
+      "example": "/* Non-compliant */\n#invalid_directive\n/* Compliant */\n#define bufferSize 8U",
+      "notes": "Any line beginning with # shall be syntactically valid to avoid preprocessing ambiguity and build-time defects.",
+      "misra": [
+        "20.13"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.13"
+      }
+    },
+    {
+      "id": "C-107",
+      "class": "Maintainability",
+      "secondary": "Consistency and Convention",
+      "description": "All #else, #elif and #endif preprocessor directives shall reside in the same file as the #if, #ifdef or #ifndef directive to which they are related.",
+      "rationale": "Refer to Ref. [2] Rule 20.14",
+      "example": "/* Non-compliant */\nfile1.h\n#if (FEATURE_ENABLED == 1)\n#include \"file2.h\"\nfile2.h\n#endif\n/* Compliant */\nfile1.h\n#if (FEATURE_ENABLED == 1)\n#include \"file2.h\"\n#endif",
+      "notes": "Preprocessor condition blocks shall remain within the same file to preserve structural clarity and maintainability.",
+      "misra": [
+        "20.14"
+      ],
+      "groups": [
+        "misra"
+      ],
+      "check": {
+        "tool": "cppcheck",
+        "id": "misra-c2012-20.14"
+      }
+    },
+    {
+      "id": "C-108",
+      "class": "Portability",
+      "secondary": null,
+      "description": "Bitfields shall not be used.",
+      "rationale": "Portability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: bitfield is used */\ntypedef struct\n{\n   uint32_t enable : 1;\n   uint32_t mode : 2;\n}StatusNonCompliantType;\n\n/* Compliant */\n/* Fixed-width object with masks is used */\ntypedef struct\n{\n   uint32_t statusValue;\n}StatusCompliantType;\n\n#define STATUS_ENABLE_MASK 0x00000001U\n#define STATUS_MODE_MASK 0x00000006U",
+      "notes": "Bitfields are implementation-dependent in layout and access behavior and therefore reduce portability.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-109",
+      "class": "Safety",
+      "secondary": "Maintainability",
+      "description": "Standard Library functions shall not be used.",
+      "rationale": "Bare-Metal programming is applied throughout this project. Therefore, only the intended functionality with requirements is used.",
+      "example": "#include <stdint.h>\n\nvoid processCopy(void)\n{\n   uint8_t sourceBuffer[4] = { 1U, 2U, 3U, 4U };\n   uint8_t targetBuffer[4] = { 0U, 0U, 0U, 0U };\n   uint32_t indexValue     = 0U;\n\n/* Non-compliant: standard library function is used */\n(void)memcpy(targetBuffer,\nsourceBuffer,\nsizeof(sourceBuffer));\n\n/* Compliant: controlled project-specific copy is used */\nfor (indexValue = 0U; indexValue < 4U; indexValue++)\n{\n      targetBuffer[indexValue] = sourceBuffer[indexValue];\n   }\n}",
+      "notes": "In this project, bare-metal implementation is intended; therefore, only explicitly required and controlled functionality shall be used.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-110",
+      "class": "Readability",
+      "secondary": "Consistency and Convention",
+      "description": "File names shall be chosen as descriptive and meaningful.",
+      "rationale": "Consistency and convention.",
+      "example": "/* Non-compliant */\na.c\nx1.h\ntmp.c\n/* Compliant */\ntemperatureCalculation.c\nsensorCoefficients.h\nnavWpChk.c\ndbgPrint.c",
+      "notes": "Descriptive file names improve navigation, readability, and long-term maintainability of the codebase.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-111",
+      "class": "Consistency and Convention",
+      "secondary": null,
+      "description": "File names shall have two parts, a base name and an extension.",
+      "rationale": "Consistency and convention.",
+      "example": "/* Non-compliant */\ntemperatureCalculation\nsensorCoefficients\nstartup\n/* Compliant */\ntemperatureCalculation.c\nsensorCoefficients.h\nstartup.s",
+      "notes": "A consistent filename structure simplifies tool usage, review, and project organization.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-112",
+      "class": "Consistency and Convention",
+      "secondary": "Portability",
+      "description": "Extension of all implementation files shall be “.c” and extension of all header files shall be “.h” and assembly files shall be “.s”.",
+      "rationale": "Consistency and convention.",
+      "example": "/* Non-compliant */\ntemperatureCalculation.cpp\nsensorCoefficients.hpp\nstartup.asm\n/* Compliant */\ntemperatureCalculation.c\nsensorCoefficients.h\nstartup.s",
+      "notes": "Standardized extensions improve tool compatibility and make file purpose immediately recognizable.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "file-extension"
+      }
+    },
+    {
+      "id": "C-113",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Filenames shall be in camel notation and begin with lowercase letter.",
+      "rationale": "Style and convention.",
+      "example": "/* Non-compliant */\nTemperatureCalculation.c\ntemperature_calculation.c\ntemperature-calculation.c\n\n/* Compliant */\ntemperatureCalculation.c\nsensorCoefficients.h\nnavWpChk.c",
+      "notes": "Consistent filename style improves readability and reduces naming variability across the project.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "file-name-camel"
+      }
+    },
+    {
+      "id": "C-114",
+      "class": "Portability",
+      "secondary": "Consistency and Convention",
+      "description": "Any directory name on which project depends shall not include white spaces (tabs, spaces, etc.) or punctuation characters. Only allowable character set for these names are ‘0-9’, (English alphabet) ‘A-Z’, (English alphabet) ‘a-z’, ‘_’.",
+      "rationale": "Consistency and convention",
+      "example": "/* Non-compliant */\nProject Files\ndriver-source\nconfig.v1\nTürkçeDizin\n/* Compliant */\nprojectFiles\ndriver_source\nconfigV1\nbuildOutput",
+      "notes": "Restricted directory names improve portability across tools, scripts, and operating systems.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-115",
+      "class": "Portability",
+      "secondary": "Consistency and Convention",
+      "description": "In addition, the uniqueness of filenames shall not be due solely to a difference in case.",
+      "rationale": "Consistency and convention",
+      "example": "/* Non-compliant */\nsensorData.c\nSensorData.c\n\n/* Compliant */\nsensorData.c\nsensorDataHandler.c",
+      "notes": "Case-only distinctions in file names may cause conflicts on case-insensitive file systems.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-116",
+      "class": "Portability",
+      "secondary": "Consistency and Convention",
+      "description": "Source and header files (including comment sections) shall not contain special characters (characters other than the ones in the English alphabet, such as characters from Turkish alphabet).",
+      "rationale": "Consistency and convention",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: comment contains special characters */\nvoid processValueNonCompliant(void)\n{\n   uint32_t sicaklikDegeri = 0U;\n/* sıcaklık ölçümü başlatıldı */\n}\n/* Compliant: only English alphabet characters are used */\nvoid processValueCompliant(void)\n{\n   uint32_t temperatureValue = 0U;\n/* temperature measurement started */ \n}",
+      "notes": "Restricting files to English-alphabet characters improves portability across compilers, editors, and build environments.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "ascii-only"
+      }
+    },
+    {
+      "id": "C-117",
+      "class": "Portability",
+      "secondary": "Consistency and Convention",
+      "description": "Source code file names shall be composed of characters from the set of (English alphabet) [a-z], (English alphabet) [A-Z], [0-9] and shall begin with a letter.",
+      "rationale": "Consistency and Convention",
+      "example": "/* Non-compliant */\n1driver.c\ndriver-module.c\ndriver_module.c\nconfig@main.h\n\n/* Compliant */\ndriverModule.c\nconfigMain.h\nadc1Driver.c",
+      "notes": "Restricting filename characters avoids toolchain issues and improves portability.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "file-name-chars"
+      }
+    },
+    {
+      "id": "C-118",
+      "class": "Consistency and Convention",
+      "secondary": "Style and Convention",
+      "description": "In naming of identifiers, camel notation shall be used.",
+      "rationale": "Consistency and Convention",
+      "example": "/* Non-compliant: camel notation is not used */\nuint32_t ground_speed_kmph = 0U;\nuint32_t Groundspeedkmph = 0U;\n\n/* Compliant: camel notation is used */\nuint32_t groundSpeedKMpH = 0U; \nuint32_t wheelSpeedRpm = 0U;",
+      "notes": "Consistent identifier naming improves readability and makes interfaces easier to review.\nReference to Chapter 6 for Abbreviations and Units.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-119",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Names of the following types shall begin with an upper case letter:\n• structures,\n• type definitions\n• enumerated types",
+      "rationale": "Style and Convention",
+      "example": "/* Non-compliant */\ntypedef struct point{\n   uint32_t x;\n   uint32_t y;\n}pointType;\n\nenum fruit{\n   APPLE,\n   BANANA\n};\n\n/* Compliant */\ntypedef struct Point{\n   uint32_t x;\n   uint32_t y;\n} PointType;\n\nenum Fruit{\n   APPLE,\n   BANANA\n};",
+      "notes": "Consistent capitalization of type names helps distinguish types from variables and functions.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-120",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Names of the following shall begin with a lower case letter: \n• functions\n• objects \n• variables\n• fields within structures",
+      "rationale": "Style and Convention",
+      "example": "#include <stdint.h>\n#include <stdbool.h>\n\n/* Non-compliant */\ntypedef struct SensorData\n{\n   uint32_t TemperatureValue;\n   uint32_t PressureValue;\n} SensorDataType;\n\nstatic bool IsLimiterEnabled = false;\n\nvoid UpdateSensorData(void)\n{\n   uint32_t GroundSpeedKMpH = 0U;\n}\n\n/* Compliant */\ntypedef struct SensorData\n{\n   uint32_t temperatureValue;\n   uint32_t pressureValue;\n} SensorDataType;\n\nstatic bool isLimiterEnabled = false;\n\nvoid updateSensorData(void)\n{\n   uint32_t groundSpeedKMpH = 0U;\n}",
+      "notes": "Consistent lowercase naming for objects and functions improves readability and avoids visual ambiguity.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-121",
+      "class": "Readability",
+      "secondary": "Maintainability",
+      "description": "Literal constants shall not be used in code; instead, symbolic constants shall be defined and used.",
+      "rationale": "Readability, maintainability, type safety",
+      "example": "#include <stdint.h>\n\n#define SPEED_LIMIT_KMPH 120U\n#define SAMPLE_COUNT 256U\n\ntypedef enum{\n   NO_BLINK = 0,\n   ONE_BLINK = 1,\n   THREE_BLINKS = 3\n}CautionBlinksType;\n\nvoid masterCautionBlink(CautionBlinksType blinkCount);\n\nvoid processLiterals(uint32_t speed)\n{\n   uint32_t indexValue = 0U;\n   int32_t samples[SAMPLE_COUNT];\n\n/* Non-compliant: literal constants are used directly */\n   if (speed > 120U){\n      masterCautionBlink((CautionBlinksType)3);\n   }\n\n   for (indexValue = 0U; indexValue < 256U; indexValue++)\n   {\n      samples[indexValue] = 0;\n   }\n\n/* Compliant: symbolic constants are used */\n   if (speed > SPEED_LIMIT_KMPH)\n   {\n      masterCautionBlink(THREE_BLINKS);\n   }\n\n   for (indexValue = 0U;\nindexValue < SAMPLE_COUNT;\nindexValue++)\n{\n      samples[indexValue] = 0;\n   }\n}\n\n/* Compliant example */\n#define SAMPLE_COUNT 256U\n\nint samples[SAMPLE_COUNT];\n\nfor (int i = 0; i < SAMPLE_COUNT; ++i)\n{\nsamples[i] = 0;\n}",
+      "notes": "Symbolic constants make intent explicit and simplify maintenance when values need to change.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-122",
+      "class": "Consistency and Convention",
+      "secondary": "Style and Convention",
+      "description": "Global constants shall be all caps with '_' separators.",
+      "rationale": "Consistency and Convention, Readability",
+      "example": "/* Non-compliant */\n#define label133BitMask 0XCCFF0000UL\n\n/* Compliant */\n#define LABEL_133_BIT_MASK 0XCCFF0000UL\n\ntypedef enum\n{\n   APPLE = 0,\n   BANANA = 1,\n   CRANBERRY = 2,\n   DURIAN = 3\n}FruitType;",
+      "notes": "A consistent format for global constants makes them easy to recognize during implementation and review.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-123",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Hexadecimal constants shall be represented using uppercase letters.",
+      "rationale": "Consistency and Convention, Readability",
+      "example": "/* Non-compliant */\n#define LABEL_133_BIT_MASK_NONCOMPLIANT 0xCcFf0000uL\n\n/* Compliant */\n#define LABEL_133_BIT_MASK_COMPLIANT 0XCCFF0000UL",
+      "notes": "Uppercase hexadecimal notation improves readability and visual consistency.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "hex-uppercase"
+      }
+    },
+    {
+      "id": "C-124",
+      "class": "Readability",
+      "secondary": null,
+      "description": "Identifiers shall not begin with the underscore character ‘_’.",
+      "rationale": "Readability",
+      "example": "/* Non-compliant */\nstatic uint32_t _counterValue = 0U;\n\n/* Compliant */\nstatic uint32_t counterValue = 0U;",
+      "notes": "The underscore ‘_’ character may not be seen on screen. And usually mixed up with another identifiers without underscore character. Leading underscores may be visually unclear and may also conflict with reserved implementation identifiers.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "no-leading-underscore"
+      }
+    },
+    {
+      "id": "C-125",
+      "class": "Portability",
+      "secondary": "Safety",
+      "description": "Built in compiler functions shall not be used.",
+      "rationale": "Portability, Safety",
+      "example": "#include <stdint.h>\n\nstatic uint32_t countSetBits(uint32_t inputValue)\n{\n   uint32_t bitCount = 0U;\n\n   while (inputValue != 0U){\n      bitCount = bitCount + (inputValue & 1U);\n      inputValue = inputValue >> 1U;\n   }\n\n   return bitCount;\n}\nvoid processBuiltInFunction(void)\n{\n   uint32_t inputValue = 0X0FU;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant: compiler built-in function is used */\n   resultValue = __builtin_popcount(inputValue);\n/* Compliant: project-controlled implementation is used */\n   resultValue = countSetBits(inputValue);\n}",
+      "notes": "Compilers may have built in functions. But their requirements or implementations may be different than the intention of usage in the project. Usually, they don’t have requirements but specifications. Compiler built-ins may be compiler-specific and may not provide the required level of traceability or portability.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-126",
+      "class": "Readability",
+      "secondary": "Consistency and Convention",
+      "description": "All definitions, declarations, and comments shall be written in English.",
+      "rationale": "Readability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: comment and others are not in English */\nvoid sicaklikHesapla(void)\n{\n/* sicaklik olcumu baslatildi */\n   uint32_t sicaklikDegeri = 0U; \n}\n/* Compliant: declarations and comments are in English */\nvoid calculateTemperature(void)\n{\n   /* temperature measurement started */\nuint32_t temperatureValue = 0U; \n}",
+      "notes": "A single project language improves readability, collaboration, and review consistency.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-127",
+      "class": "Readability",
+      "secondary": null,
+      "description": "Literal suffixes shall use uppercase rather than lowercase letters.",
+      "rationale": "Readability",
+      "example": "/* Non-compliant */\n#define MAX_SIZE_NONCOMPLIANT 100l\n/* Compliant */\n#define MAX_SIZE_COMPLIANT 100L",
+      "notes": "Uppercase suffixes are easier to distinguish and reduce confusion with digits such as 1.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "literal-suffix-uppercase"
+      }
+    },
+    {
+      "id": "C-128",
+      "class": "Readability",
+      "secondary": "Portability",
+      "description": "Tabs shall not be used.",
+      "rationale": "Readability, portability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant */\nvoid processValue(void)\n{\n<TAB>uint32_t value = 0U;\n}\n\n/* Compliant */\nvoid processValue(void)\n{\n   uint32_t value = 0U;\n}",
+      "notes": "Editors may have different TAB sizes for each different computer environments and may cause scattered unreadable code. Modern editors have “Convert Tabs to Spaces” capability. Tabs may be displayed differently across editors and environments, causing inconsistent formatting.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "lexical",
+        "id": "no-tabs"
+      }
+    },
+    {
+      "id": "C-129",
+      "class": "Readability",
+      "secondary": null,
+      "description": "There shall be only one statement per line even though the statements are very closely related.",
+      "rationale": "Readability",
+      "example": "#include <stdint.h>\n\nvoid processStatements(void)\n{\n   uint32_t valueA = 5U;\n   uint32_t valueB = 10U;\n   uint32_t sumValue = 0U;\n\n/* Non-compliant: more than one statement on same line */\n   sumValue = valueA + valueB; valueA = 0U;\n\n/* Compliant: one statement per line */\n   sumValue = valueA + valueB;\n   valueA = 0U;\n}",
+      "notes": "Limiting one statement per line improves readability and simplifies debugging and review.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-130",
+      "class": "Portability",
+      "secondary": "Maintainability",
+      "description": "All uses of the #pragma directive shall be documented by a comment in the source or header file.",
+      "rationale": "Portability, Maintainability",
+      "example": "/* Non-compliant */\n#pragma GCC optimize (\"O3\")\n\n/* Compliant: works for GCC only */\n#pragma GCC optimize (\"O3\")\n\n/* Compliant: works for Clang only */\n#pragma clang loop unroll_count(4)",
+      "notes": "The #pragma directive is used to provide compiler-specific features and control the behavior of the program. It allows developers to implement features that may not be available in all compilers, ensuring compatibility across different platforms.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-131",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "Bracing shall be used for all if statements and else statements wrapped in a #if - #else - #endif. The wrapped if statements shall contain both braces and statement(s).",
+      "rationale": "Readability",
+      "example": "#include <stdint.h>\n\nvoid doIfStuff(void);\nvoid doElseStuff(void);\n\nvoid processConditionalCompilation(bool x,\nbool y,\nbool z){\n#if (USE_Y == 1)\n   /* Non-compliant */\n   if ((x == true) && (y == true))\n#else\n   /* Non-compliant */\n   if ((x == true) && (z == true))\n#endif\n      doIfStuff();\n   else{\n      doElseStuff();\n   }\n\n#if (USE_Y == 1)\n   /* Compliant */\n   if ((x == true) && (y == true))\n{\n      doIfStuff();\n   }\n#else\n   /* Compliant */\n   if ((x == true) && (z == true))\n{\n      doIfStuff();\n   }\n#endif\n   else\n{\n      doElseStuff();\n   }\n}",
+      "notes": "Explicit bracing within conditional compilation blocks prevents structural ambiguity and review mistakes.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-132",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "Any function shall not contain more than 200 source lines of code (SLOCs).",
+      "rationale": "Readability, Mainainability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant */\n/* Function exceeds 200 source lines of code */\nvoid processLargeFunctionNonCompliant(void)\n{\n   /* 201+ lines of implementation */\n}\n\n/* Compliant */\n/* Functionality is split into smaller functions */\nstatic void processPartA(void)\n{\n   /* part A */\n}\n\nstatic void processPartB(void)\n{\n   /* part B */\n}\n\nvoid processLargeFunctionCompliant(void)\n{\n   processPartA();\n   processPartB();\n}",
+      "notes": "Restricting function length helps preserve readability, reviewability, and modular design. See also (Complexity/ nesting restriction rules)",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-133",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "Functions shall not have more than 10 arguments.",
+      "rationale": "Readability, maintainability, portability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant */\n/* Function has more than 10 arguments */\nvoid processDataNonCompliant\n(\n   uint32_t arg1,\n   uint32_t arg2,\n   uint32_t arg3,\n   uint32_t arg4,\n   uint32_t arg5,\n   uint32_t arg6,\n   uint32_t arg7,\n   uint32_t arg8,\n   uint32_t arg9,\n   uint32_t arg10,\n   uint32_t arg11\n);\n\n/* Compliant */\n/* Related data is grouped into a structure */\ntypedef struct ProcessDataArgs\n{\n   uint32_t arg1;\n   uint32_t arg2;\n   uint32_t arg3;\n   uint32_t arg4;\n   uint32_t arg5;\n   uint32_t arg6;\n   uint32_t arg7;\n   uint32_t arg8;\n   uint32_t arg9;\n   uint32_t arg10;\n   uint32_t arg11;\n} ProcessDataArgsType;\n\nvoid processDataCompliant\n(const ProcessDataArgsType *argsPtr);",
+      "notes": "Excessive argument counts reduce readability and often indicate that a data structure or interface redesign is needed.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-134",
+      "class": "Safety",
+      "secondary": "Readability",
+      "description": "Functions shall not be declared more than once.",
+      "rationale": "Readability, Safety",
+      "example": "#include <stdint.h>\n\n/* Non-compliant: repeated declaration */\nuint32_t getStatusNonCompliant(uint32_t inputValue);\nuint32_t getStatusNonCompliant(uint32_t inputValue);\n\nuint32_t getStatusNonCompliant(uint32_t inputValue)\n{\nreturn inputValue;\n}\n\n/* Compliant: single declaration */\nuint32_t getStatusCompliant(uint32_t inputValue);\n\nuint32_t getStatusCompliant(uint32_t inputValue)\n{\nreturn inputValue;\n}",
+      "notes": "Repeated declarations may reduce readability and make interface control more difficult during review.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-135",
+      "class": "Readability",
+      "secondary": "Consistency and Convention",
+      "description": "Function declarations shall be placed before function definitions.",
+      "rationale": "Readability, Consistency and Convention",
+      "example": "#include <stdint.h>\n\n/* Non-compliant */\n/* Definition appears before declaration */\nuint32_t getValueNonCompliant(uint32_t inputValue)\n{\nreturn inputValue;\n}\n\nuint32_t getValueNonCompliant(uint32_t inputValue);\n\n/* Compliant */\n/* Declaration appears before definition */\nuint32_t getValueCompliant(uint32_t inputValue);\n\nuint32_t getValueCompliant(uint32_t inputValue)\n{\nreturn inputValue;\n}",
+      "notes": "A single declaration point before the definition improves readability and helps maintain interface consistency.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-136",
+      "class": "Portability",
+      "secondary": "Readability",
+      "description": "<stdbool.h> shall be used for Boolean data types.",
+      "rationale": "Portability, Readability",
+      "example": "#include <stdint.h>\n\n/* Non-compliant */\ntypedef uint8_t BoolType;\nstatic BoolType statusNonCompliant = 0U;\n\n/* Compliant */\nstatic bool statusCompliant = false;",
+      "notes": "Using standard Boolean definitions improves clarity and avoids project-specific Boolean representations.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-137",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Signed and unsigned values shall not be mixed in arithmetic or comparison operations.",
+      "rationale": "Safety, Portability",
+      "example": "#include <stdint.h>\n\nvoid processSignedUnsigned(void)\n{\n   int32_t signedValue = -1;\n   uint32_t unsignedValue = 1U;\n   bool status = false;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant */\n/* Signed and unsigned values are mixed */\n   resultValue = signedValue + unsignedValue;\n/* Non-compliant */\n/* Signed and unsigned val are mixedin comparison */\n   if (signedValue < unsignedValue)\n{\n      status = true;\n   }\n/* Compliant */\n/* Operands have the same essential type category */\n   resultValue = 1U + unsignedValue;\n\n   if (resultValue < unsignedValue)\n{\n      status = true;\n   }\n}",
+      "notes": "Mixing signed and unsigned values may produce unintended conversions and comparison results.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-138",
+      "class": "Readability",
+      "secondary": "Safety",
+      "description": "Function-like macros shall not contain conditional statements.",
+      "rationale": "Readability, Safety",
+      "example": "#include <stdint.h>\n\n/* Non-compliant */\n/* Function-like macro contains conditional logic */\n#define GET_MAX_NONCOMPLIANT\n(a, b) (((a) > (b)) ? (a) : (b))\n\nstatic uint32_t getMaxCompliant(uint32_t leftValue,\nuint32_t rightValue)\n{\n   uint32_t resultValue = rightValue;\n\n/* Compliant */\n/* Conditional logic is implemented in a function */\n   if (leftValue > rightValue)\n{\n      resultValue = leftValue;\n   }\n   return resultValue;\n}\n\nvoid processMacroConditional(void)\n{\n   uint32_t resultValue = 0U;\n\n   resultValue = GET_MAX_NONCOMPLIANT(1U, 2U);\n   resultValue = getMaxCompliant(1U, 2U);\n\n}",
+      "notes": "Conditional logic inside function-like macros may hide control flow and make behavior harder to analyze.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-139",
+      "class": "Maintainability",
+      "secondary": "Readability",
+      "description": "No function shall have a cyclomatic complexity greater than 25.",
+      "rationale": "Maintainability, Readability",
+      "example": "#include <stdbool.h>\n#include <stdint.h>\n\n/* Non-compliant: cyclomatic complexity is too high */\nuint32_t processComplexityNonCompliant(\nbool cond1,\nbool cond2,\nbool cond3,\nbool cond4,\nbool cond5)\n{\nuint32_t resultValue = 0U;\n\nif (cond1 == true)\n{\nresultValue++;\n}\nelse if (cond2 == true)\n{\nresultValue++;\n}\nelse if (cond3 == true)\n{\nresultValue++;\n}\nelse if (cond4 == true)\n{\nresultValue++;\n}\nelse if (cond5 == true)\n{\nresultValue++;\n}\n\n/* ... additional branches, loops, and decisions ... */\n\nwhile (resultValue < 10U)\n{\nif (cond1 == true)\n{\nresultValue++;\n}\n\nif (cond2 == true)\n{\nresultValue++;\n}\n\n/* ... additional decision points ... */\n\nbreak;\n}\n\nreturn resultValue;\n}\n\nstatic uint32_t processPartA(bool cond1, bool cond2)\n{\nuint32_t resultValue = 0U;\n\nif (cond1 == true)\n{\nresultValue++;\n}\nif (cond2 == true)\n{\nresultValue++;\n}\n\nreturn resultValue;\n}\n\nstatic uint32_t processPartB(bool cond3, bool cond4, bool cond5)\n{\nuint32_t resultValue = 0U;\n\nif (cond3 == true)\n{\nresultValue++;\n}\nif (cond4 == true)\n{\nresultValue++;\n}\nif (cond5 == true)\n{\nresultValue++;\n}\n\nreturn resultValue;\n}\n\n/* Compliant: functionality is decomposed into simpler functions */\nuint32_t processComplexityCompliant(\nbool cond1,\nbool cond2,\nbool cond3,\nbool cond4,\nbool cond5)\n{\nuint32_t resultValue = 0U;\n\nresultValue = processPartA(cond1, cond2);\nresultValue = resultValue + processPartB(cond3, cond4, cond5);\n\nreturn resultValue;\n}",
+      "notes": "The cyclomatic complexity metric used by the project shall be explicitly defined and applied consistently.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-140",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Braces shall be placed on a new line aligned with the associated keyword.",
+      "rationale": "Style, Readability",
+      "example": "#include <stdint.h>\n\nvoid processBracePlacement(uint32_t value)\n{\n/* Non-compliant */\n   if (value > 0U){\n      value = value + 1U;\n   }\n   else {\n      value = 0U;\n   }\n\n/* Compliant */\n   if (value > 0U)\n   {\n      value = value + 1U;\n   }\n   else\n   {\n      value = 0U;\n   }\n}",
+      "notes": "A consistent brace placement style improves readability and visual structure.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-141",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "All block indentations shall be at three (3) spaces and be consistent within the same source file.",
+      "rationale": "Style, Readability",
+      "example": "void processIndentation(uint32_t value)\n{\n/* Non-compliant: indentation not 3 spaces */\nif (value > 0U)\n{\nvalue = value + 1U;\n}\n\n/* Compliant: indentation 3 spaces and consistent */\n   if (value > 0U)\n   {\n      value = value + 1U;\n   }\n\n}",
+      "notes": "Consistent indentation improves readability and makes block structure easier to understand.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-142",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "There shall be at least one space before or after each operator to improve readability.",
+      "rationale": "Style, Readability",
+      "example": "#include <stdint.h>\n\nvoid processOperatorSpacing(void)\n{\n   uint32_t valueA = 1U;\n   uint32_t valueB = 2U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant */\n   resultValue=valueA+valueB*2U;\n\n/* Compliant */\n   resultValue = valueA + (valueB * 2U);\n}",
+      "notes": "Consistent spacing around operators improves readability and reduces visual parsing errors.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-143",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "For fixed-point arithmetic operations, the Q format of operands and results shall be explicitly identifiable.",
+      "rationale": "Style, Readability",
+      "example": "void processFixedPointOperation(void)\n{\n   int32_t velocity = 256;\n   int32_t gain = 128;\n   int32_t resultValue = 0;\n\n/* Non-compliant: Q format is not identifiable */\n   resultValue = (velocity * gain) >> 8;\n\n   int32_t velocityQ8 = 256;\n   int32_t gainQ8 = 128;\n   int32_t resultQ8 = 0;\n\n/* Compliant */\n/* Q format explicit in operand and result names */\n   resultQ8 = (velocityQ8 * gainQ8) >> 8;\n}",
+      "notes": "Fixed-point conventions shall be explicit so that scaling assumptions remain clear during implementation and review.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-144",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "There shall be at least one space before or after each operator to improve readability.",
+      "rationale": "Style, Readability",
+      "example": "#include <stdint.h>\n\nvoid processOperatorSpacingRule144(void)\n{\n   uint32_t valueA = 3U;\n   uint32_t valueB = 4U;\n   uint32_t resultValue = 0U;\n\n/* Non-compliant */\n   resultValue=valueA-valueB;\n\n/* Compliant */\n   resultValue = valueA - valueB;\n}",
+      "notes": "Consistent spacing around operators improves readability and reduces visual parsing errors.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-145",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "There shall be exactly one space after each comma in a function parameter list, and no space shall be inserted between a function name and the opening parenthesis.",
+      "rationale": "Style, Readability",
+      "example": "/* Non-compliant */\nuint32_t calculateSum(uint32_t leftValue,uint32_t rightValue);\nresultValue = calculateSum(leftValue,rightValue);\n\n/* Compliant */\nuint32_t calculateSum(uint32_t leftValue, uint32_t rightValue);\nresultValue = calculateSum(leftValue, rightValue);",
+      "notes": "Consistent spacing in parameter and argument lists improves readability and makes function interfaces easier to review.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-146",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Fixed-point variables shall use a Q<X> suffix, where <X> represents the number of fractional bits.",
+      "rationale": "Style, Readability",
+      "example": "#include <stdint.h>\n\nvoid processFixedPointNaming(void)\n{\n/* Non-compliant */\n/* Q format is not visible in the variable name */\n   int32_t velocityKmph = 1024;\n   int16_t magneticHdg  = 64;\n\n/* Compliant */\n/* Q format is explicit in the variable name */\n   int32_t velocityKMpHQ16 = 1024;\n   int16_t magneticHdgQ8 = 64;\n}",
+      "notes": "Including the Q format in the variable name makes scaling and precision assumptions visible to the reviewer.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "C-147",
+      "class": "Portability",
+      "secondary": "Readability",
+      "description": "<stdint.h>  shall be used for Fixed-width integer types.",
+      "rationale": "Portability, Readability",
+      "example": "/* Non-compliant */\nunsigned short int distanceKmNonCompliant = 0U;\n\n/* Compliant */\nuint16_t distanceKmCompliant = 0U;",
+      "notes": "Fixed-width integer types make data size explicit and improve portability across targets. Also see fixed point arithmetic naming conventions.",
+      "misra": [],
+      "groups": [
+        "bytecraft"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-001",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Within a build configuration, a single assembler dialect shall be used; mixing dialects in the same build is forbidden.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Mixed assembler dialects in the same build\n\n; file1.s - GNU as syntax\n.syntax unified\n.thumb\n\naddOne:\nadds r0, r0, #1\nbx   lr\n\n; file2.s - ARMASM syntax\nAREA |.text|, CODE, READONLY\n\nsubOne PROC\nSUB r0, r0, #1\nBX  lr\nENDP\nEND\n\n\n;==================== Compliant ====================\n; Single assembler dialect is used consistently in same build\n\n; file1.s - ARMASM syntax\nAREA |.text|, CODE, READONLY\nEXPORT addOne\n\naddOne PROC\nADD r0, r0, #1 ; Increment input value in r0 by 1\nBX  lr         ;  Return to the caller\nENDP\n\n; file2.s - ARMASM syntax\nEXPORT subOne\n\nsubOne PROC\nSUB r0, r0, #1 ; Decrement input value in r0 by 1\nBX  lr         ; Return to the caller\nENDP\nEND",
+      "notes": "Using a single assembler dialect throughout the build avoids syntax inconsistency and improves reviewability.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-002",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Each assembly file shall declare the instruction set state explicitly (e.g. ARM).",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Syntax and instruction set state are not declared explicitly\nAREA |.text|, CODE, READONLY\nEXPORT addOne\n\naddOne PROC\nADD r0, r0, #1\nBX  lr\nENDP\nEND\n;==================== Compliant ====================\n; ARMASM syntax is used and Thumb state is declared explicitly\nAREA |.text|, CODE, READONLY\nARM\nEXPORT addOne\n\naddOne  PROC\nADD r0, r0, #1 ; Increment input value in r0 by 1\nBX  lr         ; Return to the caller\nENDP\n\nEND",
+      "notes": "Explicitly declaring the assembly state at the start of each file improves readability and prevents ambiguity during build and review.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-003",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Tabs shall be avoided; indentation shall be spaces only.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Indentation uses tab characters\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT addOne\n\naddOne  PROC\n<TAB>ADD r0, r0, #1\n<TAB>BX  lr\nENDP\n\nEND\n;==================== Compliant ====================\n; Indentation uses spaces only\nAREA |.text|, CODE, READONLY\nARM\nEXPORT addOne\n\naddOne  PROC\nADD r0, r0, #1 ; Increment input value in r0 by 1\nBX  lr         ; Return to the caller\nENDP\n\nEND",
+      "notes": "Using spaces only for indentation improves formatting consistency across editors and review tools.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-004",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "One instruction per line shall be used; macro expansions and .macro blocks are permitted only if they improve readability and are documented.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Multiple instructions are placed on the same line\nAREA |.text|, CODE, READONLY\nARM\nEXPORT addOne\naddOne  PROC\nADD r0, r0, #1    MOV r1, r0\nBX  lr\nENDP\n\nEND\n;==================== Compliant ====================\n; One instruction is placed on each line\nAREA |.text|, CODE, READONLY\nARM\nEXPORT addOne\naddOne  PROC\nADD r0, r0, #1 ; Add 1 to the input value in r0\nMOV r1, r0     ; Copy the updated value from r0 to r1\nBX  lr         ; Return to the caller\nENDP\n\nEND",
+      "notes": "Using one instruction per line improves readability and makes review, debugging, and traceability easier.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-005",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Immediate constants shall be named via EQU, except for {0,1,2,4,8,16,32} used as shift/size/align constants and other explicitly allowlisted values.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Non-trivial immediate constant is used directly\n\nTIMEOUT_EXAMPLE_NONCOMPLIANT PROC\nMOV   r0, #100\nBX    lr\nENDP\n;==================== Compliant ====================\n; Non-trivial immediate constant is named with EQU\n; Allowlisted small constants remain direct\n\nTIMEOUT_VALUE   EQU   100\n\nTIMEOUT_EXAMPLE_COMPLIANT PROC\nMOV   r0, #TIMEOUT_VALUE ; Load named timeout constant\nLSLS  r1, r1, #4         ; Shift by allowlisted constant 4\nADDS  r2, r2, #1         ; Increment by allowlisted constant 1\nBX    lr                 ; Return to caller\nENDP",
+      "notes": "Non-trivial immediate constants shall be named so that intent remains explicit during review, while small allowlisted values may be used directly when their meaning is obvious.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-006",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Any computed branch target shall have bit[0]=0; setting bit[0] is forbidden.",
+      "rationale": "Safety",
+      "example": ";==================== Non-compliant ====================\n; bit[0] is set, so BX switches to Thumb state\n\nAREA |.text_arm|, CODE, READONLY\nARM\nEXPORT branchNonCompliant\n\nbranchNonCompliant PROC\nLDR   r0, =thumbTarget\nORR   r0, r0, #1\nBX    r0\nENDP\n\nAREA |.text_thumb|, CODE, READONLY\nTHUMB\n\nthumbTarget\nBX    lr\n\n;==================== Compliant ====================\n; bit[0] is cleared, so BX remains in Arm state\n; file: dispatcherJumpTable.s ve ; Allowlisted dispatcher module\nAREA |.text_arm2|, CODE, READONLY\nARM\nEXPORT branchCompliant\n\nbranchCompliant PROC\nLDR   r0, =armTarget ; Load computed branch target address\nBIC   r0, r0, #1     ; Clear bit[0] of the computed target\nBX    r0             ; Branch using the state-valid target\nENDP\n\narmTarget\nBX    lr             ; Return to the caller\n\nEND",
+      "notes": "If the lowest bit is 1, the branch will switch to Thumb state. If the lowest bit is 0, the branch will switch to Arm state. Note that the lowest bit is never actually used as part of the address as all instructions are either 4-byte aligned (as in Arm) or 2-byte aligned (as in Thumb).\nThis rule applies only to targets where bit[0] is architecturally defined as an execution-state selector.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-007",
+      "class": "Safety",
+      "secondary": null,
+      "description": "TBB/TBH shall only be used in allowlisted dispatcher modules and shall be preceded by explicit index bounds checking.",
+      "rationale": "Safety",
+      "example": ";==================== Non-compliant ====================\n; TBB/TBH are used without explicit bounds checking\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT dispatchTbbNonCompliant\nEXPORT dispatchTbhNonCompliant\ndispatchTbbNonCompliant PROC\nADR   r1, jumpTableByte\nTBB   [r1, r0]\njumpTableByte\nDCB   0, 1\nENDP\ndispatchTbhNonCompliant PROC\nADR   r1, jumpTableHalf\nTBH   [r1, r0, LSL #1]\njumpTableHalf\nDCW   0, 2\nENDP\nEND\n;==================== Compliant ====================\n; TBB/TBH are used only after explicit bounds checking\n; file: dispatcherJumpTable.s ve ; Allowlisted dispatcher module\nEXPORT dispatchTbbCompliant\nEXPORT dispatchTbhCompliant\ndispatchTbbCompliant PROC\nCMP   r0, #2         ; Compare index against table size\nBCS   defaultCaseTbb ; Branch if index is out of range\n\n; Load byte jump table base address\nADR   r1, jumpTableByteCompliant\n; Branch through byte table using checked index\nTBB   [r1, r0]\ndefaultCaseTbb\nBX    lr        ; Return on default path\njumpTableByteCompliant\nDCB   0, 1      ; Define byte table entries\nENDP\ndispatchTbhCompliant PROC\nCMP   r0, #2            ; Compare index against table size\nBCS   defaultCaseTbh    ; Branch if index is out of range\n; Load halfword jump table base address\nADR   r1, jumpTableHalfCompliant\n; Branch through halfword table using checked index\nTBH   [r1, r0, LSL #1]\ndefaultCaseTbh\nBX    lr   ; Return on default path\njumpTableHalfCompliant\nDCW   0, 2 ; Define halfword table entries\nENDP\nEND",
+      "notes": "By using these instructions, the programmer can control the branch behavior of the program, which is crucial for maintaining the integrity of the dispatcher's logic and preventing potential out-of-bounds or unpredictable behavior. The explicit index bounds checking ensures that the programmer can verify the bounds of the index used in the branch, thus preventing any unintended or incorrect behavior that could compromise the dispatcher's functionality.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-008",
+      "class": "Safety",
+      "secondary": null,
+      "description": "Direct writes to PC (e.g., mov pc,*, add pc,*, ldr pc,*) shall be prohibited. Function returns shall use only bx lr or pop {...,pc}. Exception returns shall use only architecturally valid bx lr EXC_RETURN sequences.",
+      "rationale": "Safety",
+      "example": ";==================== Non-compliant ====================\n; Direct writes to PC are used\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT jumpNonCompliant\nEXPORT returnNonCompliant\n\njumpNonCompliant PROC\nLDR   pc, =targetLabel\nENDP\nreturnNonCompliant PROC\nMOV   pc, lr\nENDP\ntargetLabel\nBX    lr",
+      "notes": "The prohibition on direct write to the PC in ARM architecture is primarily to enforce a load-store model for memory access. This means that all memory operations must be performed using load (LDR) and store (STR) instructions, rather than directly modifying the program counter.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-009",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Any assembly function shall not exceed 80 SLOC (excluding blank lines and comments). Exceptions (startup, context switch, vector table) shall be explicitly allowlisted or justified.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Function is too long and exceeds 80 SLOC\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT processDataNonCompliant\n\nprocessDataNonCompliant PROC\nPUSH  {r4-r7, lr}\nMOV   r4, r0\nMOV   r5, r1\nMOV   r6, r2\nMOV   r7, r3\n\nADD   r4, r4, #1\nSUB   r5, r5, #1\nEOR   r6, r6, r4\nORR   r7, r7, r5\nCMP   r4, #0\nBEQ   skipBlock1\n\nskipBlock1\n; ... many additional instruction blocks ...\n; ... total function length exceeds 80 SLOC ...\n; ... startup/context-switch/vector-table exception not justified ...\n\nPOP   {r4-r7, pc}\nENDP\n;==================== Compliant ====================\n; Long logic is split into smaller functions below the SLOC limit\nEXPORT processDataCompliant\nEXPORT processDataPartA\nEXPORT processDataPartB\n\nprocessDataCompliant PROC\nPUSH  {lr}               ; Save return address\nBL    processDataPartA   ; Execute first part of the logic\nBL    processDataPartB   ; Execute second part of the logic\nPOP   {pc}               ; Return to the caller\nENDP\n\nprocessDataPartA PROC\nADD   r0, r0, #1         ; Increment r0\nSUB   r1, r1, #1         ; Decrement r1\nBX    lr                 ; Return to the caller\nENDP\n\nprocessDataPartB PROC\nEOR   r2, r2, r0      ; Apply exclusive-OR using r0 and r2\nORR   r3, r3, r1      ; Apply inclusive-OR using r1 and r3\nBX    lr              ; Return to the caller\nENDP\n\nEND",
+      "notes": "Assembly functions should remain small enough for effective review, and any function exceeding the SLOC limit shall be explicitly allowlisted or justified.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-010",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Each assembly file shall place all code and data into explicit, named sections; implicit/default section placement shall not be relied upon.",
+      "rationale": "Safety",
+      "example": ";==================== Non-compliant ====================\n; Code and data are not both placed into explicit named sections\n\nTHUMB\nEXPORT readValueNonCompliant\n\nreadValueNonCompliant PROC\nLDR   r0, =tableValue\nLDR   r0, [r0]\nBX    lr\nENDP\ntableValue\nDCD   0x12345678\n\n;==================== Compliant ====================\n; Code and data are placed into explicit named sections\n\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT readValueCompliant\n\nreadValueCompliant PROC\nLDR   r0, =tableValueCompliant ; Load address of data obj\nLDR   r0, [r0] ; Read data value from memory\nBX    lr       ; Return to the caller\nENDP\n\nAREA |.rodata|, DATA, READONLY\ntableValueCompliant\nDCD   0x12345678   ; Define read-only constant data\n\nEND",
+      "notes": "Sections/segments define where code and data are placed in the object file.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-011",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Each assembly function/submodule shall include an assembly function prolog.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";====================== Compliant ====================\n\n;----------------------------------------------------------------- \n; FUNCTION NAME:\n; moduleTemplate_reverseBytes_u32\n;\n; PURPOSE:\n; Reverses the byte order of a 32-bit unsigned value.\n;\n; INPUT PARAMETERS:\n; r0 Input value to be byte-reversed\n;\n; OUTPUT PARAMETERS:\n; r0 Byte-reversed result\n;\n; RETURNS:\n; r0 Byte-reversed 32-bit value\n;\n; NOTES:\n; Rule 162: Allowlisted module: byteOrder.s\n; Rule 162: Deviation record: DEV-ASM-003\n; Rule 162: Reviewer approval: Low-level reviewer approved\n;\n;-----------------------------------------------------------------\n; FUNC_BEGIN moduleTemplate_reverseBytes\nmoduleTemplate_reverseBytes\n   REV r0, r0 ; Reverse the byte order of the 32-bit value in r0\n   BX lr      ; Return to the caller\n\n; FUNC_END moduleTemplate_reverseBytes",
+      "notes": "Assembly shall only appear in approved allowlisted modules, and any newly introduced .s file shall be deviation-tracked and approved by a qualified low-level reviewer.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-012",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Assembly shall only be permitted in allowlisted modules. Any new .s file requires a deviation record and low-level reviewer approval.",
+      "rationale": "Style and Convention, Readability",
+      "example": "See the compliant example in Rule 160. For this rule, the allowlisted module name, deviation record, and low-level reviewer approval shall be stated explicitly in the NOTES section of the assembly function/file prolog.",
+      "notes": "See the compliant example in Rule 160. For this rule, the allowlisted module name, deviation record, and low-level reviewer approval shall be stated explicitly in the NOTES section of the assembly function/file prolog.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-013",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "All labels shall begin in column 1 to be recognized by the assembler.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Label is indented and does not begin in column 1\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_loopExample\n\nmoduleTemplate_loopExample\nMOV   r0, #3\nB     loopStart\n+++++loopStart\nSUBS  r0, r0, #1\nBNE   loopStart\nBX    lr\n\nEND\n;==================== Compliant ====================\n; Label begins in column 1\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_loopExampleCompliant\nmoduleTemplate_loopExampleCompliant\nMOV   r0, #3  ; Load loop counter initial value into r0\nB     loopStartCompliant ; Branch to the loop label\nloopStartCompliant\nSUBS  r0, r0, #1 ; Decrement the loop counter\nBNE   loopStartCompliant ; Repeat loop while counter is not zero\nBX    lr ; Return to the caller\n\nEND",
+      "notes": "Labels shall start in column 1 so they are visually distinct from instructions and are recognized consistently by the assembler and review tools.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-014",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "The comment character shall delimit comments.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Comment is not delimited with the assembly comment character\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_addOne\nmoduleTemplate_addOne\nADD   r0, r0, #1   /* Non-compliant comment style */\nBX    lr\n;==================== Compliant ====================\n; Comment is delimited with the assembly comment character\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_addOneCompliant\nmoduleTemplate_addOneCompliant\nADD   r0, r0, #1   ; Compliant comment style\nBX    lr           ; Return to the caller\nEND",
+      "notes": "Comments shall be introduced with the assembler’s defined comment character so that source lines remain readable and are parsed consistently by the toolchain.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-015",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "Every operation in assembly code shall have a corresponding comment which explains the operation.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Not every operation has a corresponding explanatory comment\n\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_addTwo\n\nmoduleTemplate_addTwo\nADD   r0, r0, #2\nBX    lr\n\n;==================== Compliant ====================\n; Every operation has a corresponding explanatory comment\n\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_addTwoCompliant\n\nmoduleTemplate_addTwoCompliant\nADD   r0, r0, #2   ; Add constant 2 to input value in r0\nBX    lr           ; Return to the caller\n\nEND",
+      "notes": "Each assembly operation shall include a brief explanatory comment so that intent remains clear during review and maintenance.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-016",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "All assembly elements shall have a single exit point.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; Multiple exit points are used\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_checkValue\n\nmoduleTemplate_checkValue\nCMP   r0, #0\nBEQ   returnZero\nADD   r0, r0, #1\nBX    lr              ; First exit point\n\nreturnZero\nMOV   r0, #0\nBX    lr              ; Second exit point\n\n;==================== Compliant ====================\n; A single exit point is used\n\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_checkValueCompliant\n\nmoduleTemplate_checkValueCompliant\nCMP   r0, #0          ; Compare input value with zero\nBEQ   setZero         ; Branch if input is zero\nADD   r0, r0, #1      ; Increment input value\nB     exitFunction    ; Branch to single exit point\n\nsetZero\nMOV   r0, #0          ; Set return value to zero\n\nexitFunction\nBX    lr              ; Single exit point\n\nEND",
+      "notes": "Using a single exit point makes assembly control flow easier to review, trace, and verify.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    },
+    {
+      "id": "A-017",
+      "class": "Style and Convention",
+      "secondary": "Readability",
+      "description": "All symbols that are defined externally to the assembly element in which they are referenced shall be included using the external statement.",
+      "rationale": "Style and Convention, Readability",
+      "example": ";==================== Non-compliant ====================\n; External symbol is referenced without an external declaration\n\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_callHelper\n\nmoduleTemplate_callHelper\n; External function is called without IMPORT\nBL    helperFunction\nBX    lr\n\n\n;==================== Compliant ====================\n; External symbol is declared explicitly with IMPORT\n\nAREA |.text|, CODE, READONLY\nTHUMB\nEXPORT moduleTemplate_callHelperCompliant\nIMPORT helperFunction\n\nmoduleTemplate_callHelperCompliant\n; External function is declared with IMPORT\n; Call the imported external helper function\nBL    helperFunction\nBX    lr  ; Call the imported external helper function\n\nEND",
+      "notes": "Every externally defined symbol shall be declared explicitly with the external statement so that dependencies remain visible and reviewable.",
+      "misra": [],
+      "groups": [
+        "arm-m3"
+      ],
+      "check": {
+        "tool": "manual"
+      }
+    }
+  ]
+}
