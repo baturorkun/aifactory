@@ -1,9 +1,10 @@
 // The embedded template (RQ-0044): the Vivado/Vitis flow, its design check,
 // the phase-ordered gates and the CI that runs them.
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -351,7 +352,81 @@ async function twinModule(root: string) {
     twinSettings: (env: Record<string, string>, text: string, board?: string) => { gitlab: string; project: string; registry: string; console?: string } | undefined;
     judgeRun: (run: { exitStatus: number; summary: unknown; consoleText?: string }, test: unknown) => { status: string; why: string | null; summary_checks: Record<string, { ok: boolean }> };
     runScript: () => string;
+    twinAccess: (env: Record<string, string>) => string;
+    twinJobArgs: (run: { image: string; elfName: string; seconds: string; owner: string; timeoutS?: number }) => { owner: string; image: string; cmd: string[]; inputs: string[]; timeout_s: number };
+    summaryFromLog: (text: string) => Record<string, unknown> | null;
   }>;
+}
+
+async function labBotModule(root: string) {
+  return import(pathToFileURL(join(root, 'scripts/lab-bot.mjs')).href) as Promise<{
+    jobOwner: (env: Record<string, string>, projectName?: string) => string;
+    outputUrl: (job: { stdout?: string }) => string | undefined;
+    jobIsFinal: (job: { status?: string }) => boolean;
+  }>;
+}
+
+// A lab bot and the twin's GitLab in one server: what the twin stage asks of
+// them in bot mode, answered as the real ones did on 19 October.
+function fakeLabBot(outputArchive: string, outcome: { status: string; exit_code: number }) {
+  const seen = { uploads: {} as Record<string, number>, job: undefined as undefined | { command: string; args: Record<string, unknown> }, requestedBy: '', tokens: new Set<string>(), polls: 0 };
+  const server = createHttpServer((req, res) => {
+    const url = req.url ?? '';
+    const auth = req.headers.authorization ?? '';
+    if (url.startsWith('/api/agents') || url.startsWith('/api/jobs')) seen.tokens.add(auth);
+    const json = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks);
+      if (url.startsWith('/api/v4/projects/') && url.includes('/releases')) return json(200, [{ tag_name: '0.5.0' }]);
+      if (url === '/api/v4/user') return json(200, { username: 'twin-reader' });
+      if (req.method === 'PUT' && url.startsWith('/api/agents/lab/files/')) {
+        const name = decodeURIComponent(url.split('/').pop() ?? '');
+        seen.uploads[name] = body.length;
+        return json(200, { ok: true, url: `http://127.0.0.1/download/agent-files/lab/${name}`, size: body.length });
+      }
+      if (req.method === 'POST' && url.startsWith('/api/agents/lab/jobs')) {
+        seen.job = JSON.parse(body.toString('utf8'));
+        seen.requestedBy = String(req.headers['x-requested-by'] ?? '');
+        return json(202, { id: 'job-1', agent_id: 'lab', status: 'running', stdout: '' });
+      }
+      if (url === '/api/jobs/job-1') {
+        seen.polls += 1;
+        const port = (server.address() as { port: number }).port;
+        return json(200, { id: 'job-1', agent_id: 'lab', ...outcome, stdout: `twin stopped\nOUTPUT=http://127.0.0.1:${port}/download/agent-files/lab/job-1.tar.gz` });
+      }
+      if (url === '/download/agent-files/lab/job-1.tar.gz') { res.writeHead(200, { 'Content-Type': 'application/gzip' }); return res.end(readFileSync(outputArchive)); }
+      json(404, { error: `unexpected ${req.method} ${url}` });
+    });
+  });
+  return { server, seen, listen: () => new Promise<number>((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))) };
+}
+
+// The fake bot answers from this process, so the flow must not block it:
+// spawn, not spawnSync.
+function flowAsync(root: string, ...args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [join(root, 'scripts/flow.mjs'), ...args], { cwd: root, env: { PATH: process.env.PATH ?? '' } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+// What a twin job leaves for the bot to collect: out/run with the console,
+// and the job's log with the image's stderr around the summary line.
+function twinOutputArchive(directory: string, consoleText: string, summary: unknown): string {
+  mkdirSync(join(directory, 'out', 'run'), { recursive: true });
+  writeFileSync(join(directory, 'out', 'run', 'display.bin'), consoleText);
+  writeFileSync(join(directory, 'out', 'run', 'monitor.log'), 'monitor\n');
+  writeFileSync(join(directory, 'log'), `[INFO] twin booting\n${JSON.stringify(summary)}\n[INFO] twin stopped\n`);
+  const archive = join(directory, 'output.tar.gz');
+  const tar = spawnSync('tar', ['-czf', archive, '-C', directory, 'out', 'log'], { stdio: 'pipe' });
+  if (tar.status !== 0) throw new Error(String(tar.stderr));
+  return archive;
 }
 
 const BFI_BOARD = [
@@ -407,6 +482,107 @@ test('the twin reads the board\'s twin and test.yaml, and judges a run as bfi-sw
     assert.match(script, /rm -f \.token\ndocker inspect/);
   } finally {
     project.done();
+  }
+});
+
+test('the twin stage over the bot: the ELF through the store, a docker-run job owned by name, the archive back, no token to the lab', async () => {
+  const project = scaffold();
+  const outputs = mkdtempSync(join(tmpdir(), 'twin-bot-'));
+  try {
+    const twin = await twinModule(project.root);
+    const labBot = await labBotModule(project.root);
+    assert.equal(twin.twinAccess({}), 'ssh', 'ssh until a project says otherwise');
+    assert.equal(twin.twinAccess({ TWIN_ACCESS: 'BOT' }), 'bot');
+    assert.throws(() => twin.twinAccess({ TWIN_ACCESS: 'agent' }), /TWIN_ACCESS must be ssh or bot, not "agent"/);
+    assert.deepEqual(twin.twinJobArgs({ image: 'reg:5050/hardware-twin/bfi-sumilator:0.5.0', elfName: 'fw-ada-bfi-1.elf', seconds: '2', owner: 'fw/ada' }), {
+      owner: 'fw/ada', image: 'reg:5050/hardware-twin/bfi-sumilator:0.5.0',
+      cmd: ['--elf', '/in/fw-ada-bfi-1.elf', '--seconds', '2', '--out', '/out/run'], inputs: ['fw-ada-bfi-1.elf'], timeout_s: 62,
+    }, 'the image\'s own contract, a minute past the run for the pull and the boot');
+    assert.deepEqual(twin.summaryFromLog('[INFO] boot\n{"sysTimeMs": 2000, "frames": 100}\n[INFO] twin stopped\n'), { sysTimeMs: 2000, frames: 100 });
+    assert.equal(twin.summaryFromLog('no summary here\n{not json\n'), null);
+    assert.equal(labBot.jobOwner({ BOT_API_AGENT: 'kavci' }, 'embedded1'), 'embedded1/kavci');
+    assert.throws(() => labBot.jobOwner({}, 'fw'), /BOT_API_AGENT is not set/);
+    assert.equal(labBot.outputUrl({ stdout: 'twin stopped\nOUTPUT=http://bot/download/agent-files/lab/j.tar.gz' }), 'http://bot/download/agent-files/lab/j.tar.gz');
+    assert.equal(labBot.outputUrl({ stdout: 'nothing' }), undefined);
+    assert.ok(labBot.jobIsFinal({ status: 'failed' }) && !labBot.jobIsFinal({ status: 'running' }));
+
+    // The ELF the build left, and a twin to run it on.
+    mkdirSync(join(project.root, 'out/hello_ps/artifacts'), { recursive: true });
+    writeFileSync(join(project.root, 'out/hello_ps/artifacts/hello_ps_app.elf'), 'ELF');
+    const env = (port: number, more = '') => [
+      'TWIN_ACCESS=bot', 'TWIN_BOT_AGENT=lab', `BOT_API_URL=http://127.0.0.1:${port}`, 'BOT_API_TOKEN=bot-token', 'BOT_API_AGENT=ada',
+      `TWIN_GITLAB_URL=http://127.0.0.1:${port}`, 'TWIN_PROJECT=hardware-twin/bfi-sumilator', 'TWIN_REGISTRY=reg:5050', 'TWIN_CONSOLE=display.bin',
+      'TWIN_GITLAB_TOKEN=twin-secret', more, '',
+    ].join('\n');
+
+    const archive = twinOutputArchive(outputs, 'hello_ps: Hello from the Zynq PS\n', { sysTimeMs: 2000, frames: 100 });
+    const bot = fakeLabBot(archive, { status: 'succeeded', exit_code: 0 });
+    const port = await bot.listen();
+    try {
+      writeFileSync(join(project.root, '.env'), env(port));
+      const result = await flowAsync(project.root, 'twin', 'hello_ps');
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.match(result.stdout, /on lab's Docker through the bot, 5 s, for \S+\/ada/);
+      assert.match(result.stdout, /TWIN: hello_ps pass on hardware-twin\/bfi-sumilator 0\.5\.0/);
+
+      const written = JSON.parse(project.read('out/hello_ps/artifacts/twin/result.json'));
+      assert.equal(written.status, 'pass');
+      assert.equal(written.access, 'bot');
+      assert.equal(written.job, 'job-1');
+      assert.match(written.owner, /^[A-Za-z0-9._-]+\/ada$/);
+      assert.equal(written.twin_exit, 0);
+      assert.equal(written.summary.sysTimeMs, 2000);
+      assert.equal(written.host, 'lab (through the bot)');
+      assert.equal(written.twin.release, '0.5.0');
+      assert.equal(project.read('out/hello_ps/artifacts/twin/display.bin'), 'hello_ps: Hello from the Zynq PS\n');
+      assert.match(project.read('out/hello_ps/artifacts/twin/job.log'), /twin booting/);
+
+      // The job: the image's contract, the ELF from the store, owned by name, for 5 s plus a minute.
+      assert.equal(bot.seen.job?.command, 'docker-run');
+      const args = bot.seen.job?.args as { image: string; cmd: string[]; inputs: string[]; owner: string; timeout_s: number };
+      assert.equal(args.image, 'reg:5050/hardware-twin/bfi-sumilator:0.5.0');
+      assert.equal(args.inputs.length, 1);
+      assert.equal(bot.seen.uploads[args.inputs[0]], 3, 'the ELF went into the store under the job\'s name');
+      assert.deepEqual(args.cmd, ['--elf', `/in/${args.inputs[0]}`, '--seconds', '5', '--out', '/out/run']);
+      assert.match(args.owner, /\/ada$/);
+      assert.equal(args.timeout_s, 65);
+      assert.equal(bot.seen.requestedBy, 'ada');
+      assert.deepEqual([...bot.seen.tokens], ['Bearer bot-token'], 'the twin\'s GitLab token never reaches the bot');
+      assert.ok(bot.seen.polls >= 1);
+      assert.ok(!existsSync(join(project.root, 'twin-run/hello_ps/.token')) && !existsSync(join(project.root, 'twin-run/hello_ps/run.sh')), 'nothing of the ssh way is made');
+    } finally {
+      bot.server.closeAllConnections();
+      bot.server.close();
+    }
+
+    // A job the bot ended (timeout: exit 124) is an error with that reason.
+    const stopped = fakeLabBot(archive, { status: 'failed', exit_code: 124 });
+    const port2 = await stopped.listen();
+    try {
+      writeFileSync(join(project.root, '.env'), env(port2));
+      const result = await flowAsync(project.root, 'twin', 'hello_ps');
+      assert.equal(result.status, 1, result.stderr + result.stdout);
+      assert.match(result.stderr, /TWIN FAILED: hello_ps error \(the twin exited with 124\)/);
+      assert.equal(JSON.parse(project.read('out/hello_ps/artifacts/twin/result.json')).twin_exit, 124);
+    } finally {
+      stopped.server.closeAllConnections();
+      stopped.server.close();
+    }
+
+    // Bot mode needs the bot's name for the host and the person's name (the
+    // first value of a key in .env wins, so the line is left out, not overridden).
+    const without = (key: string) => env(1).split('\n').filter((line) => !line.startsWith(`${key}=`)).join('\n');
+    writeFileSync(join(project.root, '.env'), without('TWIN_BOT_AGENT'));
+    let result = project.flow('twin', 'hello_ps');
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /TWIN_BOT_AGENT is not set/);
+    writeFileSync(join(project.root, '.env'), without('BOT_API_AGENT'));
+    result = project.flow('twin', 'hello_ps');
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /BOT_API_AGENT is not set/);
+  } finally {
+    project.done();
+    rmSync(outputs, { recursive: true, force: true });
   }
 });
 

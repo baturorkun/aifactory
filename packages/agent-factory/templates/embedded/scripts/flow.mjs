@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFil
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CommandError, PROJECT_ROOT, buildHost, hostSettings, loadEnvFile, requireTool, runOnHost } from './vivado-host.mjs';
-import { parseTestYaml, parseTwinSection, twinStage } from './twin.mjs';
+import { parseTestYaml, parseTwinSection, twinAccess, twinStage } from './twin.mjs';
 import { boardAccess, boardStage } from './board.mjs';
 
 const HELP = `Usage: node scripts/flow.mjs <stage> [design...] [--mode project|non_project] [--jobs n] [--requirement-phases]
@@ -17,7 +17,9 @@ Stages
   sw      the Vitis application of each design that has one (VITIS in project.tcl)
   twin    the application on the board's hardware twin (the latest release of
           the twin image the board file names), checked against
-          designs/<design>/test.yaml; Docker where TWIN_* in .env says
+          designs/<design>/test.yaml; Docker where TWIN_* in .env says:
+          TWIN_ACCESS=ssh this machine's or a host's over SSH, =bot the lab
+          host's through the lab bot, with no login
   board   the bitstream and ELF on the real board over JTAG, its console checked
           against test.yaml; the lab bot powers it (BOARD_* and BOT_* in .env).
           BOARD_ACCESS=ssh runs xsdb and reads the console on the lab host;
@@ -355,7 +357,8 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   let boardHost;
   const lab = () => (boardHost ??= hostSettings(env, 'BOARD'));
   const vivado = () => (vivadoHost ??= hostSettings(env, 'VIVADO'));
-  const renode = () => (twinHost ??= hostSettings(env, 'TWIN'));
+  // bot: the twin's Docker is the lab host's, reached through the bot; no TWIN_REMOTE_* needed.
+  const renode = () => (twinAccess(env) === 'bot' ? null : (twinHost ??= hostSettings(env, 'TWIN')));
   const board = (design) => {
     const path = join(PROJECT_ROOT, 'boards', `${design.BOARD}.yaml`);
     if (!existsSync(path)) throw new CommandError(`No boards/${design.BOARD}.yaml for ${design.name}.`);
