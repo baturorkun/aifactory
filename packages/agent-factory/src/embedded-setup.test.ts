@@ -31,6 +31,7 @@ test('the lab inventory describes the lab as found on 17 October, and holds no s
     jtagCable: '210248B849E0',
     serialPort: '/dev/serial/by-id/usb-2012_Cypress_Semiconductor_Cypress-USB2UART-Ver1.0G_825A11C34918-if00',
     serialBaud: 115200,
+    console: 'lab/COM21',
   });
   const text = readFileSync(LAB_INVENTORY_PATH, 'utf8');
   assert.doesNotMatch(text, /glpat-|"(token|password|secret|key)"\s*:/i, 'no token, password or key');
@@ -45,6 +46,9 @@ test('a new embedded project takes its hosts and its board unit from the invento
     assert.equal(env.VITIS_BIN, 'C:\\Xilinx\\2025.2\\Vitis\\bin\\vitis.bat');
     assert.equal(env.BOARD_POWER_NAME, 'Zedboard - 1');
     assert.equal(env.BOARD_JTAG_CABLE, '210248B849E0');
+    // A unit whose console the bot serves is reached through the bot (RQ-0055).
+    assert.equal(env.BOARD_ACCESS, 'bot');
+    assert.equal(env.BOARD_CONSOLE, 'lab/COM21');
     assert.equal(env.TWIN_REMOTE_HOST, '192.168.1.2');
     assert.equal(env.GITLAB_PROJECT_ID, 'agentic/fw');
     // One copy per person on each host.
@@ -67,6 +71,7 @@ test('without a unit the board settings stay empty; .env.example lines keep thei
   assert.equal(values.VIVADO_REMOTE_USER, 'ada', 'the developer\'s own account on the Vivado host (RQ-0054)');
   assert.equal(labWideCiValues(inventory).VIVADO_REMOTE_USER, inventory.vivado.user, 'CI keeps the inventory\'s account');
   assert.equal(values.BOARD_JTAG_CABLE, undefined);
+  assert.equal(values.BOARD_ACCESS, undefined, 'the .env.example keeps its ssh default');
   assert.equal(values.VIVADO_REMOTE_PROJECT_NAME, 'fw-ada');
   assert.equal(fillEnv('# hosts\nVIVADO_REMOTE_HOST=\nOTHER=x\nVIVADO_REMOTE_HOST=\n', values), '# hosts\nVIVADO_REMOTE_HOST=192.168.1.3\nOTHER=x\nVIVADO_REMOTE_HOST=\n');
 });

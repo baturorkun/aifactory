@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
@@ -438,8 +439,14 @@ async function boardModule(root: string) {
     findOutlet: (status: string, name: string) => { socket: string; on: boolean } | undefined;
     readFromZip: (zip: Buffer, suffix: string) => Buffer | undefined;
     processorType: (board: string) => string | undefined;
-    loadScript: (options: { hwServer: string; cable: string; directory: string; processor: unknown }) => string;
+    loadScript: (options: { hwServer: string; cable: string; directory: string; processor: unknown; logFile?: string }) => string;
     runScript: () => string;
+    boardAccess: (env: Record<string, string>) => string;
+    parseConsole: (text: string) => { agent: string; com: string };
+    bridgeOwner: (env: Record<string, string>, projectName?: string) => string;
+    parseBridge: (text: string) => { host?: string; port?: number; owner?: string; error?: string };
+    readConsole: (host: string, port: number) => { readonly text: string; error?: Error; ready: Promise<void>; stop: () => void };
+    waitForConsole: (reader: unknown, test: unknown, options?: { pause?: number }) => Promise<string>;
   }>;
 }
 
@@ -486,6 +493,77 @@ test('the board stage finds the outlet, reads the init from the XSA and programs
     const run = board.runScript();
     assert.match(run, /^#!\/bin\/sh/);
     assert.match(run, /cat "\$port" > console\.log &[\s\S]*"\$xsdb" load\.tcl/, 'the console is read before the board is programmed');
+  } finally {
+    project.done();
+  }
+});
+
+test('the board stage over the bot: the console through the bridge, xsdb elsewhere, nothing on the lab host', async () => {
+  const project = scaffold();
+  try {
+    const board = await boardModule(project.root);
+    assert.equal(board.boardAccess({}), 'ssh', 'ssh until a project says otherwise');
+    assert.equal(board.boardAccess({ BOARD_ACCESS: ' Bot ' }), 'bot');
+    assert.throws(() => board.boardAccess({ BOARD_ACCESS: 'agent' }), /BOARD_ACCESS must be ssh or bot, not "agent"/);
+
+    assert.deepEqual(board.parseConsole('lab/com21'), { agent: 'lab', com: 'COM21' });
+    assert.throws(() => board.parseConsole('com21'), /BOARD_CONSOLE is <device agent>\/<COMx>/);
+    assert.equal(board.bridgeOwner({ BOT_API_AGENT: 'kavci' }, 'embedded1'), 'embedded1/kavci');
+    assert.throws(() => board.bridgeOwner({}, 'fw'), /BOT_API_AGENT is not set: your name as the bot knows you/, 'set by hand, never a login name');
+
+    // The bot's answers, as it gave them on 19 October.
+    assert.deepEqual(board.parseBridge('Portmap bridge started for `embedded1/test`: `lab` `COM21` -> `192.168.1.2:21000`.\nBRIDGE host=192.168.1.2 port=21000 owner=embedded1/test'),
+      { host: '192.168.1.2', port: 21000, owner: 'embedded1/test' });
+    assert.deepEqual(board.parseBridge('Portmap start blocked: `lab` `COM21` is in use by `embedded1/akara`.'),
+      { error: 'Portmap start blocked: `lab` `COM21` is in use by `embedded1/akara`.' });
+
+    // Without run.sh around it, load.tcl keeps its own log; the directory is the Vivado host's, forward slashes.
+    const processor = { init: 'ps7_init.tcl', run: ['ps7_init', 'ps7_post_config'], fpga: 'xc7z*', reset: 'APU*', core: '*Cortex-A9*#0' };
+    const load = board.loadScript({ hwServer: '192.168.1.2:3121', cable: '210248B849E0', directory: 'C:/ab/fw-ada/board-run/hello_ps', processor, logFile: 'C:/ab/fw-ada/board-run/hello_ps/xsdb.log' });
+    assert.match(load, /set log \[open "C:\/ab\/fw-ada\/board-run\/hello_ps\/xsdb\.log" w\]/);
+    assert.match(load, /say "BOARD LOADED"[\s\S]*say "BOARD LOAD FAILED: \$message"/);
+    assert.match(board.loadScript({ hwServer: 'lab:3121', cable: 'c', directory: '/p', processor }), /proc say \{text\} \{ puts \$text \}/);
+
+    // The console over TCP, as the bridge serves it: the wait ends as soon as the verdict is known.
+    const lines = ['booting\n', 'hello_ps: Hello from the Zynq PS\n'];
+    const server = createServer((socket) => { for (const line of lines) socket.write(line); });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const test = { timeout_s: 20, expect: ['hello_ps: Hello from the Zynq PS'], fail_on: ['PANIC'], summary: {} };
+      let reader = board.readConsole('127.0.0.1', port);
+      await reader.ready;
+      let started = Date.now();
+      let text = await board.waitForConsole(reader, test, { pause: 20 });
+      reader.stop();
+      assert.match(text, /booting\nhello_ps: Hello from the Zynq PS/);
+      assert.ok(Date.now() - started < 5000, 'stops when every expected line has been seen');
+
+      lines.splice(0, lines.length, 'PANIC: no DDR\n');
+      reader = board.readConsole('127.0.0.1', port);
+      await reader.ready;
+      started = Date.now();
+      text = await board.waitForConsole(reader, test, { pause: 20 });
+      reader.stop();
+      assert.match(text, /PANIC/);
+      assert.ok(Date.now() - started < 5000, 'stops when a fail_on line appeared');
+    } finally {
+      server.close();
+    }
+
+    // In bot mode the stage needs the console's name and no lab host.
+    writeFileSync(join(project.root, '.env'), 'BOARD_ACCESS=bot\nBOARD_HW_SERVER=192.168.1.2:3121\nBOARD_JTAG_CABLE=210248B849E0\nXSDB_BIN=xsdb\n');
+    let result = project.flow('board', 'hello_ps');
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /BOARD_CONSOLE is not set/);
+    writeFileSync(join(project.root, '.env'), 'BOARD_ACCESS=bot\nBOARD_HW_SERVER=192.168.1.2:3121\nBOARD_JTAG_CABLE=210248B849E0\nXSDB_BIN=xsdb\nBOARD_CONSOLE=lab/COM21\n');
+    result = project.flow('board', 'hello_ps');
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /BOT_API_AGENT is not set/);
+    writeFileSync(join(project.root, '.env'), 'BOARD_ACCESS=agent\n');
+    result = project.flow('board', 'hello_ps');
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /BOARD_ACCESS must be ssh or bot/);
   } finally {
     project.done();
   }

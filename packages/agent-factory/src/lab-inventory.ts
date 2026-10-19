@@ -19,6 +19,9 @@ const UnitSchema = z.object({
   serialBaud: z.number().int().positive().default(115200),
   twinProject: z.string().regex(/^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+$/).optional(),
   twinConsole: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
+  // The console as the bot's portmap lists it, device agent/COM (lab/COM21):
+  // with one, a new project reaches the board through the bot (RQ-0055).
+  console: z.string().regex(/^[A-Za-z0-9_-]+\/COM\d+$/).optional(),
 });
 
 export const LabInventorySchema = z.object({
@@ -106,6 +109,8 @@ export function embeddedEnvValues(
   return {
     ...values,
     ...(unit.powerName ? { BOARD_POWER_NAME: `"${unit.powerName}"` } : {}),
+    BOARD_ACCESS: unit.console ? 'bot' : 'ssh',
+    ...(unit.console ? { BOARD_CONSOLE: unit.console } : {}),
     BOARD_HOST_TYPE: inventory.lab.hostType,
     BOARD_REMOTE_HOST: inventory.lab.host,
     BOARD_REMOTE_USER: inventory.lab.user,

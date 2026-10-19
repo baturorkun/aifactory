@@ -58,7 +58,8 @@
       "powerName": "Zedboard - 1",
       "jtagCable": "210248B849E0",
       "serialPort": "/dev/serial/by-id/usb-2012_Cypress_Semiconductor_Cypress-USB2UART-Ver1.0G_825A11C34918-if00",
-      "serialBaud": 115200
+      "serialBaud": 115200,
+      "console": "lab/COM21"
     }
   },
   "known": {

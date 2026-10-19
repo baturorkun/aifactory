@@ -4,7 +4,7 @@ import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CommandError, PROJECT_ROOT, buildHost, hostSettings, loadEnvFile, requireTool, runOnHost } from './vivado-host.mjs';
 import { parseTestYaml, parseTwinSection, twinStage } from './twin.mjs';
-import { boardStage } from './board.mjs';
+import { boardAccess, boardStage } from './board.mjs';
 
 const HELP = `Usage: node scripts/flow.mjs <stage> [design...] [--mode project|non_project] [--jobs n] [--requirement-phases]
 
@@ -19,7 +19,10 @@ Stages
           the twin image the board file names), checked against
           designs/<design>/test.yaml; Docker where TWIN_* in .env says
   board   the bitstream and ELF on the real board over JTAG, its console checked
-          against test.yaml; the lab bot powers it (BOARD_* and BOT_* in .env)
+          against test.yaml; the lab bot powers it (BOARD_* and BOT_* in .env).
+          BOARD_ACCESS=ssh runs xsdb and reads the console on the lab host;
+          =bot reads the console through the bot's bridge and runs xsdb on
+          the Vivado host, with no login to the lab host
   all     sim, build, sw, twin (the board only when asked for)
   clean   out/<design> only
 
@@ -362,7 +365,8 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
     const settings = options.stage === 'twin' || options.stage === 'board' ? undefined : vivado();
     switch (options.stage) {
       case 'board':
-        await boardStage(lab(), design, board(design), env);
+        // bot: xsdb runs on the Vivado host; ssh: everything on the lab host.
+        await boardStage(boardAccess(env) === 'bot' ? vivado() : lab(), design, board(design), env);
         break;
       case 'twin':
         await twinStage(renode(), design, board(design), env);
