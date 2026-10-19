@@ -140,3 +140,22 @@ class IngestQueue:
     def busy(self, source_id: str) -> bool:
         with self._lock:
             return source_id in self._running
+
+
+def resume_interrupted(
+    interrupted: list[tuple[int, str]], queue: IngestQueue, enabled: Callable[[str], bool],
+) -> list[str]:
+    """Start the ingest of each source whose run a service restart cut short.
+
+    One ingest per source, for its latest interrupted run; a passive source is
+    left closed. Returns the sources started (RQ-0050)."""
+    latest: dict[str, int] = {}
+    for run_id, source_id in interrupted:
+        latest[source_id] = max(run_id, latest.get(source_id, 0))
+    started: list[str] = []
+    for source_id in sorted(latest):
+        if not enabled(source_id):
+            continue
+        queue.trigger(source_id, f"service restart (run {latest[source_id]} was interrupted)")
+        started.append(source_id)
+    return started

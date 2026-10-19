@@ -150,15 +150,17 @@ def _lock_key(source_id: str) -> str:
     return f"aifactory-rag-ingest:{source_id}"
 
 
-def close_interrupted_runs(connection_string: str) -> list[int]:
+def close_interrupted_runs(connection_string: str) -> list[tuple[int, str]]:
     """Close the `running` runs of sources nobody is ingesting.
 
     A service restart kills the webhook ingest in flight and its run stays
     `running` for good, shown as "Updating now" until the next ingest. A live
     ingest holds the source's advisory lock, so a source whose lock is free
-    has no ingest: its running runs were interrupted. Called at startup.
+    has no ingest: its running runs were interrupted. Called at startup;
+    returns each closed run with its source, for the caller to start that
+    source's ingest again (RQ-0050).
     """
-    closed: list[int] = []
+    closed: list[tuple[int, str]] = []
     with psycopg.connect(connection_string, autocommit=True) as conn:
         sources = [row[0] for row in conn.execute(
             "SELECT DISTINCT source_id FROM rag_ingest_runs WHERE status = 'running' AND source_id IS NOT NULL"
@@ -168,7 +170,7 @@ def close_interrupted_runs(connection_string: str) -> list[int]:
             if not conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (key,)).fetchone()[0]:
                 continue  # an ingest of this source is running somewhere
             try:
-                closed.extend(row[0] for row in conn.execute(
+                closed.extend((row[0], source_id) for row in conn.execute(
                     "UPDATE rag_ingest_runs SET status = 'failed', finished_at = now(), progress = NULL, "
                     "error = 'interrupted: no ingest of this source was running when the service started' "
                     "WHERE source_id = %s AND status = 'running' RETURNING id",
@@ -919,6 +921,10 @@ def _ingest_file(
     force: bool,
     context: InputContext = FOLDER_INPUT,
 ) -> tuple[str, bool]:
+    if file.size == 0:
+        # Nothing to read (a placeholder left on the file server): skipped,
+        # not an error that keeps the source red (RQ-0050).
+        return "skipped", False
     existing = _find_document(conn, source.id, context.key, file.relative_path)
     modified_at = datetime.fromtimestamp(file.modified_timestamp, tz=timezone.utc)
     blob = context.blobs.get(file.relative_path) if context.blobs is not None else None

@@ -66,12 +66,6 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     factory_config = load_factory_config(config_path)
     running = build_info.capture()
     require_schema(factory_config.rag.database.connection_string)
-    try:
-        interrupted = close_interrupted_runs(factory_config.rag.database.connection_string)
-        if interrupted:
-            print(f"RAG closed {len(interrupted)} interrupted ingest run(s): {interrupted}", flush=True)
-    except Exception as exc:  # noqa: BLE001 - housekeeping must not stop the service
-        print(f"RAG could not check for interrupted ingest runs: {exc}", flush=True)
     app = FastAPI(title="AI Factory RAG", version=running.version)
 
     def auth_claims(request: Request) -> dict[str, Any]:
@@ -295,6 +289,19 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
     queue = webhook.IngestQueue(
         lambda source_id, started_by: ingest_source(factory_config.rag, source_id, started_by=started_by)
     )
+
+    # A run the last restart cut short is closed and its source ingested again
+    # at once, so a deploy during a webhook ingest leaves no source red (RQ-0050).
+    try:
+        interrupted = close_interrupted_runs(factory_config.rag.database.connection_string)
+    except Exception as exc:  # noqa: BLE001 - housekeeping must not stop the service
+        interrupted = []
+        print(f"RAG could not check for interrupted ingest runs: {exc}", flush=True)
+    if interrupted:
+        print(f"RAG closed {len(interrupted)} interrupted ingest run(s): {[run for run, _ in interrupted]}", flush=True)
+        resumed = webhook.resume_interrupted(interrupted, queue, lambda source_id: find_source(factory_config.rag, source_id).enabled)
+        if resumed:
+            print(f"RAG started the ingest of {', '.join(resumed)} again", flush=True)
 
     # GitLab push and tag-push events keep repository sources current (RQ-0028).
     # The API is open on the network, so the entry's secret is never optional.

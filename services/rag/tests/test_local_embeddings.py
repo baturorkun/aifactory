@@ -245,7 +245,7 @@ class InterruptedRunTests(unittest.TestCase):
         fake = FakeHousekeepingConnection()
         with patch("aifactory_rag.ingest.pipeline.psycopg.connect", return_value=fake):
             closed = close_interrupted_runs("postgresql://test")
-        self.assertEqual(closed, [183, 160])
+        self.assertEqual(closed, [(183, "simics"), (160, "simics")])
         self.assertEqual(fake.updated, ["simics"])  # arinc's lock is held: a live ingest
         self.assertEqual(fake.unlocked, ["aifactory-rag-ingest:simics"])
 
