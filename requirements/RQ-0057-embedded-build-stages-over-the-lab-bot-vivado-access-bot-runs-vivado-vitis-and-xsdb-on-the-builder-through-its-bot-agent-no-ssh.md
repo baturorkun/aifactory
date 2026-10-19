@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-19T21:37:04.213Z"
 branch: "factory/RQ-0057"
 createdFromCommit: "b05d98bceefac0e8bf085fc0a159784d4e91b0f0"
+githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/92"
+githubIssueIid: 92
+repositoryProvider: github
 ---
 # RQ-0057 - Embedded build stages over the lab bot: VIVADO_ACCESS=bot runs Vivado, Vitis and xsdb on the builder through its bot agent, no SSH
 
