@@ -508,8 +508,8 @@ test('the board stage over the bot: the console through the bridge, xsdb elsewhe
 
     assert.deepEqual(board.parseConsole('lab/com21'), { agent: 'lab', com: 'COM21' });
     assert.throws(() => board.parseConsole('com21'), /BOARD_CONSOLE is <device agent>\/<COMx>/);
-    assert.equal(board.bridgeOwner({ BOARD_OWNER: 'kavci' }, 'embedded1'), 'embedded1/kavci');
-    assert.match(board.bridgeOwner({}, 'fw'), /^fw\/[^/]+$/, 'the login name when BOARD_OWNER is empty');
+    assert.equal(board.bridgeOwner({ BOT_API_AGENT: 'kavci' }, 'embedded1'), 'embedded1/kavci');
+    assert.throws(() => board.bridgeOwner({}, 'fw'), /BOT_API_AGENT is not set: your name as the bot knows you/, 'set by hand, never a login name');
 
     // The bot's answers, as it gave them on 19 October.
     assert.deepEqual(board.parseBridge('Portmap bridge started for `embedded1/test`: `lab` `COM21` -> `192.168.1.2:21000`.\nBRIDGE host=192.168.1.2 port=21000 owner=embedded1/test'),
@@ -556,6 +556,10 @@ test('the board stage over the bot: the console through the bridge, xsdb elsewhe
     let result = project.flow('board', 'hello_ps');
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /BOARD_CONSOLE is not set/);
+    writeFileSync(join(project.root, '.env'), 'BOARD_ACCESS=bot\nBOARD_HW_SERVER=192.168.1.2:3121\nBOARD_JTAG_CABLE=210248B849E0\nXSDB_BIN=xsdb\nBOARD_CONSOLE=lab/COM21\n');
+    result = project.flow('board', 'hello_ps');
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /BOT_API_AGENT is not set/);
     writeFileSync(join(project.root, '.env'), 'BOARD_ACCESS=agent\n');
     result = project.flow('board', 'hello_ps');
     assert.equal(result.status, 2);

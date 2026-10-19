@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createConnection } from 'node:net';
-import { userInfo } from 'node:os';
 import { basename, join } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { CommandError, PROJECT_ROOT, buildHost, projectPathOnHost, runOnHost } from './vivado-host.mjs';
@@ -29,10 +28,14 @@ import { judgeRun, parseTestYaml } from './twin.mjs';
 // The lab bot
 // ------------------------------------------------------------
 
+// Every call carries who asks (BOT_API_AGENT, the bot's name for the
+// person), so the bot's log says so instead of "api".
 async function bot(env, path) {
   const url = (env.BOT_API_URL ?? '').trim().replace(/\/$/, '');
   const token = (env.BOT_API_TOKEN ?? '').trim();
-  const response = await fetch(`${url}/api/commands/${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  const user = (env.BOT_API_AGENT ?? '').trim();
+  const query = user ? `${path.includes('?') ? '&' : '?'}user=${encodeURIComponent(user)}` : '';
+  const response = await fetch(`${url}/api/commands/${path}${query}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = (body.messages ?? []).join(' ') || body.error || '';
@@ -60,11 +63,15 @@ export function parseConsole(text) {
   return { agent: match[1], com: match[2].toUpperCase() };
 }
 
-// The owner the bridge is opened for: this project and whoever runs the
-// stage (BOARD_OWNER, or the login name). The bot shows it in pm status and
-// lets only this owner close the bridge.
+// The owner the bridge is opened for: this project and the person running
+// the stage, by the name the bot knows them (BOT_API_AGENT is set by hand,
+// like the agent id of the bot's own installer; never guessed from a login
+// name). The bot shows it in pm status and lets only this owner close the
+// bridge.
 export function bridgeOwner(env, projectName = basename(PROJECT_ROOT)) {
-  const user = (env.BOARD_OWNER ?? '').trim() || userInfo().username;
+  const user = (env.BOT_API_AGENT ?? '').trim();
+  if (!user) throw new CommandError('BOT_API_AGENT is not set: your name as the bot knows you (the agent id of your PC\'s bot agent, e.g. kavci); the console is opened for <project>/<it>. Add it to .env.', 2);
+  if (!/^[A-Za-z0-9._@:-]+$/.test(user)) throw new CommandError('BOT_API_AGENT may contain only letters, digits and . _ @ : -', 2);
   return `${projectName}/${user}`.replace(/[^A-Za-z0-9._@/:-]/g, '_').slice(0, 64);
 }
 
@@ -256,6 +263,7 @@ export async function boardStage(settings, design, boardText, env) {
   const port = access === 'ssh' ? required(env, 'BOARD_SERIAL_PORT', 'the board\'s console on the lab host, e.g. /dev/serial/by-id/...') : undefined;
   const xsdb = required(env, 'XSDB_BIN', access === 'ssh' ? 'xsdb on the lab host' : 'xsdb on the Vivado host, which programs the board through the hw_server in bot mode');
   const consoleName = access === 'bot' ? parseConsole(required(env, 'BOARD_CONSOLE', 'the console as the bot\'s pm status lists the board, device agent/COM (lab/COM21)')) : undefined;
+  const owner = access === 'bot' ? bridgeOwner(env) : undefined;
   const baud = (env.BOARD_SERIAL_BAUD ?? '').trim() || '115200';
   if (!/^[A-Za-z0-9._:-]+$/.test(hwServer) || !/^[A-Za-z0-9]+$/.test(cable)) {
     throw new CommandError('BOARD_HW_SERVER is host:port and BOARD_JTAG_CABLE letters and digits.', 2);
@@ -303,7 +311,6 @@ export async function boardStage(settings, design, boardText, env) {
   // closed when it was opened here, the outlet off when it was switched on here.
   let bridge;
   let reader;
-  const owner = bridgeOwner(env);
   const consolePath = (action) => `pm/${action}/${consoleName.agent}/${consoleName.com.toLowerCase()}?owner=${encodeURIComponent(owner)}`;
   let released = false;
   const release = async () => {

@@ -42,8 +42,11 @@ nothing. `bot` reaches the lab without logging in to the lab host:
 1. **The console through the bot.** `BOARD_CONSOLE` names the console as the
    bot's `pm status` lists the board: device agent and COM port
    (`lab/COM21`). The stage asks the bot for the bridge,
-   `pm start <agent> <COMx> owner=<project>/<user>` (the user is
-   `BOARD_OWNER`, or the login name), and reads the console from the
+   `pm start <agent> <COMx> owner=<project>/<name>` (the name is
+   `BOT_API_AGENT`, the person's name as the bot knows them, set by hand in
+   `.env` as the bot's own agent installer asks, never guessed from a login
+   name; every bot call carries it as `user=` so the bot's log names the
+   person), and reads the console from the
    `BRIDGE host=<ip> port=<tcp>` the bot answers with, over plain TCP, from
    the machine the stage runs on. A console another owner holds, or one a
    person has open through portmap, stops the stage with the bot's answer
@@ -104,8 +107,8 @@ developer runs the board through the bot, never with a key to the lab host.
   powers the board off; the bot's `pm status` shows no owner afterwards.
 - A console another owner holds stops the stage with the bot's message,
   before the board is powered when its serial device is there; a missing
-  `BOARD_CONSOLE`, `BOT_API_TOKEN` or `XSDB_BIN` is an error naming the
-  setting.
+  `BOARD_CONSOLE`, `BOT_API_AGENT`, `BOT_API_TOKEN` or `XSDB_BIN` is an error
+  naming the setting.
 - xsdb failing (no target on the cable, a load error) gives status `error`
   with the reason from `xsdb.log`; a missing expected line gives `timeout`,
   a `fail_on` line gives `fail`; in every case the bridge is closed and the
