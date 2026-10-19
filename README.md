@@ -342,8 +342,9 @@ one PowerShell line over a password login (`.env.example` shows it). That is
 runs the tools and no key is needed. The lab host is reached as `root` only
 with `BOARD_ACCESS=ssh` (the lab admin and CI); developers use `bot`: power
 and the console (the bot's portmap bridge, `BOARD_CONSOLE`) through the bot,
-JTAG from the builder's xsdb to the hw_server. Both `bot` modes arrive with
-RQ-0055. `factory env-check` ends with the logins to try. A project made from an older template is
+JTAG from the builder's xsdb to the hw_server. The board's `bot` mode is RQ-0055 (`BOARD_CONSOLE` is the console as the bot's
+`pm status` lists it, `BOARD_OWNER` the user in its owner); the builder's is
+RQ-0056. `factory env-check` ends with the logins to try. A project made from an older template is
 brought up to date with `factory template update` (it lists the changes;
 `--write` applies them): the scripts, the flow, the CI file, `.env.example` and
 `AGENTS.md` are replaced, the gates and package scripts merged, files a design
