@@ -31,6 +31,8 @@ export interface EnvSectionReport {
 export interface EnvCheckReport {
   envFileExists: boolean;
   sections: EnvSectionReport[];
+  /** The SSH logins an embedded project's stages use (RQ-0054), when set. */
+  hosts: string[];
   /** Keys that are empty in both .env and .env.example — the actionable set. */
   empty: string[];
   counts: { set: number; default: number; empty: number };
@@ -126,7 +128,30 @@ export function analyzeEnv(exampleText: string, envText: string | null): EnvChec
     sections.push({ description: section.description, vars });
   }
 
-  return { envFileExists: envText !== null, sections, empty, counts };
+  return { envFileExists: envText !== null, sections, empty, counts, hosts: stageHosts(values) };
+}
+
+// The SSH logins an embedded project's stages use (RQ-0054): the Vivado host
+// for sim, build and sw; the lab host for board and twin. The check, sim and
+// build phases need only the first, so a developer who runs no board or twin
+// phase needs no key on the lab host.
+export function stageHosts(values: Map<string, string>): string[] {
+  const login = (prefix: string): string | null => {
+    const host = values.get(`${prefix}_REMOTE_HOST`);
+    if (!host) return null;
+    const user = values.get(`${prefix}_REMOTE_USER`) || '<user>';
+    const port = values.get(`${prefix}_REMOTE_PORT`);
+    return `ssh ${port && port !== '22' ? `-p ${port} ` : ''}${user}@${host}`;
+  };
+  const hosts: string[] = [];
+  const vivado = login('VIVADO');
+  if (vivado) hosts.push(`${vivado.padEnd(34)} sim, build, sw (Vivado/Vitis host; your own account, key in administrators_authorized_keys when it is an administrator)`);
+  const board = login('BOARD');
+  if (board) hosts.push(`${board.padEnd(34)} board (lab host; only when you run the board phase yourself)`);
+  const twin = login('TWIN');
+  if (twin && twin !== board) hosts.push(`${twin.padEnd(34)} twin (Docker host; only when you run the twin phase yourself)`);
+  else if (twin) hosts[hosts.length - 1] = hosts[hosts.length - 1].replace('board (lab host;', 'board, twin (lab host;');
+  return hosts;
 }
 
 /** Read a project's files and analyse them. */
@@ -158,6 +183,11 @@ export function formatEnvCheck(report: EnvCheckReport, projectRoot: string): str
       const note = v.status === 'set' ? 'set' : v.status === 'default' ? `default ${v.defaultValue}` : 'empty';
       lines.push(`  ${mark[v.status]} ${v.key.padEnd(30)} ${note}`);
     }
+  }
+  if (report.hosts.length > 0) {
+    lines.push('');
+    lines.push('Hosts the stages log in to (try each once; a key that is not where that host reads it is the usual first failure):');
+    for (const host of report.hosts) lines.push(`  ${host}`);
   }
   lines.push('');
   lines.push(`Summary: ${report.counts.set} set, ${report.counts.default} using a default, ${report.counts.empty} empty.`);

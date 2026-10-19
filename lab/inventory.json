@@ -13,7 +13,9 @@
   },
   "vivado": {
     "$comment": [
-      "BUILDER: Windows 11, Vivado and Vitis 2025.2, reached over SSH.",
+      "BUILDER: Windows 11, Vivado and Vitis 2025.2, reached over SSH. `user` is the CI",
+      "account (the instance-level VIVADO_REMOTE_USER); a developer's .env takes their own",
+      "login (RQ-0054), whose key goes into administrators_authorized_keys on the host.",
       "basePath is C:\\ab, a junction to C:\\Users\\Batur\\aifactory-builds: Vitis' gcc",
       "cannot pass the 260-character path limit, and the long folder name left too",
       "little room for the BSP's objects (RQ-0048)."

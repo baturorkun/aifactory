@@ -64,17 +64,21 @@ export function personSlug(cwd: string): string {
 
 // The .env values an embedded project takes from the inventory. A unit, when
 // given, adds the board settings; without one they stay empty.
+// `account` is the developer's login on the Vivado host (RQ-0054): their own,
+// as the host keeps one project copy per person; the inventory's user is the
+// CI account. The lab host's user is the lab's (root) for everyone.
 export function embeddedEnvValues(
   inventory: LabInventory,
   projectName: string,
   person: string,
   unitName?: string,
+  account: string = userInfo().username,
 ): Record<string, string> {
   const hostProject = `${projectName}-${person}`;
   const values: Record<string, string> = {
     VIVADO_HOST_TYPE: inventory.vivado.hostType,
     VIVADO_REMOTE_HOST: inventory.vivado.host,
-    VIVADO_REMOTE_USER: inventory.vivado.user,
+    VIVADO_REMOTE_USER: account,
     VIVADO_REMOTE_PORT: '22',
     VIVADO_REMOTE_BASE_PATH: inventory.vivado.basePath,
     VIVADO_REMOTE_PROJECT_NAME: hostProject,

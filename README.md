@@ -331,7 +331,15 @@ per board unit (board file, PDU label, JTAG cable serial, console device). It
 holds no secret. `factory new <name> --template embedded --board zedboard`
 writes the new project's `.env` from it, with the host project names per
 person and the tokens empty for `factory env-check` to name; without `--board`
-the board settings stay empty. A project made from an older template is
+the board settings stay empty. `VIVADO_REMOTE_USER` is the developer's own
+login (RQ-0054), the inventory's user being the CI account; the lab host is
+reached as its own user (`root`). A developer's public key goes on the
+Windows build host into `C:\ProgramData\ssh\administrators_authorized_keys`
+(an administrator) or `C:\Users\<you>\.ssh\authorized_keys` (not one);
+`ssh-copy-id` cannot write either on Windows, so it is added by hand or with
+one PowerShell line over a password login (`.env.example` shows it). On the
+lab host the key goes into root's `authorized_keys`, by the lab admin.
+`factory env-check` ends with the two logins to try. A project made from an older template is
 brought up to date with `factory template update` (it lists the changes;
 `--write` applies them): the scripts, the flow, the CI file, `.env.example` and
 `AGENTS.md` are replaced, the gates and package scripts merged, files a design
