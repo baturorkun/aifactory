@@ -12,7 +12,7 @@ import {
   finishHandoffRun,
 } from './orchestrator/handoff';
 import { runDirectCodex } from './orchestrator/direct';
-import { createTargetProject, PROJECT_TEMPLATES, SIMULATORS } from './scaffold';
+import { createTargetProject, PROJECT_TEMPLATES, SIMULATORS, useCodingStandard } from './scaffold';
 import { readManifest, updateManifest } from './orchestrator/manifest';
 import {
   installRagPython,
@@ -66,7 +66,7 @@ import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
 import { updateEmbeddedProject } from './template-update';
 import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
 import { labWideCiValues, loadLabInventory } from './lab-inventory';
-import { PROFILES } from './coding-standard';
+import { PROFILES, describeCodingStandard } from './coding-standard';
 import { importStandard, listStandards, loadStandard } from './standards/import';
 import { resolveRepositoryPlatform } from './repository-platform/resolve';
 
@@ -1008,6 +1008,24 @@ standard
       for (const [name, count] of Object.entries(imported.counts.byGroup)) console.log(`  ${name.padEnd(12)} ${count} rules`);
       for (const warning of imported.warnings) console.log(chalk.yellow(`  ⚠ ${warning}`));
       console.log(chalk.dim(`  ${outDir}: ${files.join(', ')}`));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+standard
+  .command('use <id>')
+  .description('From a c or embedded project: follow this standard (its groups, how strictly), as factory new --standard does')
+  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (default: all of them)')
+  .option('--profile <name>', `How strictly: ${PROFILES.join(', ')} (default: default)`)
+  .action((id: string, opts: { groups?: string; profile?: string }) => {
+    try {
+      const config = loadConfig();
+      const root = resolve(config.targetProject.root ?? '.');
+      const record = useCodingStandard(root, { standard: id, groups: opts.groups?.split(',').map((name) => name.trim()).filter(Boolean), profile: opts.profile });
+      console.log(chalk.green(`✓ ${describeCodingStandard(record)}: coding-standard/ written, AGENTS.md and .env updated.`));
+      console.log(chalk.dim('  Commit them under a requirement; the groups and profile are now what the gate will enforce.'));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;

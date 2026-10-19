@@ -72,6 +72,10 @@ assembly). A profile says how strictly: `default` keeps the MISRA categories;
   a violation you cannot avoid in `waivers.yaml` with its rationale, never
   silence a finding. An unknown standard or group is refused with the
   choices; `--groups` without `--standard` is refused.
+- A project made before it had a standard, or changing its groups or
+  profile, runs `factory standard use <id> --groups a,b [--profile …]` from
+  its root: the same files and settings, and the AGENTS.md section added or
+  replaced. embedded1 takes cstd with `misra` and `bytecraft` this way.
 - A requirement of such a project gets a "Coding standard" section in its
   draft, and its handoff package carries `coding-standard/index.md` reduced
   to the project's groups, so the rule list is in front of the agent (the
@@ -91,6 +95,10 @@ assembly). A profile says how strictly: `default` keeps the MISRA categories;
   produces `standard.json` with 147 rules, excludes `do178c.rules.md` and
   `arm-m3.rules.md` from retrieval, and an AGENTS.md section naming both
   groups; `--groups misra,do178c` counts C-001..C-009 once (107 rules).
+- `factory standard use std --groups misra` in a project made without a
+  standard writes the same files, adds `coding-standards` after the sources
+  `.env` already names, and adds the AGENTS.md section once; a second use
+  with other groups replaces the choice and the section.
 - `requirement new` in that project drafts the "Coding standard" section;
   `handoff` writes `index.md` with only the chosen groups' rules.
 - `standards/cstd/` is committed in aifactory (its `source.path` the file

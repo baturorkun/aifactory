@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
 import test from 'node:test';
 import { readCodingStandard } from './coding-standard';
-import { createTargetProject } from './scaffold';
+import { createTargetProject, useCodingStandard } from './scaffold';
 import { bodyItems, zipEntry } from './standards/docx';
 import { assignGroups, expandRanges, importStandard, loadStandard, parseRules, selectRules } from './standards/import';
 
@@ -145,6 +145,37 @@ test('import writes rules.json, a rules.md per group and the index, the same twi
     const dalA = createTargetProject('fw6', { dir: root, template: 'c', standard: 'std', profile: 'dal-a', standardsPath: standards });
     assert.equal(readCodingStandard(dalA.projectRoot)?.rules, 4, 'all groups when none is named');
     assert.match(readFileSync(join(dalA.projectRoot, 'AGENTS.md'), 'utf8'), /under profile dal-a every rule is mandatory/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a project made without a standard takes one with standard use, and a second use replaces the choice', () => {
+  const root = temp();
+  try {
+    const document = join(root, 'STD.docx');
+    writeFileSync(document, zip('word/document.xml', DOCUMENT));
+    const standards = join(root, 'standards');
+    importStandard({ document, id: 'std', version: 'Rev.AA', groups: [{ name: 'misra', ranges: 'C-001..C-002' }, { name: 'bytecraft', ranges: 'C-003' }, { name: 'arm-m3', ranges: 'A-*' }], outDir: join(standards, 'std') });
+    const { projectRoot } = createTargetProject('fw', { dir: root, template: 'embedded', standardsPath: standards });
+    assert.equal(readCodingStandard(projectRoot), undefined);
+    writeFileSync(join(projectRoot, '.env'), 'RAG_SOURCE_IDS=fileserver\n');
+
+    const record = useCodingStandard(projectRoot, { standard: 'std', groups: ['misra'], standardsPath: standards });
+    assert.deepEqual(record, { id: 'std', version: 'Rev.AA', groups: ['misra'], profile: 'default', rules: 2 });
+    assert.match(readFileSync(join(projectRoot, '.env'), 'utf8'), /^RAG_SOURCE_IDS=fileserver,coding-standards$/m);
+    const agents = readFileSync(join(projectRoot, 'AGENTS.md'), 'utf8');
+    assert.equal(agents.match(/^## Coding Standard$/gm)?.length, 1);
+    assert.match(agents, /groups misra, profile default \(2 rules\)/);
+    assert.match(agents, /## The Embedded Workflow/, 'the rest of AGENTS.md stays');
+    assert.deepEqual(JSON.parse(readFileSync(join(projectRoot, 'factory.config.json'), 'utf8')).rag.grounding.excludePaths, ['requirements/**', 'handoffs/**', 'runs/**', 'std/bytecraft.rules.md', 'std/arm-m3.rules.md']);
+
+    useCodingStandard(projectRoot, { standard: 'std', groups: ['misra', 'bytecraft'], profile: 'dal-a', standardsPath: standards });
+    const again = readFileSync(join(projectRoot, 'AGENTS.md'), 'utf8');
+    assert.equal(again.match(/^## Coding Standard$/gm)?.length, 1, 'the section is replaced, not repeated');
+    assert.match(again, /groups misra, bytecraft, profile dal-a \(3 rules\)/);
+    assert.equal(readCodingStandard(projectRoot)?.rules, 3);
+    assert.throws(() => useCodingStandard(join(root, 'nowhere'), { standard: 'std', standardsPath: standards }), /ENOENT|no such file/i);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
