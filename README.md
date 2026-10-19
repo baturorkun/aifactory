@@ -348,6 +348,36 @@ token cannot enable a runner that belongs to other projects. When both GitLab
 and GitHub settings are complete, the factory uses the platform the `origin`
 remote is on.
 
+## Coding Standards
+
+A C or embedded project may follow a coding standard (RQ-0052). A standard
+comes in from its Word document once: `factory standard import <doc.docx>
+--id cstd --revision Rev.AA --group misra=C-001..C-107 --group
+bytecraft=C-108..C-147 --group do178c=C-001..C-009 --group arm-m3=A-*` reads
+every rule (the "Table N - … | C-045 | Safety | …" caption over its
+Rule / Description / Rationale / Example / Notes table, the MISRA rule the
+rationale cites) and writes `standards/cstd/`: `rules.json`, one
+`<group>.rules.md` per group and `index.md`, all committed; the document
+stays where it is. A rule may be in several groups. `factory standard list`
+shows what is imported.
+
+The RAG ingests a `*.rules.md` one chunk per rule, with the rule id,
+standard, groups, class and MISRA rule in the chunk's metadata, so a question
+names a rule and gets that rule. The deployed aifactory's `standards/` is the
+`coding-standards` source (slot 8; its `rules.json` is left out, `RAG_SOURCE_8_EXCLUDE_ADDITIONS`).
+
+`factory new <name> --template c|embedded --standard cstd --groups
+misra,bytecraft [--profile default|dal-a]` writes `coding-standard/`
+(`standard.json`: the choice; `rules.json` and `index.md`: the rules in
+force; `waivers.yaml`: the deviations, with the fields 5001-K-CSTD asks
+for), adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
+other groups' rule files out of its retrieval, and gives AGENTS.md the
+rules of the game: write to the rules, record a violation you cannot avoid
+in `waivers.yaml`, never silence a finding. Profile `dal-a` makes every rule
+mandatory and every waiver reviewed. A requirement of such a project drafts a
+"Coding Standard" section, and its handoff package carries the rule index.
+The gate that checks the rules is the next requirement.
+
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a
 terminal without `--phases`, a checkbox list with the project's default

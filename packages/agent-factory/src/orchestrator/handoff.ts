@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { CODING_STANDARD_DIRECTORY, describeCodingStandard, readCodingStandard } from '../coding-standard';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join, normalize, resolve, sep } from 'path';
 import type { FactoryConfig } from '../config';
@@ -399,6 +400,19 @@ async function createImplementationPackage(
   const guidelinesSection = projectGuidelines
     ? ['## Project Guidelines', '', projectGuidelines.prompt, '']
     : [];
+  // The rules in force, in front of the implementer (RQ-0052); the full text
+  // of a rule is in the RAG source coding-standards.
+  const codingStandard = readCodingStandard(targetRoot);
+  const indexPath = join(targetRoot, CODING_STANDARD_DIRECTORY, 'index.md');
+  const codingStandardSection = codingStandard
+    ? [
+        '## Coding Standard Rules in Force',
+        '',
+        `${describeCodingStandard(codingStandard)}. Write to these rules; a rule the change cannot keep is recorded in coding-standard/waivers.yaml with its rationale, never silenced in the code or the tool. The full text of a rule is in the RAG source coding-standards (ask by id).`,
+        '',
+        ...(existsSync(indexPath) ? [readFileSync(indexPath, 'utf8').trim(), ''] : []),
+      ]
+    : [];
   const content = [
     executionMode === 'direct' ? '# Codex Direct Run' : '# Manual Handoff',
     '',
@@ -431,6 +445,7 @@ async function createImplementationPackage(
     ...files.map((file) => '- ' + file),
     '',
     ...guidelinesSection,
+    ...codingStandardSection,
     '## Requirement',
     '',
     requirement.rawMarkdown,

@@ -179,3 +179,13 @@ class MigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RuleIdentifierTests(unittest.TestCase):
+    """A coding-standard rule id names a chunk too (RQ-0052)."""
+
+    def test_a_rule_id_counts_and_a_version_number_does_not(self) -> None:
+        from aifactory_rag.query.retriever import identifiers_in
+
+        self.assertEqual(identifiers_in("What does rule C-045 say, and A-013?"), ["c-045", "a-013"])
+        self.assertEqual(identifiers_in("since v2.3 and 3.5.1, see BFI-SRS-1296"), ["bfi-srs-1296"])
