@@ -18,6 +18,7 @@ export type TemplateChange =
 const PROJECT_OWNED = ['designs/', 'boards/'];
 const GENERATED = ['.gitlab-ci.yml', '.env.example', 'AGENTS.md'];
 const MERGED_COMMANDS = ['designCheck', 'hdlSim', 'fpgaBuild', 'firmwareBuild', 'twinTest', 'boardTest'];
+// codingStandard is the project's own (set by `standard use`), not the template's.
 
 function walk(root: string, directory = root, found: string[] = []): string[] {
   for (const entry of readdirSync(directory)) {

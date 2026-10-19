@@ -245,6 +245,44 @@ function softwareStage(settings, design) {
   if (!existsSync(elf)) {
     throw new CommandError(`SW FAILED: ${design.name} produced no out/${design.name}/artifacts/${design.name}_app.elf; see the Vitis output above.`, 1);
   }
+  writeCompileDatabase(design.name);
+}
+
+// The compile database for the coding standard check (RQ-0053): Vitis wrote
+// one for the workspace copy of the sources on the build host; this one names
+// the project's designs/<design>/sw/src files and the BSP headers the sw stage
+// brought back, with the defines and target flags kept, so cppcheck runs
+// anywhere the project is checked out.
+export function rewriteCompileDatabase(entries, designName, projectRoot) {
+  const sources = `designs/${designName}/sw/src`;
+  const include = `out/${designName}/artifacts/sw/bsp-include`;
+  const rewritten = [];
+  for (const entry of entries) {
+    const name = String(entry.file ?? '').split(/[\\/]/).pop();
+    if (!name || !existsSync(join(projectRoot, sources, name))) continue;
+    const words = entry.arguments ?? String(entry.command ?? '').split(/\s+/);
+    const kept = [];
+    for (let index = 1; index < words.length; index += 1) {
+      const word = words[index];
+      if (/^-(D|U|std=|m|f(?!o)|W)/.test(word)) kept.push(word);
+      else if (['-o', '-c', '-isystem', '-I', '-include', '-MF', '-MT', '-MQ', '-x'].includes(word)) index += 1;
+    }
+    rewritten.push({
+      directory: projectRoot,
+      file: `${sources}/${name}`,
+      arguments: ['cc', ...kept, `-I${sources}`, `-I${include}`, '-c', `${sources}/${name}`],
+    });
+  }
+  return rewritten;
+}
+
+function writeCompileDatabase(designName) {
+  const sw = join(PROJECT_ROOT, 'out', designName, 'artifacts', 'sw');
+  const vitis = join(sw, 'compile_commands.vitis.json');
+  if (!existsSync(vitis)) return;
+  const entries = rewriteCompileDatabase(JSON.parse(readFileSync(vitis, 'utf8')), designName, PROJECT_ROOT);
+  writeFileSync(join(sw, 'compile_commands.json'), JSON.stringify(entries, null, 2) + '\n');
+  console.log(`SW: out/${designName}/artifacts/sw/compile_commands.json (${entries.length} file(s)) for the coding standard check`);
 }
 
 export function parseArguments(argv) {

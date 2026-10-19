@@ -105,6 +105,45 @@ function cBuildJobs(projectName: string): string[] {
     '    reports:',
     '      junit: build/junit.xml',
     ...rules,
+    ...codingStandardJob(projectName, false),
+  ];
+}
+
+// The coding standard check (RQ-0053), after the build that leaves the compile
+// database, only in a project that follows a standard (coding-standard/
+// standard.json exists); cppcheck comes from apt. The report is an artifact.
+function codingStandardJob(projectName: string, embedded: boolean): string[] {
+  const exists = ['      exists:', '        - coding-standard/standard.json'];
+  return [
+    '',
+    'coding_standard:',
+    `  stage: ${embedded ? 'standard' : 'test'}`,
+    `  image: ${embedded ? '"$AIFACTORY_RUNNER_IMAGE"' : '"$C_BUILD_IMAGE"'}`,
+    '  tags:',
+    '    - linux',
+    '  needs:',
+    `    - job: ${embedded ? 'embedded_build' : 'c_build'}`,
+    '      artifacts: true',
+    '  before_script:',
+    '    - if ! command -v cppcheck >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends cppcheck; fi',
+    '    - cppcheck --version',
+    '  script:',
+    '    - node scripts/coding-standard.mjs',
+    '  artifacts:',
+    `    name: "${projectName}-coding_standard-$CI_COMMIT_SHORT_SHA"`,
+    '    when: always',
+    '    expire_in: 30 days',
+    '    paths:',
+    '      - out/coding-standard/',
+    '  rules:',
+    "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'",
+    ...exists,
+    "    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'",
+    '      when: never',
+    "    - if: '$CI_COMMIT_BRANCH'",
+    ...exists,
+    "    - if: '$CI_COMMIT_TAG'",
+    ...exists,
   ];
 }
 
@@ -247,6 +286,7 @@ function embeddedJobs(projectName: string): string[] {
     ...job('embedded_build', 'build', ['node scripts/flow.mjs build --requirement-phases', 'node scripts/flow.mjs sw --requirement-phases'], everyPush, true, ['embedded_sim']),
     ...twinJob(projectName, everyPush),
     ...boardJobs(projectName),
+    ...codingStandardJob(projectName, true),
   ];
 }
 
@@ -733,7 +773,7 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       '  - ai_factory',
       ...(deployable ? ['  - build', '  - package', '  - image', '  - deploy'] : []),
       ...(native ? ['  - build', '  - test'] : []),
-      ...(embedded ? ['  - check', '  - sim', '  - build', '  - twin', '  - board'] : []),
+      ...(embedded ? ['  - check', '  - sim', '  - build', '  - standard', '  - twin', '  - board'] : []),
       '',
       'variables:',
       '  PNPM_HOME: "$CI_PROJECT_DIR/.pnpm"',
@@ -1707,6 +1747,7 @@ function writeEmbeddedEnv(projectRoot: string, projectName: string, options: New
 function writeEmbeddedTemplate(projectRoot: string): void {
   copyTemplateTree('embedded', projectRoot);
   patchPackageScripts(projectRoot, {
+    standard: 'node scripts/coding-standard.mjs',
     flow: 'node scripts/flow.mjs',
     check: 'node scripts/flow.mjs check',
     sim: 'node scripts/flow.mjs sim',
@@ -1815,7 +1856,11 @@ function writeCTemplate(projectRoot: string, projectName: string): void {
   patchPackageScripts(projectRoot, {
     build: 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel',
     test: 'ctest --test-dir build --output-on-failure',
+    standard: 'node scripts/coding-standard.mjs',
   });
+  // The coding standard check (RQ-0053), the embedded template's script.
+  mkdirSync(resolve(projectRoot, 'scripts'), { recursive: true });
+  copyFileSync(resolve(TEMPLATE_ROOT, 'embedded', 'scripts', 'coding-standard.mjs'), resolve(projectRoot, 'scripts', 'coding-standard.mjs'));
 
   writeFileSync(
     resolve(projectRoot, 'CMakeLists.txt'),
@@ -3214,10 +3259,12 @@ function applyCodingStandard(projectRoot: string, chosen: ChosenStandard): void 
 
   const configPath = resolve(projectRoot, 'factory.config.json');
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-    targetProject: { allowedPaths?: string[] };
+    targetProject: { allowedPaths?: string[]; commands?: Record<string, string> };
     rag?: { grounding?: Record<string, unknown> };
   };
   config.targetProject.allowedPaths = [...new Set([...(config.targetProject.allowedPaths ?? []), CODING_STANDARD_DIRECTORY])];
+  // The gate (RQ-0053): the check runs after the build with the other gates.
+  config.targetProject.commands = { ...(config.targetProject.commands ?? {}), codingStandard: 'pnpm standard' };
   // Set, excludePaths replaces the default (the project's own requirements,
   // handoffs and runs), so those stay listed.
   config.rag ??= {};

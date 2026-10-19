@@ -1,166 +1,166 @@
 # cstd Rev.AA — rule index (all rules, 164 rules)
 
-- C-001 — Safety — misra, do178c — There shall be no occurrence of undefined or critical unspecified behavior.
-- C-002 — Safety — misra, do178c — A project shall not contain unreachable code.
-- C-003 — Safety — misra, do178c — A project shall not contain dead code.
-- C-004 — Maintainability — misra, do178c — A project shall not contain unused type declarations.
-- C-005 — Maintainability — misra, do178c — A project shall not contain unused tag declarations.
-- C-006 — Maintainability — misra, do178c — A project shall not contain unused macro definitions.
-- C-007 — Maintainability — misra, do178c — A function shall not contain unused label declarations.
-- C-008 — Maintainability — misra, do178c — A function shall not contain unused parameters.
-- C-009 — Maintainability — misra, do178c — A project shall not contain unused object definitions.
-- C-010 — Readability — misra — The character sequences /* and // shall not be used within a comment.
-- C-011 — Readability — misra — Line-splicing shall not be used in // comments.
-- C-012 — Readability — misra — Octal and hexadecimal escape sequences shall be terminated.
-- C-013 — Readability — misra — Trigraphs shall not be used.
-- C-014 — Portability — misra — External identifiers shall be distinct.
-- C-015 — Consistency and Convention — misra — Identifiers declared in the same scope and name space shall be distinct.
-- C-016 — Consistency and Convention — misra — An identifier declared in an inner scope shall not hide an identifier declared in an outer scope.
-- C-017 — Consistency and Convention — misra — Macro identifiers shall be distinct.
-- C-018 — Consistency and Convention — misra — Identifiers shall be distinct from macro names.
-- C-019 — Consistency and Convention — misra — A typedef name shall be a unique identifier.
-- C-020 — Consistency and Convention — misra — A tag name shall be a unique identifier.
-- C-021 — Consistency and Convention — misra — Identifiers that define objects or functions with external linkage shall be unique.
-- C-022 — Consistency and Convention — misra — Identifiers that define objects or functions with internal linkage shall be unique.
-- C-023 — Portability — misra — A reserved identifier or reserved macro name shall not be declared.
-- C-024 — Portability — misra — A “u” or “U” suffix shall be applied to all integer constants that are represented in an unsigned type.
-- C-025 — Readability — misra — The lowercase character “l” shall not be used in a literal suffix.
-- C-026 — Safety — misra — A string literal shall not be assigned to an object unless the object’s type is “pointer to const-qualified char”.
-- C-027 — Portability — misra — The argument of an integer constant macro shall have an appropriate form.
-- C-028 — Portability — misra — The small integer variants of the minimum-width integer constant macros shall not be used.
-- C-029 — Consistency and Convention — misra — Types shall be explicitly specified.
-- C-030 — Consistency and Convention — misra — Function types shall be in prototype form with named parameters.
-- C-031 — Consistency and Convention — misra — All declarations of an object or function shall use the same names and type qualifiers.
-- C-032 — Safety — misra — A compatible declaration shall be visible when an object or function with external linkage is defined.
-- C-033 — Maintainability — misra — An external object or function shall be declared once in one and only one file.
-- C-034 — Safety — misra — An identifier with external linkage shall have exactly one external definition.
-- C-035 — Consistency and Convention — misra — The static storage class specifier shall be used in all declarations of objects and functions that have internal linkage.
-- C-036 — Maintainability — misra — An object shall be declared at block scope if its identifier only appears in a single function.
-- C-037 — Portability — misra — An inline function shall be declared with the static storage class.
-- C-038 — Safety — misra — All declarations of an object with an explicit alignment specification shall specify the same alignment.
-- C-039 — Maintainability — misra — There shall be no tentative definitions in a header file.
-- C-040 — Safety — misra — The value of an object with automatic storage duration shall not be read before it has been set.
-- C-041 — Readability — misra — The initializer for an aggregate shall be enclosed in braces.
-- C-042 — Safety — misra — Arrays shall not be partially initialized.
-- C-043 — Safety — misra — Operands shall not be of an inappropriate essential type.
-- C-044 — Safety — misra — Expressions of essentially character type shall not be used inappropriately in addition and subtraction operations.
-- C-045 — Safety — misra — The value of an expression shall not be assigned to an object with a narrower essential type or of a different essential type category.
-- C-046 — Safety — misra — Both operands of an operator in which the usual arithmetic conversions are performed shall have the same essential type category.
-- C-047 — Safety — misra — The value of a composite expression shall not be assigned to an object with wider essential type.
-- C-048 — Safety — misra — If a composite expression is used as one operand of an operator in which the usual arithmetic conversions are performed then the other operand shall not have wider essential type.
-- C-049 — Safety — misra — The value of a composite expression shall not be cast to a different essential type category or a wider essential type.
-- C-050 — Safety — misra — Conversions shall not be performed between a pointer to a function and any other type.
-- C-051 — Safety — misra — Conversions shall not be performed between a pointer to an incomplete type and any other type.
-- C-052 — Safety — misra — A conversion shall not be performed between a pointer to object type and a pointer to a different object type.
-- C-053 — Safety — misra — A conversion shall not be performed between a pointer to object and an arithmetic type.
-- C-054 — Safety — misra — A cast shall not be performed between pointer to void and an arithmetic type.
-- C-055 — Safety — misra — A conversion shall not remove any const, volatile or _Atomic qualification from the type pointed to by a pointer.
-- C-056 — Consistency and Convention — misra — The macro NULL shall be the only permitted form of integer null pointer constant.
-- C-057 — Readability — misra — Pointers shall not be implicitly compared to NULL.
-- C-058 — Readability — misra — The precedence of operators within expressions shall be made explicit.
-- C-059 — Safety — misra — The right hand operand of a shift operator shall lie in the range zero to one less than the width in bits of the essential type of the left hand operand.
-- C-060 — Readability — misra — The comma operator shall not be used.
-- C-061 — Safety — misra — The sizeof operator shall not have an operand which is a function parameter declared as “array of type”.
-- C-062 — Safety — misra — The value of an expression and its persistent side effects shall be the same under all permitted evaluation orders and shall be independent from thread interleaving.
-- C-063 — Readability — misra — A full expression containing an increment (++) or decrement (--) operator shall have no other potential side effects other than that caused by the increment or decrement operator.
-- C-064 — Readability — misra — The result of an assignment operator shall not be used.
-- C-065 — Safety — misra — The right hand operand of a logical && or || operator shall not contain persistent side effects.
-- C-066 — Safety — misra — The operand of the sizeof operator shall not contain any expression which has potential side effects.
-- C-067 — Safety — misra — The software shall not use floating-point data types or constants and operations.
-- C-068 — Maintainability — misra — A for loop shall be well-formed.
-- C-069 — Safety — misra — Controlling expressions shall not be invariant.
-- C-070 — Safety — misra — The controlling expression of an if statement and the controlling expression of an iteration-statement shall have essentially Boolean type.
-- C-071 — Maintainability — misra — The goto statement shall not be used.
-- C-072 — Maintainability — misra — A function shall have a single point of exit at the end.
-- C-073 — Readability — misra — The body of an iteration-statement or a selection-statement shall be a compound-statement.
-- C-074 — Maintainability — misra — All switch statements shall be well-formed.
-- C-075 — Safety — misra — A switch label shall only be used when the most closely-enclosing compound statement is the body of a switch statement.
-- C-076 — Safety — misra — Every switch-clause shall be appropriately terminated.
-- C-077 — Safety — misra — Every switch statement shall have a default label.
-- C-078 — Maintainability — misra — Every switch statement shall have at least two switch-clauses.
-- C-079 — Safety — misra — A switch-expression shall not have essentially Boolean type.
-- C-080 — Safety — misra — Functions shall not call themselves, either directly or indirectly.
-- C-081 — Safety — misra — A function shall not be declared implicitly.
-- C-082 — Safety — misra — All exit paths from a function with non-void return type shall have an explicit return statement with an expression.
-- C-083 — Safety — misra — The function argument corresponding to a parameter declared to have an array type shall have an appropriate number of elements.
-- C-084 — Safety — misra — The value returned by a function having non-void return type shall be used.
-- C-085 — Maintainability — misra — A function parameter shall not be modified.
-- C-086 — Consistency and Convention — misra — A function identifier shall only be used with either a preceding &, or with a parenthesized parameter list.
-- C-087 — Safety — misra — A pointer resulting from arithmetic on a pointer operand shall address an element of the same array as that pointer operand.
-- C-088 — Safety — misra — Subtraction between pointers shall only be applied to pointers that address elements of the same array.
-- C-089 — Safety — misra — The relational operators >, >=, < and <= shall not be applied to expressions of pointer type except where they point into the same object.
-- C-090 — Readability — misra — The +, -, += and -= operators shall not be applied to an expression of pointer type.
-- C-091 — Readability — misra — Declarations shall contain no more than two levels of pointer nesting.
-- C-092 — Safety — misra — The address of an object with automatic or thread-local storage shall not be copied to another object that persists after the first object has ceased to exist.
-- C-093 — Safety — misra — Flexible array members shall not be declared.
-- C-094 — Safety — misra — Variable-length arrays shall not be used.
-- C-095 — Safety — misra — An object with temporary lifetime shall not undergo array-to-pointer conversion.
-- C-096 — Safety — misra — Pointers to variably-modified array types shall not be used.
-- C-097 — Safety — misra — An object shall not be assigned or copied to an overlapping object.
-- C-098 — Maintainability — misra — The union keyword shall not be used.
-- C-099 — Consistency and Convention — misra — #include directives shall only be preceded by preprocessor directives or comments.
-- C-100 — Portability — misra — The ', " or \ characters and the /* or // character sequences shall not occur in a header file name.
-- C-101 — Consistency and Convention — misra — The #include directive shall be followed by either a <filename> or "filename" sequence.
-- C-102 — Consistency and Convention — misra — A macro shall not be defined with the same name as a keyword.
-- C-103 — Safety — misra — Expressions resulting from the expansion of macro parameters shall be appropriately delimited.
-- C-104 — Safety — misra — The controlling expression of a #if or #elif preprocessing directive shall evaluate to 0 or 1.
-- C-105 — Safety — misra — All identifiers used in the controlling expression of #if or #elif preprocessing directives shall be #define‘d before evaluation.
-- C-106 — Consistency and Convention — misra — A line whose first token is # shall be a valid preprocessing directive.
-- C-107 — Maintainability — misra — All #else, #elif and #endif preprocessor directives shall reside in the same file as the #if, #ifdef or #ifndef directive to which they are related.
-- C-108 — Portability — bytecraft — Bitfields shall not be used.
-- C-109 — Safety — bytecraft — Standard Library functions shall not be used.
-- C-110 — Readability — bytecraft — File names shall be chosen as descriptive and meaningful.
-- C-111 — Consistency and Convention — bytecraft — File names shall have two parts, a base name and an extension.
-- C-112 — Consistency and Convention — bytecraft — Extension of all implementation files shall be “.c” and extension of all header files shall be “.h” and assembly files shall be “.s”.
-- C-113 — Style and Convention — bytecraft — Filenames shall be in camel notation and begin with lowercase letter.
-- C-114 — Portability — bytecraft — Any directory name on which project depends shall not include white spaces (tabs, spaces, etc.) or punctuation characters. Only allowable character set for these names are ‘0-9’, (English alphabet) ‘A-Z’, (English alphabet) ‘a-z’, ‘_’.
-- C-115 — Portability — bytecraft — In addition, the uniqueness of filenames shall not be due solely to a difference in case.
-- C-116 — Portability — bytecraft — Source and header files (including comment sections) shall not contain special characters (characters other than the ones in the English alphabet, such as characters from Turkish alphabet).
-- C-117 — Portability — bytecraft — Source code file names shall be composed of characters from the set of (English alphabet) [a-z], (English alphabet) [A-Z], [0-9] and shall begin with a letter.
-- C-118 — Consistency and Convention — bytecraft — In naming of identifiers, camel notation shall be used.
-- C-119 — Style and Convention — bytecraft — Names of the following types shall begin with an upper case letter: • structures, • type definitions • enumerated types
-- C-120 — Style and Convention — bytecraft — Names of the following shall begin with a lower case letter: • functions • objects • variables • fields within structures
-- C-121 — Readability — bytecraft — Literal constants shall not be used in code; instead, symbolic constants shall be defined and used.
-- C-122 — Consistency and Convention — bytecraft — Global constants shall be all caps with '_' separators.
-- C-123 — Style and Convention — bytecraft — Hexadecimal constants shall be represented using uppercase letters.
-- C-124 — Readability — bytecraft — Identifiers shall not begin with the underscore character ‘_’.
-- C-125 — Portability — bytecraft — Built in compiler functions shall not be used.
-- C-126 — Readability — bytecraft — All definitions, declarations, and comments shall be written in English.
-- C-127 — Readability — bytecraft — Literal suffixes shall use uppercase rather than lowercase letters.
-- C-128 — Readability — bytecraft — Tabs shall not be used.
-- C-129 — Readability — bytecraft — There shall be only one statement per line even though the statements are very closely related.
-- C-130 — Portability — bytecraft — All uses of the #pragma directive shall be documented by a comment in the source or header file.
-- C-131 — Readability — bytecraft — Bracing shall be used for all if statements and else statements wrapped in a #if - #else - #endif. The wrapped if statements shall contain both braces and statement(s).
-- C-132 — Maintainability — bytecraft — Any function shall not contain more than 200 source lines of code (SLOCs).
-- C-133 — Maintainability — bytecraft — Functions shall not have more than 10 arguments.
-- C-134 — Safety — bytecraft — Functions shall not be declared more than once.
-- C-135 — Readability — bytecraft — Function declarations shall be placed before function definitions.
-- C-136 — Portability — bytecraft — <stdbool.h> shall be used for Boolean data types.
-- C-137 — Safety — bytecraft — Signed and unsigned values shall not be mixed in arithmetic or comparison operations.
-- C-138 — Readability — bytecraft — Function-like macros shall not contain conditional statements.
-- C-139 — Maintainability — bytecraft — No function shall have a cyclomatic complexity greater than 25.
-- C-140 — Style and Convention — bytecraft — Braces shall be placed on a new line aligned with the associated keyword.
-- C-141 — Style and Convention — bytecraft — All block indentations shall be at three (3) spaces and be consistent within the same source file.
-- C-142 — Style and Convention — bytecraft — There shall be at least one space before or after each operator to improve readability.
-- C-143 — Style and Convention — bytecraft — For fixed-point arithmetic operations, the Q format of operands and results shall be explicitly identifiable.
-- C-144 — Style and Convention — bytecraft — There shall be at least one space before or after each operator to improve readability.
-- C-145 — Style and Convention — bytecraft — There shall be exactly one space after each comma in a function parameter list, and no space shall be inserted between a function name and the opening parenthesis.
-- C-146 — Style and Convention — bytecraft — Fixed-point variables shall use a Q<X> suffix, where <X> represents the number of fractional bits.
-- C-147 — Portability — bytecraft — <stdint.h> shall be used for Fixed-width integer types.
-- A-001 — Style and Convention — arm-m3 — Within a build configuration, a single assembler dialect shall be used; mixing dialects in the same build is forbidden.
-- A-002 — Style and Convention — arm-m3 — Each assembly file shall declare the instruction set state explicitly (e.g. ARM).
-- A-003 — Style and Convention — arm-m3 — Tabs shall be avoided; indentation shall be spaces only.
-- A-004 — Style and Convention — arm-m3 — One instruction per line shall be used; macro expansions and .macro blocks are permitted only if they improve readability and are documented.
-- A-005 — Style and Convention — arm-m3 — Immediate constants shall be named via EQU, except for {0,1,2,4,8,16,32} used as shift/size/align constants and other explicitly allowlisted values.
-- A-006 — Safety — arm-m3 — Any computed branch target shall have bit[0]=0; setting bit[0] is forbidden.
-- A-007 — Safety — arm-m3 — TBB/TBH shall only be used in allowlisted dispatcher modules and shall be preceded by explicit index bounds checking.
-- A-008 — Safety — arm-m3 — Direct writes to PC (e.g., mov pc,*, add pc,*, ldr pc,*) shall be prohibited. Function returns shall use only bx lr or pop {...,pc}. Exception returns shall use only architecturally valid bx lr EXC_RETURN sequences.
-- A-009 — Style and Convention — arm-m3 — Any assembly function shall not exceed 80 SLOC (excluding blank lines and comments). Exceptions (startup, context switch, vector table) shall be explicitly allowlisted or justified.
-- A-010 — Style and Convention — arm-m3 — Each assembly file shall place all code and data into explicit, named sections; implicit/default section placement shall not be relied upon.
-- A-011 — Style and Convention — arm-m3 — Each assembly function/submodule shall include an assembly function prolog.
-- A-012 — Style and Convention — arm-m3 — Assembly shall only be permitted in allowlisted modules. Any new .s file requires a deviation record and low-level reviewer approval.
-- A-013 — Style and Convention — arm-m3 — All labels shall begin in column 1 to be recognized by the assembler.
-- A-014 — Style and Convention — arm-m3 — The comment character shall delimit comments.
-- A-015 — Style and Convention — arm-m3 — Every operation in assembly code shall have a corresponding comment which explains the operation.
-- A-016 — Style and Convention — arm-m3 — All assembly elements shall have a single exit point.
-- A-017 — Style and Convention — arm-m3 — All symbols that are defined externally to the assembly element in which they are referenced shall be included using the external statement.
+- C-001 — Safety — misra, do178c — cppcheck — There shall be no occurrence of undefined or critical unspecified behavior.
+- C-002 — Safety — misra, do178c — cppcheck — A project shall not contain unreachable code.
+- C-003 — Safety — misra, do178c — cppcheck — A project shall not contain dead code.
+- C-004 — Maintainability — misra, do178c — cppcheck — A project shall not contain unused type declarations.
+- C-005 — Maintainability — misra, do178c — cppcheck — A project shall not contain unused tag declarations.
+- C-006 — Maintainability — misra, do178c — cppcheck — A project shall not contain unused macro definitions.
+- C-007 — Maintainability — misra, do178c — cppcheck — A function shall not contain unused label declarations.
+- C-008 — Maintainability — misra, do178c — cppcheck — A function shall not contain unused parameters.
+- C-009 — Maintainability — misra, do178c — cppcheck — A project shall not contain unused object definitions.
+- C-010 — Readability — misra — cppcheck — The character sequences /* and // shall not be used within a comment.
+- C-011 — Readability — misra — cppcheck — Line-splicing shall not be used in // comments.
+- C-012 — Readability — misra — cppcheck — Octal and hexadecimal escape sequences shall be terminated.
+- C-013 — Readability — misra — cppcheck — Trigraphs shall not be used.
+- C-014 — Portability — misra — cppcheck — External identifiers shall be distinct.
+- C-015 — Consistency and Convention — misra — cppcheck — Identifiers declared in the same scope and name space shall be distinct.
+- C-016 — Consistency and Convention — misra — cppcheck — An identifier declared in an inner scope shall not hide an identifier declared in an outer scope.
+- C-017 — Consistency and Convention — misra — cppcheck — Macro identifiers shall be distinct.
+- C-018 — Consistency and Convention — misra — cppcheck — Identifiers shall be distinct from macro names.
+- C-019 — Consistency and Convention — misra — cppcheck — A typedef name shall be a unique identifier.
+- C-020 — Consistency and Convention — misra — cppcheck — A tag name shall be a unique identifier.
+- C-021 — Consistency and Convention — misra — cppcheck — Identifiers that define objects or functions with external linkage shall be unique.
+- C-022 — Consistency and Convention — misra — cppcheck — Identifiers that define objects or functions with internal linkage shall be unique.
+- C-023 — Portability — misra — cppcheck — A reserved identifier or reserved macro name shall not be declared.
+- C-024 — Portability — misra — cppcheck — A “u” or “U” suffix shall be applied to all integer constants that are represented in an unsigned type.
+- C-025 — Readability — misra — cppcheck — The lowercase character “l” shall not be used in a literal suffix.
+- C-026 — Safety — misra — cppcheck — A string literal shall not be assigned to an object unless the object’s type is “pointer to const-qualified char”.
+- C-027 — Portability — misra — cppcheck — The argument of an integer constant macro shall have an appropriate form.
+- C-028 — Portability — misra — cppcheck — The small integer variants of the minimum-width integer constant macros shall not be used.
+- C-029 — Consistency and Convention — misra — cppcheck — Types shall be explicitly specified.
+- C-030 — Consistency and Convention — misra — cppcheck — Function types shall be in prototype form with named parameters.
+- C-031 — Consistency and Convention — misra — cppcheck — All declarations of an object or function shall use the same names and type qualifiers.
+- C-032 — Safety — misra — cppcheck — A compatible declaration shall be visible when an object or function with external linkage is defined.
+- C-033 — Maintainability — misra — cppcheck — An external object or function shall be declared once in one and only one file.
+- C-034 — Safety — misra — cppcheck — An identifier with external linkage shall have exactly one external definition.
+- C-035 — Consistency and Convention — misra — cppcheck — The static storage class specifier shall be used in all declarations of objects and functions that have internal linkage.
+- C-036 — Maintainability — misra — cppcheck — An object shall be declared at block scope if its identifier only appears in a single function.
+- C-037 — Portability — misra — cppcheck — An inline function shall be declared with the static storage class.
+- C-038 — Safety — misra — cppcheck — All declarations of an object with an explicit alignment specification shall specify the same alignment.
+- C-039 — Maintainability — misra — cppcheck — There shall be no tentative definitions in a header file.
+- C-040 — Safety — misra — cppcheck — The value of an object with automatic storage duration shall not be read before it has been set.
+- C-041 — Readability — misra — cppcheck — The initializer for an aggregate shall be enclosed in braces.
+- C-042 — Safety — misra — cppcheck — Arrays shall not be partially initialized.
+- C-043 — Safety — misra — cppcheck — Operands shall not be of an inappropriate essential type.
+- C-044 — Safety — misra — cppcheck — Expressions of essentially character type shall not be used inappropriately in addition and subtraction operations.
+- C-045 — Safety — misra — cppcheck — The value of an expression shall not be assigned to an object with a narrower essential type or of a different essential type category.
+- C-046 — Safety — misra — cppcheck — Both operands of an operator in which the usual arithmetic conversions are performed shall have the same essential type category.
+- C-047 — Safety — misra — cppcheck — The value of a composite expression shall not be assigned to an object with wider essential type.
+- C-048 — Safety — misra — cppcheck — If a composite expression is used as one operand of an operator in which the usual arithmetic conversions are performed then the other operand shall not have wider essential type.
+- C-049 — Safety — misra — cppcheck — The value of a composite expression shall not be cast to a different essential type category or a wider essential type.
+- C-050 — Safety — misra — cppcheck — Conversions shall not be performed between a pointer to a function and any other type.
+- C-051 — Safety — misra — cppcheck — Conversions shall not be performed between a pointer to an incomplete type and any other type.
+- C-052 — Safety — misra — cppcheck — A conversion shall not be performed between a pointer to object type and a pointer to a different object type.
+- C-053 — Safety — misra — cppcheck — A conversion shall not be performed between a pointer to object and an arithmetic type.
+- C-054 — Safety — misra — cppcheck — A cast shall not be performed between pointer to void and an arithmetic type.
+- C-055 — Safety — misra — cppcheck — A conversion shall not remove any const, volatile or _Atomic qualification from the type pointed to by a pointer.
+- C-056 — Consistency and Convention — misra — cppcheck — The macro NULL shall be the only permitted form of integer null pointer constant.
+- C-057 — Readability — misra — cppcheck — Pointers shall not be implicitly compared to NULL.
+- C-058 — Readability — misra — cppcheck — The precedence of operators within expressions shall be made explicit.
+- C-059 — Safety — misra — cppcheck — The right hand operand of a shift operator shall lie in the range zero to one less than the width in bits of the essential type of the left hand operand.
+- C-060 — Readability — misra — cppcheck — The comma operator shall not be used.
+- C-061 — Safety — misra — cppcheck — The sizeof operator shall not have an operand which is a function parameter declared as “array of type”.
+- C-062 — Safety — misra — cppcheck — The value of an expression and its persistent side effects shall be the same under all permitted evaluation orders and shall be independent from thread interleaving.
+- C-063 — Readability — misra — cppcheck — A full expression containing an increment (++) or decrement (--) operator shall have no other potential side effects other than that caused by the increment or decrement operator.
+- C-064 — Readability — misra — cppcheck — The result of an assignment operator shall not be used.
+- C-065 — Safety — misra — cppcheck — The right hand operand of a logical && or || operator shall not contain persistent side effects.
+- C-066 — Safety — misra — cppcheck — The operand of the sizeof operator shall not contain any expression which has potential side effects.
+- C-067 — Safety — misra — cppcheck — The software shall not use floating-point data types or constants and operations.
+- C-068 — Maintainability — misra — cppcheck — A for loop shall be well-formed.
+- C-069 — Safety — misra — cppcheck — Controlling expressions shall not be invariant.
+- C-070 — Safety — misra — cppcheck — The controlling expression of an if statement and the controlling expression of an iteration-statement shall have essentially Boolean type.
+- C-071 — Maintainability — misra — cppcheck — The goto statement shall not be used.
+- C-072 — Maintainability — misra — cppcheck — A function shall have a single point of exit at the end.
+- C-073 — Readability — misra — cppcheck — The body of an iteration-statement or a selection-statement shall be a compound-statement.
+- C-074 — Maintainability — misra — cppcheck — All switch statements shall be well-formed.
+- C-075 — Safety — misra — cppcheck — A switch label shall only be used when the most closely-enclosing compound statement is the body of a switch statement.
+- C-076 — Safety — misra — cppcheck — Every switch-clause shall be appropriately terminated.
+- C-077 — Safety — misra — cppcheck — Every switch statement shall have a default label.
+- C-078 — Maintainability — misra — cppcheck — Every switch statement shall have at least two switch-clauses.
+- C-079 — Safety — misra — cppcheck — A switch-expression shall not have essentially Boolean type.
+- C-080 — Safety — misra — cppcheck — Functions shall not call themselves, either directly or indirectly.
+- C-081 — Safety — misra — cppcheck — A function shall not be declared implicitly.
+- C-082 — Safety — misra — cppcheck — All exit paths from a function with non-void return type shall have an explicit return statement with an expression.
+- C-083 — Safety — misra — cppcheck — The function argument corresponding to a parameter declared to have an array type shall have an appropriate number of elements.
+- C-084 — Safety — misra — cppcheck — The value returned by a function having non-void return type shall be used.
+- C-085 — Maintainability — misra — cppcheck — A function parameter shall not be modified.
+- C-086 — Consistency and Convention — misra — cppcheck — A function identifier shall only be used with either a preceding &, or with a parenthesized parameter list.
+- C-087 — Safety — misra — cppcheck — A pointer resulting from arithmetic on a pointer operand shall address an element of the same array as that pointer operand.
+- C-088 — Safety — misra — cppcheck — Subtraction between pointers shall only be applied to pointers that address elements of the same array.
+- C-089 — Safety — misra — cppcheck — The relational operators >, >=, < and <= shall not be applied to expressions of pointer type except where they point into the same object.
+- C-090 — Readability — misra — cppcheck — The +, -, += and -= operators shall not be applied to an expression of pointer type.
+- C-091 — Readability — misra — cppcheck — Declarations shall contain no more than two levels of pointer nesting.
+- C-092 — Safety — misra — cppcheck — The address of an object with automatic or thread-local storage shall not be copied to another object that persists after the first object has ceased to exist.
+- C-093 — Safety — misra — cppcheck — Flexible array members shall not be declared.
+- C-094 — Safety — misra — cppcheck — Variable-length arrays shall not be used.
+- C-095 — Safety — misra — cppcheck — An object with temporary lifetime shall not undergo array-to-pointer conversion.
+- C-096 — Safety — misra — cppcheck — Pointers to variably-modified array types shall not be used.
+- C-097 — Safety — misra — cppcheck — An object shall not be assigned or copied to an overlapping object.
+- C-098 — Maintainability — misra — cppcheck — The union keyword shall not be used.
+- C-099 — Consistency and Convention — misra — cppcheck — #include directives shall only be preceded by preprocessor directives or comments.
+- C-100 — Portability — misra — cppcheck — The ', " or \ characters and the /* or // character sequences shall not occur in a header file name.
+- C-101 — Consistency and Convention — misra — cppcheck — The #include directive shall be followed by either a <filename> or "filename" sequence.
+- C-102 — Consistency and Convention — misra — cppcheck — A macro shall not be defined with the same name as a keyword.
+- C-103 — Safety — misra — cppcheck — Expressions resulting from the expansion of macro parameters shall be appropriately delimited.
+- C-104 — Safety — misra — cppcheck — The controlling expression of a #if or #elif preprocessing directive shall evaluate to 0 or 1.
+- C-105 — Safety — misra — cppcheck — All identifiers used in the controlling expression of #if or #elif preprocessing directives shall be #define‘d before evaluation.
+- C-106 — Consistency and Convention — misra — cppcheck — A line whose first token is # shall be a valid preprocessing directive.
+- C-107 — Maintainability — misra — cppcheck — All #else, #elif and #endif preprocessor directives shall reside in the same file as the #if, #ifdef or #ifndef directive to which they are related.
+- C-108 — Portability — bytecraft — manual review — Bitfields shall not be used.
+- C-109 — Safety — bytecraft — manual review — Standard Library functions shall not be used.
+- C-110 — Readability — bytecraft — manual review — File names shall be chosen as descriptive and meaningful.
+- C-111 — Consistency and Convention — bytecraft — manual review — File names shall have two parts, a base name and an extension.
+- C-112 — Consistency and Convention — bytecraft — lexical — Extension of all implementation files shall be “.c” and extension of all header files shall be “.h” and assembly files shall be “.s”.
+- C-113 — Style and Convention — bytecraft — lexical — Filenames shall be in camel notation and begin with lowercase letter.
+- C-114 — Portability — bytecraft — manual review — Any directory name on which project depends shall not include white spaces (tabs, spaces, etc.) or punctuation characters. Only allowable character set for these names are ‘0-9’, (English alphabet) ‘A-Z’, (English alphabet) ‘a-z’, ‘_’.
+- C-115 — Portability — bytecraft — manual review — In addition, the uniqueness of filenames shall not be due solely to a difference in case.
+- C-116 — Portability — bytecraft — lexical — Source and header files (including comment sections) shall not contain special characters (characters other than the ones in the English alphabet, such as characters from Turkish alphabet).
+- C-117 — Portability — bytecraft — lexical — Source code file names shall be composed of characters from the set of (English alphabet) [a-z], (English alphabet) [A-Z], [0-9] and shall begin with a letter.
+- C-118 — Consistency and Convention — bytecraft — manual review — In naming of identifiers, camel notation shall be used.
+- C-119 — Style and Convention — bytecraft — manual review — Names of the following types shall begin with an upper case letter: • structures, • type definitions • enumerated types
+- C-120 — Style and Convention — bytecraft — manual review — Names of the following shall begin with a lower case letter: • functions • objects • variables • fields within structures
+- C-121 — Readability — bytecraft — manual review — Literal constants shall not be used in code; instead, symbolic constants shall be defined and used.
+- C-122 — Consistency and Convention — bytecraft — manual review — Global constants shall be all caps with '_' separators.
+- C-123 — Style and Convention — bytecraft — lexical — Hexadecimal constants shall be represented using uppercase letters.
+- C-124 — Readability — bytecraft — lexical — Identifiers shall not begin with the underscore character ‘_’.
+- C-125 — Portability — bytecraft — manual review — Built in compiler functions shall not be used.
+- C-126 — Readability — bytecraft — manual review — All definitions, declarations, and comments shall be written in English.
+- C-127 — Readability — bytecraft — lexical — Literal suffixes shall use uppercase rather than lowercase letters.
+- C-128 — Readability — bytecraft — lexical — Tabs shall not be used.
+- C-129 — Readability — bytecraft — manual review — There shall be only one statement per line even though the statements are very closely related.
+- C-130 — Portability — bytecraft — manual review — All uses of the #pragma directive shall be documented by a comment in the source or header file.
+- C-131 — Readability — bytecraft — manual review — Bracing shall be used for all if statements and else statements wrapped in a #if - #else - #endif. The wrapped if statements shall contain both braces and statement(s).
+- C-132 — Maintainability — bytecraft — manual review — Any function shall not contain more than 200 source lines of code (SLOCs).
+- C-133 — Maintainability — bytecraft — manual review — Functions shall not have more than 10 arguments.
+- C-134 — Safety — bytecraft — manual review — Functions shall not be declared more than once.
+- C-135 — Readability — bytecraft — manual review — Function declarations shall be placed before function definitions.
+- C-136 — Portability — bytecraft — manual review — <stdbool.h> shall be used for Boolean data types.
+- C-137 — Safety — bytecraft — manual review — Signed and unsigned values shall not be mixed in arithmetic or comparison operations.
+- C-138 — Readability — bytecraft — manual review — Function-like macros shall not contain conditional statements.
+- C-139 — Maintainability — bytecraft — manual review — No function shall have a cyclomatic complexity greater than 25.
+- C-140 — Style and Convention — bytecraft — manual review — Braces shall be placed on a new line aligned with the associated keyword.
+- C-141 — Style and Convention — bytecraft — manual review — All block indentations shall be at three (3) spaces and be consistent within the same source file.
+- C-142 — Style and Convention — bytecraft — manual review — There shall be at least one space before or after each operator to improve readability.
+- C-143 — Style and Convention — bytecraft — manual review — For fixed-point arithmetic operations, the Q format of operands and results shall be explicitly identifiable.
+- C-144 — Style and Convention — bytecraft — manual review — There shall be at least one space before or after each operator to improve readability.
+- C-145 — Style and Convention — bytecraft — manual review — There shall be exactly one space after each comma in a function parameter list, and no space shall be inserted between a function name and the opening parenthesis.
+- C-146 — Style and Convention — bytecraft — manual review — Fixed-point variables shall use a Q<X> suffix, where <X> represents the number of fractional bits.
+- C-147 — Portability — bytecraft — manual review — <stdint.h> shall be used for Fixed-width integer types.
+- A-001 — Style and Convention — arm-m3 — manual review — Within a build configuration, a single assembler dialect shall be used; mixing dialects in the same build is forbidden.
+- A-002 — Style and Convention — arm-m3 — manual review — Each assembly file shall declare the instruction set state explicitly (e.g. ARM).
+- A-003 — Style and Convention — arm-m3 — manual review — Tabs shall be avoided; indentation shall be spaces only.
+- A-004 — Style and Convention — arm-m3 — manual review — One instruction per line shall be used; macro expansions and .macro blocks are permitted only if they improve readability and are documented.
+- A-005 — Style and Convention — arm-m3 — manual review — Immediate constants shall be named via EQU, except for {0,1,2,4,8,16,32} used as shift/size/align constants and other explicitly allowlisted values.
+- A-006 — Safety — arm-m3 — manual review — Any computed branch target shall have bit[0]=0; setting bit[0] is forbidden.
+- A-007 — Safety — arm-m3 — manual review — TBB/TBH shall only be used in allowlisted dispatcher modules and shall be preceded by explicit index bounds checking.
+- A-008 — Safety — arm-m3 — manual review — Direct writes to PC (e.g., mov pc,*, add pc,*, ldr pc,*) shall be prohibited. Function returns shall use only bx lr or pop {...,pc}. Exception returns shall use only architecturally valid bx lr EXC_RETURN sequences.
+- A-009 — Style and Convention — arm-m3 — manual review — Any assembly function shall not exceed 80 SLOC (excluding blank lines and comments). Exceptions (startup, context switch, vector table) shall be explicitly allowlisted or justified.
+- A-010 — Style and Convention — arm-m3 — manual review — Each assembly file shall place all code and data into explicit, named sections; implicit/default section placement shall not be relied upon.
+- A-011 — Style and Convention — arm-m3 — manual review — Each assembly function/submodule shall include an assembly function prolog.
+- A-012 — Style and Convention — arm-m3 — manual review — Assembly shall only be permitted in allowlisted modules. Any new .s file requires a deviation record and low-level reviewer approval.
+- A-013 — Style and Convention — arm-m3 — manual review — All labels shall begin in column 1 to be recognized by the assembler.
+- A-014 — Style and Convention — arm-m3 — manual review — The comment character shall delimit comments.
+- A-015 — Style and Convention — arm-m3 — manual review — Every operation in assembly code shall have a corresponding comment which explains the operation.
+- A-016 — Style and Convention — arm-m3 — manual review — All assembly elements shall have a single exit point.
+- A-017 — Style and Convention — arm-m3 — manual review — All symbols that are defined externally to the assembly element in which they are referenced shall be included using the external statement.

@@ -124,6 +124,7 @@ const TargetCommandsSchema = z.object({
   firmwareBuild: z.string().optional(),
   twinTest: z.string().optional(),
   boardTest: z.string().optional(),
+  codingStandard: z.string().optional(),
 });
 
 const TargetProjectSchema = z.object({

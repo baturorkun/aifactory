@@ -1,0 +1,17 @@
+{
+  "$comment": [
+    "Which rules of 5001-K-CSTD a lexical check of scripts/coding-standard.mjs decides (RQ-0053).",
+    "A rule citing a MISRA rule is checked by cppcheck's MISRA addon and needs no entry;",
+    "a rule in neither place is manual. `factory standard import` stamps these on rules.json."
+  ],
+  "lexical": {
+    "C-112": "file-extension",
+    "C-113": "file-name-camel",
+    "C-116": "ascii-only",
+    "C-117": "file-name-chars",
+    "C-123": "hex-uppercase",
+    "C-124": "no-leading-underscore",
+    "C-127": "literal-suffix-uppercase",
+    "C-128": "no-tabs"
+  }
+}
