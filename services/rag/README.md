@@ -469,6 +469,20 @@ DOORS or building data-flow graphs). Its counts are written with every file.
 The web page's source card shows both, and `/sources/status` gives them as
 `startedBy` and `progress` of the running and the last finished run.
 
+### Scheduled ingest
+
+Repository sources stay current through webhooks; a folder source on the
+file server is read only when an ingest runs. `RAG_INGEST_SCHEDULE=02:00`
+(`rag.ingest.schedule`) makes the API service ingest every active source
+once a day at that hour, in the zone of `RAG_INGEST_SCHEDULE_TIMEZONE`
+(`rag.ingest.scheduleTimezone`, an IANA name such as `Europe/Istanbul`; empty:
+the host's local clock). The sources go through the webhook queue one after
+another in their configured order, a source already being ingested folds into
+one more run, and passive sources are left alone; the runs record
+`started_by` as `schedule 02:00 Europe/Istanbul`. `/runtime-info` gives the
+schedule and the next run under `schedule`. Empty (the default) means no
+schedule (RQ-0051).
+
 ### Sharing an answer
 
 Every answered question is recorded with a random share identifier, returned

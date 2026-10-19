@@ -13,7 +13,7 @@ from aifactory_rag.config import FactoryConfig, RagSourceConfig, find_source, lo
 from aifactory_rag.embeddings import embedding_report
 from aifactory_rag.db import fetch_all, fetch_one, migrate, connect, require_schema
 from aifactory_rag.ingest.pipeline import PassiveSourceError, close_interrupted_runs, ingest_source, sources_being_ingested
-from aifactory_rag import dataflow, status, webhook
+from aifactory_rag import dataflow, schedule, status, webhook
 from aifactory_rag.query import graph
 from aifactory_rag.query.responder import answer_question, share_recorded_answer, shared_answer
 
@@ -88,6 +88,8 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
             # Which code is running and since when, so a deployment and a
             # restart can be confirmed from the web page (build_info.py).
             "build": running.as_dict(),
+            # The daily ingest of every active source, and when it runs next (RQ-0051).
+            "schedule": daily.describe() if daily else {"at": None, "timezone": None, "next": None},
         }
 
     @app.get("/models")
@@ -302,6 +304,17 @@ def create_app(config_path: str | Path = "factory.config.json") -> FastAPI:
         resumed = webhook.resume_interrupted(interrupted, queue, lambda source_id: find_source(factory_config.rag, source_id).enabled)
         if resumed:
             print(f"RAG started the ingest of {', '.join(resumed)} again", flush=True)
+
+    # The daily ingest of every active source, at the configured hour (RQ-0051).
+    daily: schedule.DailyIngest | None = None
+    if factory_config.rag.ingest.schedule:
+        daily = schedule.DailyIngest(
+            factory_config.rag.ingest.schedule,
+            factory_config.rag.ingest.schedule_timezone,
+            queue,
+            lambda: [source.id for source in factory_config.rag.sources if source.enabled],
+        ).start()
+        print(f"RAG scheduled ingest: {daily.describe()}", flush=True)
 
     # GitLab push and tag-push events keep repository sources current (RQ-0028).
     # The API is open on the network, so the entry's secret is never optional.

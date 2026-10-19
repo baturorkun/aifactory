@@ -1,0 +1,54 @@
+{
+  "runId": "20261019092136-RQ-0051",
+  "requirementId": "RQ-0051",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261019092136-RQ-0051/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-19T09:21:36.800Z",
+  "updatedAt": "2026-10-19T09:25:47.605Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-19T09:21:37.443Z",
+      "finishedAt": "2026-10-19T09:25:27.375Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "factory.config.json",
+    "services/rag/.pytest_cache/v/cache/nodeids",
+    "services/rag/.ruff_cache/0.16.10/10231516393505205728",
+    "services/rag/.ruff_cache/0.16.10/9031686090203689123",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/__pycache__/api.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/config.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/schedule.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/__pycache__/webhook.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/api.py",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/parsers.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/ingest/__pycache__/pipeline.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/query/__pycache__/responder.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/query/__pycache__/retriever.cpython-313.pyc",
+    "services/rag/src/aifactory_rag/schedule.py",
+    "services/rag/tests/__pycache__/test_local_embeddings.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_markdown_chunker.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_schedule.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_section_and_repository_focus.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/__pycache__/test_unreadable_files.cpython-313-pytest-9.1.1.pyc",
+    "services/rag/tests/test_schedule.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-10-19T09:25:47.610Z",
+  "approvedBy": "Batur Orkun"
+}

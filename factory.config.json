@@ -157,7 +157,9 @@
       "dutyCycle": "${RAG_INGEST_DUTY_CYCLE:-1}",
       "order": "${RAG_INGEST_ORDER:-size}",
       "databaseReconnectRetries": 12,
-      "databaseReconnectDelaySeconds": 5
+      "databaseReconnectDelaySeconds": 5,
+      "schedule": "${RAG_INGEST_SCHEDULE:-}",
+      "scheduleTimezone": "${RAG_INGEST_SCHEDULE_TIMEZONE:-}"
     },
     "embedding": {
       "provider": "${RAG_EMBEDDING_PROVIDER:-local}",

@@ -253,6 +253,17 @@ class RagIngestConfig(BaseModel):
     order: Literal["path", "size"] = "size"
     database_reconnect_retries: int = Field(default=12, ge=0, alias="databaseReconnectRetries")
     database_reconnect_delay_seconds: float = Field(default=5.0, gt=0, alias="databaseReconnectDelaySeconds")
+    # A daily ingest of every active source at this hour ("HH:MM") by the
+    # service, in schedule_timezone (an IANA name; empty: the host's local
+    # time). Empty: no schedule, and a folder source is ingested only by hand
+    # or through the API (RQ-0051).
+    schedule: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    schedule_timezone: str | None = Field(default=None, alias="scheduleTimezone")
+
+    @field_validator("schedule", "schedule_timezone", mode="before")
+    @classmethod
+    def _blank_schedule_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class RagEmbeddingConfig(BaseModel):
