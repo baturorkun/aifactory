@@ -1,0 +1,41 @@
+{
+  "runId": "20261019141429-RQ-0054",
+  "requirementId": "RQ-0054",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261019141429-RQ-0054/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-19T14:14:29.822Z",
+  "updatedAt": "2026-10-19T14:15:15.061Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-19T14:14:30.391Z",
+      "finishedAt": "2026-10-19T14:14:59.148Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.html",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.pdf",
+    "lab/inventory.json",
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/env-check.test.ts",
+    "packages/agent-factory/src/env-check.ts",
+    "packages/agent-factory/src/lab-inventory.ts",
+    "packages/agent-factory/src/scaffold.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-19T14:15:15.062Z",
+  "approvedBy": "Batur Orkun"
+}

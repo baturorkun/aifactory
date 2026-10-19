@@ -63,7 +63,9 @@ test('a new embedded project takes its hosts and its board unit from the invento
 
 test('without a unit the board settings stay empty; .env.example lines keep their order and comments', () => {
   const inventory = loadLabInventory()!;
-  const values = embeddedEnvValues(inventory, 'fw', 'ada');
+  const values = embeddedEnvValues(inventory, 'fw', 'ada', undefined, 'ada');
+  assert.equal(values.VIVADO_REMOTE_USER, 'ada', 'the developer\'s own account on the Vivado host (RQ-0054)');
+  assert.equal(labWideCiValues(inventory).VIVADO_REMOTE_USER, inventory.vivado.user, 'CI keeps the inventory\'s account');
   assert.equal(values.BOARD_JTAG_CABLE, undefined);
   assert.equal(values.VIVADO_REMOTE_PROJECT_NAME, 'fw-ada');
   assert.equal(fillEnv('# hosts\nVIVADO_REMOTE_HOST=\nOTHER=x\nVIVADO_REMOTE_HOST=\n', values), '# hosts\nVIVADO_REMOTE_HOST=192.168.1.3\nOTHER=x\nVIVADO_REMOTE_HOST=\n');

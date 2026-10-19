@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { analyzeEnv, checkProjectEnv, formatEnvCheck, parseEnvExample, parseEnvValues } from './env-check';
+import { analyzeEnv, checkProjectEnv, formatEnvCheck, parseEnvExample, parseEnvValues, stageHosts } from './env-check';
 
 const EXAMPLE = [
   '# Required model settings. Copy this file to .env and provide real values.',
@@ -87,4 +87,18 @@ test('checkProjectEnv refuses a directory with no .env.example', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('env-check names the hosts the embedded stages log in to (RQ-0054)', () => {
+  const values = new Map([
+    ['VIVADO_REMOTE_HOST', '192.168.1.3'], ['VIVADO_REMOTE_USER', 'kavci'], ['VIVADO_REMOTE_PORT', '22'],
+    ['BOARD_REMOTE_HOST', '192.168.1.2'], ['BOARD_REMOTE_USER', 'root'],
+    ['TWIN_REMOTE_HOST', '192.168.1.2'], ['TWIN_REMOTE_USER', 'root'],
+  ]);
+  const hosts = stageHosts(values);
+  assert.equal(hosts.length, 2, 'the lab host once, for board and twin');
+  assert.match(hosts[0], /^ssh kavci@192\.168\.1\.3 +sim, build, sw/);
+  assert.match(hosts[1], /^ssh root@192\.168\.1\.2 +board, twin \(lab host/);
+  assert.deepEqual(stageHosts(new Map([['VIVADO_REMOTE_HOST', '']])), [], 'nothing when the hosts are empty');
+  assert.match(stageHosts(new Map([['VIVADO_REMOTE_HOST', 'b'], ['VIVADO_REMOTE_PORT', '2222']]))[0], /^ssh -p 2222 <user>@b/);
 });
