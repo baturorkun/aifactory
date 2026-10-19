@@ -586,6 +586,173 @@ test('the twin stage over the bot: the ELF through the store, a docker-run job o
   }
 });
 
+async function hostModule(root: string) {
+  return import(pathToFileURL(join(root, 'scripts/vivado-host.mjs')).href) as Promise<{
+    hostAccess: (env: Record<string, string>) => string;
+    hostSettings: (env: Record<string, string>, prefix?: string) => { access: string; remote: boolean; host: string; botAgent?: string };
+    botRunnerScript: (job: { settings: unknown; jobDirectory: string; command: string[] }) => string;
+    botPrepareScript: (job: { settings: unknown; jobDirectory: string; archiveUrl: string; entries: string[]; command: string[]; directories: string[] }) => string;
+    botStatusScript: (job: { jobDirectory: string; offset: number }) => string;
+    botCollectScript: (job: { settings: unknown; jobDirectory: string; pulls: string[] }) => string;
+    botStopScript: (job: { jobDirectory: string }) => string;
+    botCleanScript: (job: { jobDirectory: string }) => string;
+    parseStep: (text: string) => Record<string, string> & { log: string };
+  }>;
+}
+
+// The bot's Windows agent on the builder, as the stage uses it: free-form
+// PowerShell steps (told apart by their "# aifactory: <step>" line), the
+// store, the upload-file job. The steps' answers are canned; what the real
+// PowerShell does is checked by parsing the scripts (when pwsh is here).
+function fakeBuilderBot(resultsArchive: string, exitCode: number) {
+  const seen = { steps: [] as string[], scripts: {} as Record<string, string>, uploads: {} as Record<string, number>, uploadFile: undefined as undefined | string[], tokens: new Set<string>(), requestedBy: new Set<string>() };
+  let polls = 0;
+  const server = createHttpServer((req, res) => {
+    const url = req.url ?? '';
+    // Downloads from the store carry no token, as the bot serves them; the API calls do.
+    if (url.startsWith('/api/')) seen.tokens.add(req.headers.authorization ?? '');
+    if (req.headers['x-requested-by']) seen.requestedBy.add(String(req.headers['x-requested-by']));
+    const json = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks);
+      if (req.method === 'PUT' && url.startsWith('/api/agents/builder/files/')) {
+        const name = decodeURIComponent(url.split('/').pop() ?? '');
+        seen.uploads[name] = body.length;
+        return json(200, { ok: true, url: `http://127.0.0.1/download/agent-files/builder/${name}`, size: body.length });
+      }
+      if (req.method === 'POST' && url.startsWith('/api/agents/builder/pwsh')) {
+        const script = body.toString('utf8');
+        const step = /^# aifactory: (\w+)$/m.exec(script)?.[1] ?? 'unknown';
+        seen.steps.push(step);
+        seen.scripts[step] = script;
+        const done = (stdout: string) => json(200, { id: `ps-${seen.steps.length}`, agent_id: 'builder', command: 'ps', status: 'succeeded', exit_code: 0, stdout, stderr: '', error: '' });
+        if (step === 'prepare') return done('STATUS=STARTED\nPID=4242\n');
+        if (step === 'status') {
+          polls += 1;
+          if (polls === 1) return done('STATUS=RUNNING\nOFFSET=20\nLOG:\nRunning on BUILDER\n');
+          return done(`STATUS=DONE\nEXIT=${exitCode}\nOFFSET=40\nLOG:\nxsim finished\n`);
+        }
+        if (step === 'collect') return done('STATUS=OK\nPRESENT=1\nARCHIVE=C:\\ab\\.fw-ada-job-1\\results.tar.gz\n');
+        if (step === 'stop') return done('STATUS=STOPPED\n');
+        if (step === 'clean') return done('STATUS=OK\n');
+        return json(400, { error: `unknown step in ${script.slice(0, 80)}` });
+      }
+      if (req.method === 'POST' && url.startsWith('/api/agents/builder/jobs')) {
+        const job = JSON.parse(body.toString('utf8')) as { command: string; args: string[] };
+        if (job.command !== 'upload-file') return json(400, { error: `unexpected job ${job.command}` });
+        seen.uploadFile = job.args;
+        const port = (server.address() as { port: number }).port;
+        return json(200, { id: 'up-1', agent_id: 'builder', command: 'upload-file', status: 'succeeded', exit_code: 0, stdout: `uploaded_url=http://127.0.0.1:${port}/download/agent-files/builder/${job.args[1]}\nsize=1`, stderr: '', error: '' });
+      }
+      if (url.startsWith('/download/agent-files/builder/') && url.endsWith('-results.tar.gz')) { res.writeHead(200, { 'Content-Type': 'application/gzip' }); return res.end(readFileSync(resultsArchive)); }
+      json(404, { error: `unexpected ${req.method} ${url}` });
+    });
+  });
+  return { server, seen, listen: () => new Promise<number>((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port))) };
+}
+
+test('the build stages over the bot: the sources through the store, the command in the background on the builder, the results back', async () => {
+  const project = scaffold();
+  const results = mkdtempSync(join(tmpdir(), 'builder-bot-'));
+  try {
+    const host = await hostModule(project.root);
+    assert.equal(host.hostAccess({}), 'ssh');
+    assert.throws(() => host.hostAccess({ VIVADO_ACCESS: 'agent' }), /VIVADO_ACCESS must be ssh or bot, not "agent"/);
+    const botEnv = { VIVADO_ACCESS: 'bot', VIVADO_BOT_AGENT: 'builder', VIVADO_HOST_TYPE: 'windows', VIVADO_REMOTE_BASE_PATH: 'C:\\ab', VIVADO_REMOTE_PROJECT_NAME: 'fw-ada', VIVADO_BIN: 'C:\\Xilinx\\vivado.bat' };
+    const settings = host.hostSettings(botEnv);
+    assert.equal(settings.access, 'bot');
+    assert.ok(settings.remote, 'the project lives on the builder');
+    assert.equal(settings.host, 'builder', 'named by the agent when VIVADO_REMOTE_HOST is empty');
+    assert.throws(() => host.hostSettings({ ...botEnv, VIVADO_BOT_AGENT: '' }), /VIVADO_BOT_AGENT is not set/);
+    assert.throws(() => host.hostSettings({ ...botEnv, VIVADO_HOST_TYPE: 'linux' }), /VIVADO_HOST_TYPE must be windows with VIVADO_ACCESS=bot/);
+    assert.throws(() => host.hostSettings({ ...botEnv, VIVADO_REMOTE_PROJECT_NAME: '' }), /VIVADO_REMOTE_PROJECT_NAME is not set, but VIVADO_ACCESS=bot/);
+    assert.equal(host.hostSettings({ VIVADO_REMOTE_HOST: '', VIVADO_BIN: 'vivado' }).remote, false, 'ssh with no host: this machine');
+
+    // The steps: every answer parsed the same way; the scripts carry their step name and no backtick escapes.
+    assert.deepEqual(host.parseStep('STATUS=DONE\nEXIT=3\nOFFSET=12\nLOG:\nline one\nline two\n'), { STATUS: 'DONE', EXIT: '3', OFFSET: '12', log: 'line one\nline two\n' });
+    assert.deepEqual(host.parseStep('STATUS=OK\n'), { STATUS: 'OK', log: '' });
+    const jobDirectory = 'C:\\ab\\.fw-ada-job-1';
+    const scripts = {
+      runner: host.botRunnerScript({ settings, jobDirectory, command: ['C:\\Xilinx\\vivado.bat', '-mode', 'batch'] }),
+      prepare: host.botPrepareScript({ settings, jobDirectory, archiveUrl: 'http://bot/download/agent-files/builder/src.tar.gz', entries: ['designs', 'flow.tcl'], command: ['C:\\Xilinx\\vivado.bat', '-mode', 'batch'], directories: ['out/led_counter'] }),
+      status: host.botStatusScript({ jobDirectory, offset: 20 }),
+      collect: host.botCollectScript({ settings, jobDirectory, pulls: ['out/led_counter/artifacts'] }),
+      stop: host.botStopScript({ jobDirectory }),
+      clean: host.botCleanScript({ jobDirectory }),
+    };
+    for (const [name, script] of Object.entries(scripts)) {
+      if (name !== 'runner') assert.match(script, new RegExp(`^# aifactory: ${name}$`, 'm'));
+      assert.doesNotMatch(script, /`/, `${name}: no PowerShell backtick escapes (they end a JS template)`);
+    }
+    assert.match(scripts.prepare, /Start-Process -FilePath 'powershell\.exe'[^\n]*-File/, 'the command runs in the background');
+    assert.match(scripts.prepare, /Unsafe entry/);
+    assert.match(scripts.runner, /Set-Content -Path \(Join-Path \$Job 'exit\.txt'\)/);
+    assert.match(scripts.stop, /taskkill\.exe \/PID \$ProcessId \/T \/F/);
+    const pwsh = spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { stdio: 'pipe' });
+    if (pwsh.status === 0) {
+      for (const [name, script] of Object.entries(scripts)) {
+        const path = join(results, `${name}.ps1`);
+        writeFileSync(path, script);
+        const parsed = spawnSync('pwsh', ['-NoProfile', '-Command', `$null = [scriptblock]::Create((Get-Content -Raw '${path}')); 'parsed'`], { stdio: 'pipe' });
+        assert.match(String(parsed.stdout), /parsed/, `${name} parses as PowerShell: ${String(parsed.stderr)}`);
+      }
+    }
+
+    // A sim through the bot: the stage prints the builder's log as it grows and brings the artifacts back.
+    mkdirSync(join(results, 'out/led_counter/artifacts'), { recursive: true });
+    writeFileSync(join(results, 'out/led_counter/artifacts/sim.log'), 'from the builder\n');
+    const tar = spawnSync('tar', ['-czf', join(results, 'results.tar.gz'), '-C', results, 'out'], { stdio: 'pipe' });
+    assert.equal(tar.status, 0, String(tar.stderr));
+    const bot = fakeBuilderBot(join(results, 'results.tar.gz'), 0);
+    const port = await bot.listen();
+    const env = (more = '') => ['VIVADO_ACCESS=bot', 'VIVADO_BOT_AGENT=builder', 'VIVADO_HOST_TYPE=windows', 'VIVADO_REMOTE_BASE_PATH=C:\\ab', 'VIVADO_REMOTE_PROJECT_NAME=fw-ada',
+      'VIVADO_BIN=C:\\Xilinx\\2025.2\\Vivado\\bin\\vivado.bat', 'VITIS_BIN=C:\\Xilinx\\2025.2\\Vitis\\bin\\vitis.bat',
+      `BOT_API_URL=http://127.0.0.1:${port}`, 'BOT_API_TOKEN=bot-token', 'BOT_API_AGENT=ada', more, ''].join('\n');
+    try {
+      writeFileSync(join(project.root, '.env'), env());
+      const result = await flowAsync(project.root, 'sim', 'led_counter');
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.match(result.stdout, /Running on BUILDER[\s\S]*xsim finished/, 'the log as it grew');
+      assert.match(result.stdout, /Brought back out\/led_counter\/artifacts/);
+      assert.equal(project.read('out/led_counter/artifacts/sim.log'), 'from the builder\n');
+      assert.deepEqual(bot.seen.steps, ['prepare', 'status', 'status', 'collect', 'clean']);
+      assert.equal(Object.keys(bot.seen.uploads).length, 1, 'one source archive in the store');
+      assert.match(Object.keys(bot.seen.uploads)[0], /^fw-ada-\d+-\d+-src\.tar\.gz$/);
+      assert.ok(bot.seen.uploads[Object.keys(bot.seen.uploads)[0]] > 100, 'the archive has the sources');
+      // Values travel base64-encoded JSON, so cmd.exe's quoting never sees them.
+      const archiveUrl = `http://127.0.0.1/download/agent-files/builder/${Object.keys(bot.seen.uploads)[0]}`;
+      assert.ok(bot.seen.scripts.prepare.includes(Buffer.from(JSON.stringify(archiveUrl)).toString('base64')), 'the prepare step fetches the archive the stage put in the store');
+      assert.deepEqual(bot.seen.uploadFile?.[0], 'C:\\ab\\.fw-ada-job-1\\results.tar.gz');
+      assert.match(bot.seen.uploadFile?.[1] ?? '', /^fw-ada-\d+-\d+-results\.tar\.gz$/);
+      assert.deepEqual([...bot.seen.tokens], ['Bearer bot-token']);
+      assert.deepEqual([...bot.seen.requestedBy], ['ada']);
+      assert.ok(!existsSync(join(project.root, 'twin-run')), 'nothing of the ssh way');
+    } finally {
+      bot.server.closeAllConnections();
+      bot.server.close();
+    }
+
+    // The command failing on the builder fails the stage with its exit code, after the results and the cleanup.
+    const failing = fakeBuilderBot(join(results, 'results.tar.gz'), 3);
+    const port2 = await failing.listen();
+    try {
+      writeFileSync(join(project.root, '.env'), env().replace(`127.0.0.1:${port}`, `127.0.0.1:${port2}`));
+      const result = await flowAsync(project.root, 'sim', 'led_counter');
+      assert.equal(result.status, 3, result.stderr + result.stdout);
+      assert.match(result.stderr, /failed with exit code 3/);
+      assert.deepEqual(failing.seen.steps, ['prepare', 'status', 'status', 'collect', 'clean']);
+    } finally {
+      failing.server.closeAllConnections();
+      failing.server.close();
+    }
+  } finally {
+    project.done();
+    rmSync(results, { recursive: true, force: true });
+  }
+});
+
 test('the twin stage says when there is nothing to run, and names what is missing', () => {
   const project = scaffold();
   try {

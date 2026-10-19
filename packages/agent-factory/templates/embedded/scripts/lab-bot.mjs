@@ -89,6 +89,20 @@ export async function botJob(env, agent, command, args, { wait = 0, stage = 'TWI
   return answer(response, stage, `${command} on ${agent}`);
 }
 
+// Free-form PowerShell on a Windows agent the bot allows it for (the builder):
+// the job as the bot returns it, finished when it ended within `wait` seconds.
+export async function botPowershell(env, agent, script, { wait = 60, stage = 'BUILD' } = {}) {
+  const bot = botSettings(env, stage);
+  const headers = { Authorization: `Bearer ${bot.token}`, 'Content-Type': 'text/plain; charset=utf-8' };
+  if (bot.user) headers['X-Requested-By'] = bot.user;
+  const response = await reach(stage, `PowerShell on ${agent}`, () => fetch(`${bot.url}/api/agents/${encodeURIComponent(agent)}/pwsh?wait=${wait}`, {
+    method: 'POST',
+    headers,
+    body: script,
+  }));
+  return answer(response, stage, `PowerShell on ${agent}`);
+}
+
 export const jobIsFinal = (job) => job?.status === 'succeeded' || job?.status === 'failed';
 
 // Waits for a job to end, asking the bot every `pause` ms until `deadlineMs`.

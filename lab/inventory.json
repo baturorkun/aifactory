@@ -13,7 +13,8 @@
   },
   "vivado": {
     "$comment": [
-      "BUILDER: Windows 11, Vivado and Vitis 2025.2, reached over SSH. `user` is the CI",
+      "BUILDER: Windows 11, Vivado and Vitis 2025.2. A developer reaches it through the bot's",
+      "Windows agent on it, `botAgent` (VIVADO_ACCESS=bot, RQ-0057); CI over SSH. `user` is the CI",
       "account (the instance-level VIVADO_REMOTE_USER); a developer's .env takes their own",
       "login (RQ-0054), whose key goes into administrators_authorized_keys on the host.",
       "basePath is C:\\ab, a junction to C:\\Users\\Batur\\aifactory-builds: Vitis' gcc",
@@ -21,6 +22,7 @@
       "little room for the BSP's objects (RQ-0048)."
     ],
     "host": "192.168.1.3",
+    "botAgent": "builder",
     "user": "batur",
     "hostType": "windows",
     "basePath": "C:\\ab",
