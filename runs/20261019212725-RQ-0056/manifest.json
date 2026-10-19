@@ -1,0 +1,44 @@
+{
+  "runId": "20261019212725-RQ-0056",
+  "requirementId": "RQ-0056",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261019212725-RQ-0056/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-19T21:27:25.073Z",
+  "updatedAt": "2026-10-19T21:27:59.458Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-19T21:27:25.717Z",
+      "finishedAt": "2026-10-19T21:27:47.032Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.html",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.pdf",
+    "lab/inventory.json",
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/lab-inventory.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/templates/embedded/scripts/board.mjs",
+    "packages/agent-factory/templates/embedded/scripts/flow.mjs",
+    "packages/agent-factory/templates/embedded/scripts/lab-bot.mjs",
+    "packages/agent-factory/templates/embedded/scripts/twin.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-19T21:27:59.459Z",
+  "approvedBy": "Batur Orkun"
+}

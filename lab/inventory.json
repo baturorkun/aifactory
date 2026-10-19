@@ -36,7 +36,8 @@
     "boardBasePath": "/tmp/aifactory-boards",
     "twinBasePath": "/tmp/aifactory-twins",
     "hwServer": "192.168.1.2:3121",
-    "xsdbBin": "/opt/Xilinx/2025.2/Vivado_Lab/bin/xsdb"
+    "xsdbBin": "/opt/Xilinx/2025.2/Vivado_Lab/bin/xsdb",
+    "botAgent": "lab"
   },
   "bot": {
     "$comment": "The lab bot: PDU outlets by label, the lab hosts' devices. Its token is a secret (BOT_API_TOKEN).",

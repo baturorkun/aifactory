@@ -1,6 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
+import { botDownload, botJob, botJobWait, botUpload, jobOwner, outputUrl } from './lab-bot.mjs';
 import { CommandError, PROJECT_ROOT, buildHost, runOnHost } from './vivado-host.mjs';
 
 // The twin stage: the design's ELF on the board's hardware twin, its result
@@ -17,9 +19,14 @@ import { CommandError, PROJECT_ROOT, buildHost, runOnHost } from './vivado-host.
 //   <image> --elf /io/<elf> --seconds <n> --out /io/run
 //
 // it writes what it recorded under /io/run, prints one JSON summary line on
-// stdout and exits 0 when the run itself worked. The ELF goes in and the
-// results come out with `docker cp`, so the Docker daemon may be another
-// machine's (TWIN_REMOTE_HOST, or DOCKER_HOST).
+// stdout and exits 0 when the run itself worked.
+//
+// TWIN_ACCESS says whose Docker runs it (RQ-0056):
+//   ssh  this machine's Docker, or a Linux host's over SSH (TWIN_REMOTE_*);
+//        the ELF goes in and the results come out with `docker cp`
+//   bot  the lab host's Docker through the lab bot, with no login: the ELF
+//        goes into the bot's store, a docker-run job mounts it at /in and
+//        leaves the results under /out, which come back as an archive
 
 // ------------------------------------------------------------
 // test.yaml: timeout_s, expect, fail_on, summary
@@ -122,6 +129,45 @@ export function twinSettings(env, boardText, boardName = 'board') {
 }
 
 // ------------------------------------------------------------
+// How the twin's Docker is reached: TWIN_ACCESS
+// ------------------------------------------------------------
+
+export function twinAccess(env) {
+  const access = (env.TWIN_ACCESS ?? '').trim().toLowerCase() || 'ssh';
+  if (access !== 'ssh' && access !== 'bot') throw new CommandError(`TWIN_ACCESS must be ssh or bot, not "${access}".`, 2);
+  return access;
+}
+
+// The bot's docker-run job for one twin run: the image's own contract, the
+// ELF from /in, the results under /out/run; the timeout a margin past the
+// run for the pull and the boot.
+export function twinJobArgs({ image, elfName, seconds, owner, timeoutS }) {
+  return {
+    owner,
+    image,
+    cmd: ['--elf', `/in/${elfName}`, '--seconds', String(seconds), '--out', '/out/run'],
+    inputs: [elfName],
+    timeout_s: timeoutS ?? Number(seconds) + 60,
+  };
+}
+
+// The twin's summary: the last line of its output that is a JSON object (the
+// job's log has the image's stderr around it).
+export function summaryFromLog(text) {
+  for (const line of (text ?? '').split(/\r?\n/).reverse()) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    try {
+      const value = JSON.parse(trimmed);
+      if (value && typeof value === 'object') return value;
+    } catch {
+      // not the summary
+    }
+  }
+  return null;
+}
+
+// ------------------------------------------------------------
 // The verdict
 // ------------------------------------------------------------
 
@@ -158,7 +204,12 @@ export function judgeRun({ exitStatus, summary, consoleText }, test) {
 // ------------------------------------------------------------
 
 async function gitlabJson(twin, token, path) {
-  const response = await fetch(`${twin.gitlab.replace(/\/$/, '')}/api/v4${path}`, { headers: { 'PRIVATE-TOKEN': token } });
+  let response;
+  try {
+    response = await fetch(`${twin.gitlab.replace(/\/$/, '')}/api/v4${path}`, { headers: { 'PRIVATE-TOKEN': token } });
+  } catch (error) {
+    throw new CommandError(`TWIN FAILED: cannot reach ${twin.gitlab} for ${path}: ${error?.cause?.code ?? error?.cause?.message ?? error.message}`, 1);
+  }
   if (!response.ok) throw new CommandError(`TWIN FAILED: ${twin.gitlab} answered ${response.status} for ${path}; TWIN_GITLAB_TOKEN needs read_api and read_registry there.`, 1);
   return response.json();
 }
@@ -234,9 +285,13 @@ export async function twinStage(settings, design, boardText, env) {
   if (!existsSync(elf)) {
     throw new CommandError(`TWIN FAILED: no out/${design.name}/artifacts/${design.name}_app.elf; run the build and sw stages first.`, 1);
   }
-  if (settings.remote && settings.hostType !== 'linux') {
+  const access = twinAccess(env);
+  if (access === 'ssh' && settings.remote && settings.hostType !== 'linux') {
     throw new CommandError('TWIN_HOST_TYPE must be linux: the twin runs on a Docker host with a POSIX shell.', 2);
   }
+  const agent = access === 'bot' ? (env.TWIN_BOT_AGENT ?? '').trim() : undefined;
+  if (access === 'bot' && !agent) throw new CommandError('TWIN_BOT_AGENT is not set: the bot\'s name for the Linux host whose Docker runs the twin (lab). Add it to .env.', 2);
+  const owner = access === 'bot' ? jobOwner(env) : undefined;
   const test = parseTestYaml(readFileSync(testPath, 'utf8'));
   const release = await resolveTwin(twin, env);
 
@@ -246,36 +301,65 @@ export async function twinStage(settings, design, boardText, env) {
   const local = join(PROJECT_ROOT, relative);
   rmSync(local, { recursive: true, force: true });
   mkdirSync(local, { recursive: true });
-  copyFileSync(elf, join(local, 'app.elf'));
-  writeFileSync(join(local, 'run.sh'), runScript());
-  writeFileSync(join(local, '.token'), release.token);
-  chmodSync(join(local, '.token'), 0o600);
   const seconds = String(Math.ceil(test.timeout_s));
+  const host = access === 'bot' ? `${agent} (through the bot)` : buildHost(settings);
 
-  console.log(`${label} (${twin.project} ${release.tag} on ${buildHost(settings)}'s Docker, ${seconds} s)`);
   const started = Date.now();
   let runError;
-  try {
-    runOnHost(settings, ['sh', `${relative}/run.sh`, release.image, seconds, twin.registry, release.user], {
-      pulls: [relative],
-      description: `Twin run of ${design.name}`,
-    });
-  } catch (error) {
-    runError = error;
-  } finally {
-    rmSync(join(local, '.token'), { force: true });
+  let job;
+  let runDir = join(local, 'run');
+  let exitStatus;
+  let summary = null;
+  if (access === 'bot') {
+    // The ELF under a name of its own in the bot's store; the job mounts it.
+    const elfName = `${owner.replace(/[^A-Za-z0-9._-]/g, '-')}-${design.name}-${process.pid}-${Date.now()}.elf`;
+    const args = twinJobArgs({ image: release.image, elfName, seconds, owner });
+    console.log(`${label} (${twin.project} ${release.tag} on ${agent}'s Docker through the bot, ${seconds} s, for ${owner})`);
+    try {
+      await botUpload(env, agent, elfName, readFileSync(elf));
+      job = await botJob(env, agent, 'docker-run', args);
+      console.log(`${label}: job ${job.id} ${job.status}`);
+      job = await botJobWait(env, job, { deadlineMs: Date.now() + (args.timeout_s + 120) * 1000 });
+      const url = outputUrl(job);
+      if (!url) throw new CommandError(`TWIN FAILED: the bot kept no output for job ${job.id}: ${job.error || job.stderr || 'no OUTPUT line'}`, 1);
+      await botDownload(url, join(local, 'output.tar.gz'));
+      const tar = spawnSync('tar', ['-xzf', 'output.tar.gz'], { cwd: local, stdio: 'pipe' });
+      if (tar.status !== 0) throw new CommandError(`TWIN FAILED: cannot unpack the job's output: ${String(tar.stderr).trim()}`, 1);
+    } catch (error) {
+      runError = error;
+    }
+    runDir = join(local, 'out', 'run');
+    exitStatus = runError ? -1 : Number.isInteger(job?.exit_code) ? job.exit_code : -1;
+    summary = existsSync(join(local, 'log')) ? summaryFromLog(readFileSync(join(local, 'log'), 'utf8')) : null;
+  } else {
+    copyFileSync(elf, join(local, 'app.elf'));
+    writeFileSync(join(local, 'run.sh'), runScript());
+    writeFileSync(join(local, '.token'), release.token);
+    chmodSync(join(local, '.token'), 0o600);
+    console.log(`${label} (${twin.project} ${release.tag} on ${host}'s Docker, ${seconds} s)`);
+    try {
+      runOnHost(settings, ['sh', `${relative}/run.sh`, release.image, seconds, twin.registry, release.user], {
+        pulls: [relative],
+        description: `Twin run of ${design.name}`,
+      });
+    } catch (error) {
+      runError = error;
+    } finally {
+      rmSync(join(local, '.token'), { force: true });
+    }
   }
 
   const read = (name) => (existsSync(join(local, name)) ? readFileSync(join(local, name), 'utf8') : '');
-  const exitText = read('exit-status.txt').trim();
-  const exitStatus = runError ? -1 : exitText === '' ? -1 : Number(exitText);
-  let summary;
-  try {
-    summary = JSON.parse(read('summary.json').trim().split(/\r?\n/).pop() || 'null');
-  } catch {
-    summary = null;
+  if (access === 'ssh') {
+    const exitText = read('exit-status.txt').trim();
+    exitStatus = runError ? -1 : exitText === '' ? -1 : Number(exitText);
+    try {
+      summary = JSON.parse(read('summary.json').trim().split(/\r?\n/).pop() || 'null');
+    } catch {
+      summary = null;
+    }
   }
-  const consoleText = twin.console ? read(join('run', twin.console)) : '';
+  const consoleText = twin.console && existsSync(join(runDir, twin.console)) ? readFileSync(join(runDir, twin.console), 'utf8') : '';
   const verdict = runError
     ? { status: 'error', matched: [], missing: test.expect, failed_on: null, summary_checks: {}, why: String(runError.message ?? runError) }
     : judgeRun({ exitStatus, summary, consoleText }, test);
@@ -286,10 +370,12 @@ export async function twinStage(settings, design, boardText, env) {
     board: design.BOARD,
     twin: { project: twin.project, release: release.tag, image: release.image, version: imageVersion || null, revision: imageRevision || null },
     ...verdict,
+    access,
+    ...(access === 'bot' ? { job: job?.id ?? null, owner } : {}),
     twin_exit: exitStatus,
     summary,
     elf_sha256: sha256(elf),
-    host: buildHost(settings),
+    host,
     duration_s: Math.round((Date.now() - started) / 100) / 10,
   };
 
@@ -297,11 +383,12 @@ export async function twinStage(settings, design, boardText, env) {
   rmSync(artifacts, { recursive: true, force: true });
   mkdirSync(artifacts, { recursive: true });
   writeFileSync(join(artifacts, 'result.json'), JSON.stringify(result, null, 2) + '\n');
-  if (existsSync(join(local, 'run'))) {
+  if (existsSync(runDir)) {
     for (const name of ['monitor.log', ...(twin.console ? [twin.console] : [])]) {
-      if (existsSync(join(local, 'run', name))) copyFileSync(join(local, 'run', name), join(artifacts, name));
+      if (existsSync(join(runDir, name))) copyFileSync(join(runDir, name), join(artifacts, name));
     }
   }
+  if (access === 'bot' && existsSync(join(local, 'log'))) copyFileSync(join(local, 'log'), join(artifacts, 'job.log'));
 
   if (consoleText && /^[\x09\x0a\x0d\x20-\x7e]*$/.test(consoleText.slice(0, 2000))) {
     console.log(consoleText.trimEnd().split(/\r?\n/).slice(0, 20).map((line) => `  │ ${line}`).join('\n'));

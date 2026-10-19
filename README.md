@@ -344,7 +344,10 @@ with `BOARD_ACCESS=ssh` (the lab admin and CI); developers use `bot`: power
 and the console (the bot's portmap bridge, `BOARD_CONSOLE`) through the bot,
 JTAG from the builder's xsdb to the hw_server. The board's `bot` mode is RQ-0055 (`BOARD_CONSOLE` is the console as the bot's
 `pm status` lists it, `BOT_API_AGENT` the person's name as the bot knows
-them, set by hand, in its owner `<project>/<name>`); the builder's is RQ-0056. `factory env-check` ends with the logins to try. A project made from an older template is
+them, set by hand, in its owner `<project>/<name>`); the twin's is RQ-0056
+(`TWIN_ACCESS=bot`: a docker-run job on the lab host's Docker, `TWIN_BOT_AGENT`,
+through the bot, the ELF in and the results out through the bot's store, no
+token on the lab host); the builder's is RQ-0057. `factory env-check` ends with the logins to try. A project made from an older template is
 brought up to date with `factory template update` (it lists the changes;
 `--write` applies them): the scripts, the flow, the CI file, `.env.example` and
 `AGENTS.md` are replaced, the gates and package scripts merged, files a design

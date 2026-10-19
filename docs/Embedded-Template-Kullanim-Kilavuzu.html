@@ -40,7 +40,7 @@
 <header>
   <h1>Embedded Template Kullanım Kılavuzu</h1>
   <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
-  <p class="meta">aifactory v0.55 (RQ-0044…RQ-0055) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 19 Ekim 2026</p>
+  <p class="meta">aifactory v0.56 (RQ-0044…RQ-0056) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 19 Ekim 2026</p>
 </header>
 
 <h2>1. Template ne yapar</h2>
@@ -62,13 +62,13 @@ pnpm factory -- new &lt;proje&gt; --template embedded --board zedboard --dir ..
 # coding standard ile (bkz. §9):
 pnpm factory -- new &lt;proje&gt; --template embedded --board zedboard --standard cstd --groups misra,bytecraft --dir ..</code></pre>
 <p><code>--board</code> lab envanterindeki (<code>aifactory/lab/inventory.json</code>) bir birimi seçer; Vivado host, lab host, hw_server, bot adresi, JTAG kablo seri numarası ve konsol portu <code>.env</code>'e otomatik dolar. Boş kalan ve sizin doldurmanız gerekenler: <code>GITLAB_TOKEN</code>, <code>BOT_API_TOKEN</code>, <code>TWIN_GITLAB_TOKEN</code> (gizli değerler envanterde tutulmaz). <code>pnpm factory -- env-check</code> eksikleri listeler.</p>
-<div class="warn"><b>Lab host'larına erişim: SSH ya da bot.</b> İki host var; her biri için <code>.env</code>'deki <code>*_ACCESS</code> ayarı (<code>ssh</code> | <code>bot</code>) yolu seçer. Developer'lar <code>bot</code> kullanır: SSH ve anahtar gerekmez, sadece <code>BOT_API_TOKEN</code>. <code>ssh</code> lab yöneticisi ve CI içindir. (Board için <code>bot</code> RQ-0055 ile geldi; builder için <code>bot</code> RQ-0056 ile gelecek, o zamana kadar <code>VIVADO_ACCESS=ssh</code>.)
+<div class="warn"><b>Lab host'larına erişim: SSH ya da bot.</b> İki host var; her biri için <code>.env</code>'deki <code>*_ACCESS</code> ayarı (<code>ssh</code> | <code>bot</code>) yolu seçer. Developer'lar <code>bot</code> kullanır: SSH ve anahtar gerekmez, sadece <code>BOT_API_TOKEN</code>. <code>ssh</code> lab yöneticisi ve CI içindir. (Board için <code>bot</code> RQ-0055, twin için <code>TWIN_ACCESS=bot</code> RQ-0056 ile geldi; builder için <code>bot</code> RQ-0057 ile gelecek, o zamana kadar <code>VIVADO_ACCESS=ssh</code>.)
 <ul>
 <li><b>192.168.1.3 (builder, Windows):</b> sim, build, sw. <code>VIVADO_ACCESS=bot</code>: bot'un builder'daki Windows agent'ı (<code>VIVADO_BOT_AGENT</code>) Vivado/Vitis'i koşturur; kaynak ve sonuçlar bot üzerinden gider gelir. <code>VIVADO_ACCESS=ssh</code>: kullanıcı <code>VIVADO_REMOTE_USER</code>, yani sizin builder'daki hesabınız. Hesabınız Administrators grubundaysa Windows OpenSSH anahtarı <code>~/.ssh/authorized_keys</code>'ten değil <code>C:\ProgramData\ssh\administrators_authorized_keys</code>'ten okur; <code>ssh-copy-id</code> Windows'a yazamaz. Parolayla bir kez:<br>
 <code>cat ~/.ssh/id_ed25519.pub | ssh &lt;siz&gt;@192.168.1.3 'powershell -NoProfile -Command "Add-Content -Path C:\ProgramData\ssh\administrators_authorized_keys -Value ([Console]::In.ReadToEnd().Trim())"'</code></li>
 <li><b>192.168.1.2 (lab, Linux):</b> sadece board. <code>BOARD_ACCESS=bot</code>: güç bot'tan, konsol bot'un portmap köprüsünden (<code>BOARD_CONSOLE=lab/COM21</code>; aşama <code>pm start lab com21 owner=&lt;proje&gt;/&lt;siz&gt;</code> ile TCP akışı açar, bitince kapatır; konsol başkasındaysa durur ve kimde olduğunu söyler), JTAG builder'daki xsdb'den hw_server'a. <code>BOARD_ACCESS=ssh</code>: kullanıcı <code>root</code>; bu anahtar yalnızca lab yöneticisinde ve CI'da olur, developer'a verilmez.</li>
 </ul>
-check aşaması ve twin 1.2'ye girmez. <code>pnpm factory -- env-check</code> her aşamanın hangi yoldan hangi host'a gittiğini listeler. CI kendi anahtarlarını kullanır, sizinkilere ihtiyacı yoktur.</div>
+check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Docker'ında bot üzerinden koşar (ELF bot'un deposuna gider, sonuç arşiv olarak gelir), <code>ssh</code> ile kendi Docker'ınızda. <code>pnpm factory -- env-check</code> her aşamanın hangi yoldan hangi host'a gittiğini listeler. CI kendi anahtarlarını kullanır, sizinkilere ihtiyacı yoktur.</div>
 <p>Proje GitLab'da açılır (<code>agentic</code> grubu), runner'ı Settings → CI/CD → Runners'tan etkinleştirin. Lab'ın ortak ayarları (Vivado host, lab host, SSH anahtarları, bot ve twin token'ları) GitLab instance düzeyinde tanımlıdır; projeye yalnızca karta özgü değerler girer: <code>pnpm factory -- ci-variables --write --with-secrets</code> bunu yapar ve ortak olanları atlar.</p>
 
 <h2>3. Proje yerleşimi</h2>

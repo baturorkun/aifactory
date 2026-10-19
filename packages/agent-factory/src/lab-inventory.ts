@@ -43,6 +43,9 @@ export const LabInventorySchema = z.object({
     twinBasePath: z.string().startsWith('/'),
     hwServer: z.string().regex(/^[A-Za-z0-9._-]+:\d+$/),
     xsdbBin: z.string().min(1),
+    // The bot's name for this host (its Linux device host id): with one, a new
+    // project runs the twin on this host's Docker through the bot (RQ-0056).
+    botAgent: z.string().regex(/^[A-Za-z0-9_-]+$/).optional(),
   }),
   bot: z.object({ url: z.string().url() }).optional(),
   twin: z.object({ gitlab: z.string().url(), registry: z.string().min(1) }).optional(),
@@ -87,6 +90,8 @@ export function embeddedEnvValues(
     VIVADO_REMOTE_PROJECT_NAME: hostProject,
     VIVADO_BIN: inventory.vivado.vivadoBin,
     VITIS_BIN: inventory.vivado.vitisBin,
+    TWIN_ACCESS: inventory.lab.botAgent ? 'bot' : 'ssh',
+    ...(inventory.lab.botAgent ? { TWIN_BOT_AGENT: inventory.lab.botAgent } : {}),
     TWIN_HOST_TYPE: inventory.lab.hostType,
     TWIN_REMOTE_HOST: inventory.lab.host,
     TWIN_REMOTE_USER: inventory.lab.user,

@@ -49,6 +49,9 @@ test('a new embedded project takes its hosts and its board unit from the invento
     // A unit whose console the bot serves is reached through the bot (RQ-0055).
     assert.equal(env.BOARD_ACCESS, 'bot');
     assert.equal(env.BOARD_CONSOLE, 'lab/COM21');
+    // The twin runs on the lab host's Docker through the bot (RQ-0056).
+    assert.equal(env.TWIN_ACCESS, 'bot');
+    assert.equal(env.TWIN_BOT_AGENT, 'lab');
     assert.equal(env.TWIN_REMOTE_HOST, '192.168.1.2');
     assert.equal(env.GITLAB_PROJECT_ID, 'agentic/fw');
     // One copy per person on each host.
