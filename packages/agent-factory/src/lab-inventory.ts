@@ -34,6 +34,9 @@ export const LabInventorySchema = z.object({
     basePath: z.string().min(1),
     vivadoBin: z.string().min(1),
     vitisBin: z.string().min(1),
+    // Vivado runs at once for one build (launch_runs -jobs, RQ-0061): sized so two
+    // developers building together fill the host and do not overload it.
+    jobs: z.number().int().positive().optional(),
     version: z.string().min(1),
   }),
   lab: z.object({
@@ -84,6 +87,7 @@ export function embeddedEnvValues(
     VIVADO_REMOTE_BASE_PATH: inventory.vivado.basePath,
     VIVADO_BIN: inventory.vivado.vivadoBin,
     VITIS_BIN: inventory.vivado.vitisBin,
+    ...(inventory.vivado.jobs ? { VIVADO_JOBS: String(inventory.vivado.jobs) } : {}),
     TWIN_ACCESS: inventory.lab.botAgent ? 'bot' : 'ssh',
     ...(inventory.lab.botAgent ? { TWIN_BOT_AGENT: inventory.lab.botAgent } : {}),
     TWIN_HOST_TYPE: inventory.lab.hostType,

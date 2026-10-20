@@ -825,6 +825,23 @@ test('the bot client sends an upload or a download again when the connection dro
   }
 });
 
+test('the Vivado runs at once: --jobs, else VIVADO_JOBS, else 4', async () => {
+  const project = scaffold();
+  try {
+    const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as {
+      parseArguments: (argv: string[]) => { jobs?: number };
+      vivadoJobs: (options: { jobs?: number }, env: Record<string, string>) => number;
+    };
+    assert.equal(flow.vivadoJobs(flow.parseArguments(['build']), {}), 4);
+    assert.equal(flow.vivadoJobs(flow.parseArguments(['build']), { VIVADO_JOBS: '8' }), 8);
+    assert.equal(flow.vivadoJobs(flow.parseArguments(['build', '--jobs', '2']), { VIVADO_JOBS: '8' }), 2, '--jobs wins');
+    assert.throws(() => flow.vivadoJobs(flow.parseArguments(['build']), { VIVADO_JOBS: 'many' }), /VIVADO_JOBS must be a positive integer, not "many"/);
+    assert.match(project.read('.env.example'), /^VIVADO_JOBS=$/m);
+  } finally {
+    project.done();
+  }
+});
+
 test('the twin stage says when there is nothing to run, and names what is missing', () => {
   const project = scaffold();
   try {

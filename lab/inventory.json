@@ -28,6 +28,7 @@
     "basePath": "C:\\ab",
     "vivadoBin": "C:\\Xilinx\\2025.2\\Vivado\\bin\\vivado.bat",
     "vitisBin": "C:\\Xilinx\\2025.2\\Vitis\\bin\\vitis.bat",
+    "jobs": 8,
     "version": "2025.2"
   },
   "lab": {
