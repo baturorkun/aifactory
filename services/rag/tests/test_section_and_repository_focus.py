@@ -138,7 +138,7 @@ def part_row(chunk_id: int, part: int, section: str = "Guide > Ports > ARINC 429
 
 class SectionTests(unittest.TestCase):
     def expand(self, chunks: list[RetrievedChunk], rows: list[dict[str, object]], top_k: int = 6, section_parts: int = 2):
-        cursor = Cursor([("c.metadata->>'section' = %s", rows)])
+        cursor = Cursor([("c.metadata->>%s = %s", rows)])
         with patch.object(responder, "connect", return_value=Connection(cursor)):
             return responder._expand_sections(config(top_k=top_k, section_parts=section_parts), chunks), cursor
 
@@ -153,7 +153,16 @@ class SectionTests(unittest.TestCase):
         self.assertEqual([c.chunk_id for c in expanded], [8, 9, 10, 20, 21, 22])
         self.assertEqual(expanded[1].metadata["foundBy"], "section")
         statement, params = cursor.executed[0]
-        self.assertEqual(params, (1, section, 1, 3))
+        self.assertEqual(params, (1, "section", section, 1, 3))
+
+    def test_a_part_of_a_split_code_symbol_brings_its_other_parts(self) -> None:
+        # RQ-0064: a table or function too long for one chunk is told by its symbol.
+        table = hit(30, "sw/src/main.c", 0.8, symbol="adv_cfg", symbolKind="variable", part=1, parts=2)
+        rows = [{"chunk_id": 31, "document_id": 1, "source_id": "s", "relative_path": "sw/src/main.c",
+                 "text": "{0x26, 0x01}", "metadata": {"symbol": "adv_cfg", "part": 2, "parts": 2}}]
+        expanded, cursor = self.expand([table, hit(20), hit(21)], rows)
+        self.assertEqual([c.chunk_id for c in expanded], [30, 31, 20, 21])
+        self.assertEqual(cursor.executed[0][1], (1, "symbol", "adv_cfg", 1, 3))
 
     def test_a_part_already_retrieved_is_not_added_twice_and_the_limit_holds(self) -> None:
         section = "Guide > Ports > ARINC 429 in: UDP 5429"

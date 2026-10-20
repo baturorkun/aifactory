@@ -6,7 +6,9 @@ symbol name, so a question about a function by name retrieves whatever text
 happens to sit near the name. Here the file is parsed with tree-sitter and cut
 at symbol boundaries instead: each function, method, class, struct, enum,
 typedef and macro becomes its own chunk with its name, kind, signature and line
-range, and whatever lies between them (includes, imports, globals) is kept in
+range, and so does a C or C++ table, a file-scope variable with a brace
+initializer (RQ-0064: a register table cut mid-element lost its second half);
+whatever lies between them (includes, imports, other globals) is kept in
 file-level chunks. The chunking depends on the language only, never on where
 the file came from.
 """
@@ -27,6 +29,10 @@ from aifactory_rag.ingest.chunker import chunk_text
 # SIZE_CHUNKER.
 SIZE_CHUNKER = "size-v1"
 SYMBOL_CHUNKER = "symbol-v1"
+# C and C++ tables became symbols (RQ-0064): those files are chunked again,
+# the other languages' chunks did not change.
+TABLE_CHUNKER = "symbol-v2"
+TABLE_LANGUAGES = {"c", "cpp"}
 
 LANGUAGE_BY_EXTENSION = {
     # A .h is read as C: the embedded firmware these corpora hold is C, and the
@@ -118,7 +124,10 @@ def language_for(relative_path: str) -> str | None:
 
 
 def expected_chunker(relative_path: str) -> str:
-    return SYMBOL_CHUNKER if language_for(relative_path) else SIZE_CHUNKER
+    language = language_for(relative_path)
+    if not language:
+        return SIZE_CHUNKER
+    return TABLE_CHUNKER if language in TABLE_LANGUAGES else SYMBOL_CHUNKER
 
 
 def chunk_code(text: str, relative_path: str, chunk_size: int, chunk_overlap: int) -> list[CodeChunk] | None:
@@ -269,6 +278,17 @@ def _symbol(node: Any, source: bytes, scope: str, language: str) -> _Symbol | No
     if kind in MACRO_KINDS:
         name = _field_text(node, source, "name")
         return _make(node, source, "macro", name, None) if name else None
+
+    if kind == "declaration" and language in TABLE_LANGUAGES:
+        # A table: `static const uint8_t adv_cfg[][2] = {...};` is read and
+        # asked about whole, by its name, as a function is.
+        for declarator in node.children_by_field_name("declarator"):
+            value = declarator.child_by_field_name("value") if declarator.type == "init_declarator" else None
+            if value is not None and value.type == "initializer_list":
+                name = _declarator_name(declarator.child_by_field_name("declarator"), source)
+                if name:
+                    return _make(node, source, "variable", _qualify(scope, name, language), value)
+        return None
 
     if kind in {"function_declaration", "generator_function_declaration"}:
         name = _field_text(node, source, "name")
