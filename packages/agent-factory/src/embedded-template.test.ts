@@ -1,14 +1,14 @@
 // The embedded template (RQ-0044): the Vivado/Vitis flow, its design check,
 // the phase-ordered gates and the CI that runs them.
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFile, spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { deflateRawSync } from 'node:zlib';
+import { deflateRawSync, gunzipSync, gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { DEFAULT_EMBEDDED_PHASES, embeddedPhaseList, embeddedPhaseReached } from '@aifactory/contracts';
 import { runAllGates, type GateReport } from '@aifactory/quality-gates';
@@ -594,7 +594,12 @@ async function hostModule(root: string) {
     hostAccess: (env: Record<string, string>) => string;
     hostSettings: (env: Record<string, string>, prefix?: string) => { access: string; remote: boolean; host: string; botAgent?: string };
     botRunnerScript: (job: { settings: unknown; jobDirectory: string; command: string[] }) => string;
-    botPrepareScript: (job: { settings: unknown; jobDirectory: string; archiveUrl: string; entries: string[]; command: string[]; directories: string[] }) => string;
+    botDiffScript: (job: { settings: unknown; jobDirectory: string; manifestUrl: string }) => string;
+    botSyncScript: (job: { settings: unknown; jobDirectory: string; partUrls: string[]; entries: string[]; directories: string[] }) => string;
+    botStartScript: (job: { settings: unknown; jobDirectory: string; command: string[] }) => string;
+    sourceManifest: (root?: string) => { path: string; size: number; hash: string }[];
+    parseRanges: (text: string) => number[];
+    chunkBytes: (env: Record<string, string>) => number;
     botStatusScript: (job: { jobDirectory: string; offset: number }) => string;
     botCollectScript: (job: { settings: unknown; jobDirectory: string; pulls: string[] }) => string;
     botStopScript: (job: { jobDirectory: string }) => string;
@@ -607,8 +612,9 @@ async function hostModule(root: string) {
 // PowerShell steps (told apart by their "# aifactory: <step>" line), the
 // store, the upload-file job. The steps' answers are canned; what the real
 // PowerShell does is checked by parsing the scripts (when pwsh is here).
-function fakeBuilderBot(resultsArchive: string, exitCode: number) {
-  const seen = { steps: [] as string[], scripts: {} as Record<string, string>, uploads: {} as Record<string, number>, uploadFile: undefined as undefined | string[], tokens: new Set<string>(), requestedBy: new Set<string>() };
+// `need` is what the diff step answers: every file in the list, or none.
+function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 'none' = 'all') {
+  const seen = { steps: [] as string[], scripts: {} as Record<string, string>, uploads: {} as Record<string, number>, stored: {} as Record<string, Buffer>, uploadFile: undefined as undefined | string[], tokens: new Set<string>(), requestedBy: new Set<string>() };
   let polls = 0;
   const server = createHttpServer((req, res) => {
     const url = req.url ?? '';
@@ -623,6 +629,7 @@ function fakeBuilderBot(resultsArchive: string, exitCode: number) {
       if (req.method === 'PUT' && url.startsWith('/api/agents/builder/files/')) {
         const name = decodeURIComponent(url.split('/').pop() ?? '');
         seen.uploads[name] = body.length;
+        seen.stored[name] = body;
         return json(200, { ok: true, url: `http://127.0.0.1/download/agent-files/builder/${name}`, size: body.length });
       }
       if (req.method === 'POST' && url.startsWith('/api/agents/builder/pwsh')) {
@@ -631,7 +638,13 @@ function fakeBuilderBot(resultsArchive: string, exitCode: number) {
         seen.steps.push(step);
         seen.scripts[step] = script;
         const done = (stdout: string) => json(200, { id: `ps-${seen.steps.length}`, agent_id: 'builder', command: 'ps', status: 'succeeded', exit_code: 0, stdout, stderr: '', error: '' });
-        if (step === 'prepare') return done('STATUS=STARTED\nPID=4242\n');
+        if (step === 'diff') {
+          const manifest = Object.entries(seen.stored).find(([name]) => name.endsWith('-manifest.gz'))?.[1];
+          const files = manifest ? gunzipSync(manifest).toString('utf8').split('\n').filter(Boolean).length : 0;
+          return done(`STATUS=OK\nFILES=${files}\nNEED=${need === 'all' && files > 0 ? `0-${files - 1}` : ''}\n`);
+        }
+        if (step === 'sync') return done('STATUS=SYNCED\nREMOVED=0\n');
+        if (step === 'start') return done('STATUS=STARTED\nPID=4242\n');
         if (step === 'status') {
           polls += 1;
           if (polls === 1) return done('STATUS=RUNNING\nOFFSET=20\nLOG:\nRunning on BUILDER\n');
@@ -689,7 +702,9 @@ test('the build stages over the bot: the sources through the store, the command 
     const jobDirectory = 'C:\\ab\\.fw-ada-job-1';
     const scripts = {
       runner: host.botRunnerScript({ settings, jobDirectory, command: ['C:\\Xilinx\\vivado.bat', '-mode', 'batch'] }),
-      prepare: host.botPrepareScript({ settings, jobDirectory, archiveUrl: 'http://bot/download/agent-files/builder/src.tar.gz', entries: ['designs', 'flow.tcl'], command: ['C:\\Xilinx\\vivado.bat', '-mode', 'batch'], directories: ['out/led_counter'] }),
+      diff: host.botDiffScript({ settings, jobDirectory, manifestUrl: 'http://bot/download/agent-files/builder/m.gz' }),
+      sync: host.botSyncScript({ settings, jobDirectory, partUrls: ['http://bot/download/agent-files/builder/src.tar.gz'], entries: ['designs', 'flow.tcl'], directories: ['out/led_counter'] }),
+      start: host.botStartScript({ settings, jobDirectory, command: ['C:\\Xilinx\\vivado.bat', '-mode', 'batch'] }),
       status: host.botStatusScript({ jobDirectory, offset: 20 }),
       collect: host.botCollectScript({ settings, jobDirectory, pulls: ['out/led_counter/artifacts'] }),
       stop: host.botStopScript({ jobDirectory }),
@@ -699,8 +714,9 @@ test('the build stages over the bot: the sources through the store, the command 
       if (name !== 'runner') assert.match(script, new RegExp(`^# aifactory: ${name}$`, 'm'));
       assert.doesNotMatch(script, /`/, `${name}: no PowerShell backtick escapes (they end a JS template)`);
     }
-    assert.match(scripts.prepare, /Start-Process -FilePath 'powershell\.exe'[^\n]*-File/, 'the command runs in the background');
-    assert.match(scripts.prepare, /Unsafe entry/);
+    assert.match(scripts.start, /Start-Process -FilePath 'powershell\.exe'[^\n]*-File/, 'the command runs in the background');
+    assert.match(scripts.sync, /Unsafe entry/);
+    assert.ok(scripts.sync.includes("-match '[\\\\/]'"), 'an entry with either separator is refused');
     assert.match(scripts.runner, /Set-Content -Path \(Join-Path \$Job 'exit\.txt'\)/);
     assert.match(scripts.stop, /taskkill\.exe \/PID \$ProcessId \/T \/F/);
     const pwsh = spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { stdio: 'pipe' });
@@ -730,13 +746,19 @@ test('the build stages over the bot: the sources through the store, the command 
       assert.match(result.stdout, /Running on BUILDER[\s\S]*xsim finished/, 'the log as it grew');
       assert.match(result.stdout, /Brought back out\/led_counter\/artifacts/);
       assert.equal(project.read('out/led_counter/artifacts/sim.log'), 'from the builder\n');
-      assert.deepEqual(bot.seen.steps, ['prepare', 'status', 'status', 'collect', 'clean']);
-      assert.equal(Object.keys(bot.seen.uploads).length, 1, 'one source archive in the store');
-      assert.match(Object.keys(bot.seen.uploads)[0], /^fw-ada-\d+-\d+-src\.tar\.gz$/);
-      assert.ok(bot.seen.uploads[Object.keys(bot.seen.uploads)[0]] > 100, 'the archive has the sources');
+      assert.deepEqual(bot.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+      const [manifestName, archiveName] = Object.keys(bot.seen.uploads);
+      assert.match(manifestName, /^fw-ada-\d+-\d+-manifest\.gz$/, 'the list first');
+      assert.match(archiveName, /^fw-ada-\d+-\d+-src\.tar\.gz$/, 'then one archive: under 8 MB, no parts');
+      assert.equal(Object.keys(bot.seen.uploads).length, 2);
+      assert.ok(bot.seen.uploads[archiveName] > 100, 'the archive has the sources');
+      const listed = gunzipSync(bot.seen.stored[manifestName]).toString('utf8').split('\n').filter(Boolean);
+      assert.ok(listed.some((line) => /^[0-9a-f]{64}\t\d+\tscripts\/flow\.mjs$/.test(line)), 'sha256, size, path');
+      assert.ok(!listed.some((line) => /\t(\.env|out\/.*|node_modules\/.*)$/.test(line)), 'what the archive always left out stays out');
+      assert.match(result.stdout, new RegExp(`Sources: ${listed.length} of ${listed.length} files changed \\(\\d+ KB\\) sent to builder`));
       // Values travel base64-encoded JSON, so cmd.exe's quoting never sees them.
-      const archiveUrl = `http://127.0.0.1/download/agent-files/builder/${Object.keys(bot.seen.uploads)[0]}`;
-      assert.ok(bot.seen.scripts.prepare.includes(Buffer.from(JSON.stringify(archiveUrl)).toString('base64')), 'the prepare step fetches the archive the stage put in the store');
+      const archiveUrl = `http://127.0.0.1/download/agent-files/builder/${archiveName}`;
+      assert.ok(bot.seen.scripts.sync.includes(Buffer.from(JSON.stringify([archiveUrl])).toString('base64')), 'the sync step fetches the archive the stage put in the store');
       assert.deepEqual(bot.seen.uploadFile?.[0], 'C:\\ab\\.fw-ada-job-1\\results.tar.gz');
       assert.match(bot.seen.uploadFile?.[1] ?? '', /^fw-ada-\d+-\d+-results\.tar\.gz$/);
       assert.deepEqual([...bot.seen.tokens], ['Bearer bot-token']);
@@ -751,18 +773,152 @@ test('the build stages over the bot: the sources through the store, the command 
     const failing = fakeBuilderBot(join(results, 'results.tar.gz'), 3);
     const port2 = await failing.listen();
     try {
-      writeFileSync(join(project.root, '.env'), env().replace(`127.0.0.1:${port}`, `127.0.0.1:${port2}`));
+      writeFileSync(join(project.root, '.env'), env('BOT_API_CHUNK_KB=4').replace(`127.0.0.1:${port}`, `127.0.0.1:${port2}`));
       const result = await flowAsync(project.root, 'sim', 'led_counter');
       assert.equal(result.status, 3, result.stderr + result.stdout);
       assert.match(result.stderr, /failed with exit code 3/);
-      assert.deepEqual(failing.seen.steps, ['prepare', 'status', 'status', 'collect', 'clean']);
+      assert.deepEqual(failing.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+      // Over BOT_API_CHUNK_KB the archive goes in parts, each its own upload, joined in order on the builder.
+      const parts = Object.keys(failing.seen.uploads).filter((name) => /-src\.tar\.gz\.part\d{3}$/.test(name));
+      assert.ok(parts.length > 1, `in parts: ${Object.keys(failing.seen.uploads).join(', ')}`);
+      assert.ok(Object.entries(failing.seen.uploads).every(([name, size]) => !name.includes('.part') || size <= 4096));
+      const joined = Buffer.concat(parts.map((name) => failing.seen.stored[name]));
+      assert.ok(gunzipSync(joined).length > 0, 'the parts join into the archive');
+      const urls = parts.map((name) => `http://127.0.0.1/download/agent-files/builder/${name}`);
+      assert.ok(failing.seen.scripts.sync.includes(Buffer.from(JSON.stringify(urls)).toString('base64')), 'the sync step gets every part, in order');
+      assert.match(result.stdout, /Sources: part 1 of \d+/);
     } finally {
       failing.server.closeAllConnections();
       failing.server.close();
     }
+
+    // Nothing changed on the builder's side: no archive at all.
+    const unchanged = fakeBuilderBot(join(results, 'results.tar.gz'), 0, 'none');
+    const port3 = await unchanged.listen();
+    try {
+      writeFileSync(join(project.root, '.env'), env().replace(`127.0.0.1:${port}`, `127.0.0.1:${port3}`));
+      const result = await flowAsync(project.root, 'sim', 'led_counter');
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.match(result.stdout, /Sources: up to date on builder \(\d+ files\)/);
+      assert.deepEqual(Object.keys(unchanged.seen.uploads).filter((name) => !name.endsWith('-manifest.gz')), [], 'only the list goes up');
+      assert.deepEqual(unchanged.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+    } finally {
+      unchanged.server.closeAllConnections();
+      unchanged.server.close();
+    }
   } finally {
     project.done();
     rmSync(results, { recursive: true, force: true });
+  }
+});
+
+// The diff and sync steps as the builder runs them, under PowerShell (pwsh
+// here, Windows PowerShell there) against a project copy in a directory: the
+// store is a small HTTP server, the archive is made as the stage makes it.
+test('the sources go to the builder only as they change: the diff and sync steps under PowerShell', async (t) => {
+  if (spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { stdio: 'pipe' }).status !== 0) {
+    t.skip('pwsh is not installed');
+    return;
+  }
+  const project = scaffold();
+  const work = mkdtempSync(join(tmpdir(), 'builder-sync-'));
+  const stored = new Map<string, Buffer>();
+  const server = createHttpServer((req, res) => {
+    const body = stored.get(decodeURIComponent((req.url ?? '').slice(1)));
+    res.writeHead(body ? 200 : 404);
+    res.end(body ?? '');
+  });
+  const port = await new Promise<number>((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port)));
+  const pwsh = (script: string, name: string) => new Promise<string>((resolve, reject) => {
+    const path = join(work, `${name}.ps1`);
+    writeFileSync(path, script);
+    execFile('pwsh', ['-NoProfile', '-NonInteractive', '-File', path], (error, stdout, stderr) => (error ? reject(new Error(`${name}: ${stderr || stdout}`)) : resolve(stdout)));
+  });
+  try {
+    const host = await hostModule(project.root);
+    const settings = { remote: true, hostType: 'linux', basePath: join(work, 'host'), projectName: 'fw-ada' };
+    const copy = join(work, 'host', 'fw-ada');
+    const entries = readdirSync(project.root).filter((name) => !['.env', '.git', '.DS_Store', 'node_modules', 'out', 'references', 'runs', 'handoffs'].includes(name) && !name.endsWith('.log')).sort();
+    let round = 0;
+    // One sync as the stage does it: the list, the diff, the needed files in `parts` parts, the sync.
+    // `plain`: the list as Invoke-WebRequest leaves it when the bot serves the
+    // .gz with Content-Encoding: gzip, as it does.
+    const sync = async (parts = 1, plain = false) => {
+      round += 1;
+      const jobDirectory = join(work, `job-${round}`);
+      const files = host.sourceManifest(project.root);
+      const list = Buffer.from(files.map((file) => `${file.hash}\t${file.size}\t${file.path}\n`).join(''));
+      stored.set(`m${round}.gz`, plain ? list : gzipSync(list));
+      const diff = host.parseStep(await pwsh(host.botDiffScript({ settings, jobDirectory, manifestUrl: `http://127.0.0.1:${port}/m${round}.gz` }), 'diff'));
+      assert.equal(Number(diff.FILES), files.length);
+      const needed = host.parseRanges(diff.NEED).map((index) => files[index].path);
+      const partUrls: string[] = [];
+      if (needed.length > 0) {
+        writeFileSync(join(work, 'list'), needed.map((path) => `${path}\n`).join(''));
+        const tar = spawnSync('tar', ['-czf', join(work, 'src.tar.gz'), '-T', join(work, 'list')], { cwd: project.root, stdio: 'pipe', env: { ...process.env, COPYFILE_DISABLE: '1' } });
+        assert.equal(tar.status, 0, String(tar.stderr));
+        const data = readFileSync(join(work, 'src.tar.gz'));
+        const size = Math.ceil(data.length / parts);
+        for (let part = 0; part < parts; part += 1) {
+          stored.set(`s${round}.${part}`, data.subarray(part * size, (part + 1) * size));
+          partUrls.push(`http://127.0.0.1:${port}/s${round}.${part}`);
+        }
+      }
+      const synced = host.parseStep(await pwsh(host.botSyncScript({ settings, jobDirectory, partUrls, entries, directories: ['out/led_counter'] }), 'sync'));
+      assert.equal(synced.STATUS, 'SYNCED');
+      return { needed, removed: Number(synced.REMOVED) };
+    };
+    const flow = 'scripts/flow.mjs';
+    const sameAsHere = (path: string) => readFileSync(join(copy, path)).equals(readFileSync(join(project.root, path)));
+
+    // The first sync sends everything, in three parts joined in order; the copy is the project.
+    const first = await sync(3);
+    assert.equal(first.needed.length, host.sourceManifest(project.root).length);
+    assert.equal(first.removed, 0);
+    for (const file of host.sourceManifest(project.root)) assert.ok(sameAsHere(file.path), file.path);
+    assert.ok(existsSync(join(copy, 'out/led_counter')), 'the directories the command needs');
+    assert.match(readFileSync(join(copy, '.aifactory-sync'), 'utf8'), /^[0-9a-f]{64}\t\d+\t\d+\tscripts\/flow\.mjs$/m, 'the sync is recorded');
+
+    // Nothing changed: nothing to send (the list read unpacked as well).
+    assert.deepEqual(await sync(1, true), { needed: [], removed: 0 });
+
+    // One file changed here: that file alone.
+    writeFileSync(join(project.root, flow), `${readFileSync(join(project.root, flow), 'utf8')}\n// changed\n`);
+    assert.deepEqual((await sync()).needed, [flow]);
+    assert.ok(sameAsHere(flow));
+
+    // A file deleted here goes there too, and its emptied directory with it;
+    // what the stages leave (out/) and stray files outside the sources stay.
+    mkdirSync(join(project.root, 'notes/deep'), { recursive: true });
+    writeFileSync(join(project.root, 'notes/deep/a.txt'), 'a\n');
+    assert.deepEqual((await sync()).needed, ['notes/deep/a.txt']);
+    rmSync(join(project.root, 'notes'), { recursive: true });
+    writeFileSync(join(copy, 'out/led_counter/kept.txt'), 'a stage left this\n');
+    const deleted = await sync();
+    assert.deepEqual(deleted, { needed: [], removed: 1 });
+    assert.ok(!existsSync(join(copy, 'notes')), 'the emptied directories go');
+    assert.ok(existsSync(join(copy, 'out/led_counter/kept.txt')), 'out/ stays');
+
+    // Changed there (a file of the sources edited on the builder, a stray file
+    // among them): the source is sent again, the stray file goes.
+    writeFileSync(join(copy, flow), 'edited on the builder\n');
+    writeFileSync(join(copy, 'scripts/stray.tcl'), 'left by a tool\n');
+    const repaired = await sync();
+    assert.deepEqual(repaired, { needed: [flow], removed: 1 });
+    assert.ok(sameAsHere(flow));
+    assert.ok(!existsSync(join(copy, 'scripts/stray.tcl')));
+
+    // The ranges the diff step answers with.
+    assert.deepEqual(host.parseRanges('0-2,5,7-8'), [0, 1, 2, 5, 7, 8]);
+    assert.deepEqual(host.parseRanges(''), []);
+    assert.throws(() => host.parseRanges('4-2'), /Not an index range: 4-2/);
+    assert.equal(host.chunkBytes({}), 8192 * 1024);
+    assert.equal(host.chunkBytes({ BOT_API_CHUNK_KB: '64' }), 64 * 1024);
+    assert.throws(() => host.chunkBytes({ BOT_API_CHUNK_KB: 'big' }), /BOT_API_CHUNK_KB must be a positive whole number/);
+  } finally {
+    server.close();
+    project.done();
+    rmSync(work, { recursive: true, force: true });
   }
 });
 

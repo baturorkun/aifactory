@@ -22,7 +22,7 @@ test('the lab inventory describes the lab as found on 17 October, and holds no s
   assert.ok(inventory, 'lab/inventory.json is there');
   assert.equal(inventory.vivado.host, '192.168.1.3');
   assert.equal(inventory.vivado.version, '2025.2');
-  // The junction that keeps Vitis' BSP paths under the Windows limit (RQ-0048).
+  // The short directory that keeps Vitis' BSP paths under the Windows limit (RQ-0048).
   assert.equal(inventory.vivado.basePath, 'C:\\ab');
   assert.equal(inventory.lab.hwServer, '192.168.1.2:3121');
   assert.deepEqual(inventory.units.zedboard, {
