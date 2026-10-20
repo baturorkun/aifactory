@@ -40,7 +40,7 @@
 <header>
   <h1>Embedded Template Kullanım Kılavuzu</h1>
   <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
-  <p class="meta">aifactory v0.62 (RQ-0044…RQ-0062) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
+  <p class="meta">aifactory v0.63 (RQ-0044…RQ-0063) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
 </header>
 
 <h2>1. Template ne yapar</h2>
@@ -77,7 +77,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 <tr><td><code>designs/&lt;tasarım&gt;/project.tcl</code></td><td>Tasarımın tanımı: part, mode (<code>non_project</code> saf RTL / <code>project</code> block design + PS), top, VITIS cpu</td></tr>
 <tr><td><code>designs/&lt;tasarım&gt;/src, constraints, tb</code></td><td>HDL, XDC, self-checking testbench'ler (<code>tb_*.vhd|v|sv</code>)</td></tr>
 <tr><td><code>designs/&lt;tasarım&gt;/tcl/bd.tcl</code></td><td>Block design (project mode)</td></tr>
-<tr><td><code>designs/&lt;tasarım&gt;/sw/src</code>, <code>sw/create_vitis.py</code></td><td>Firmware kaynakları ve Vitis workspace script'i</td></tr>
+<tr><td><code>designs/&lt;tasarım&gt;/sw/src</code>, <code>sw/create_vitis.py</code></td><td>Firmware kaynakları ve Vitis script'i (işi template'in <code>scripts/vitis_sw.py</code>'sine devreder)</td></tr>
 <tr><td><code>designs/&lt;tasarım&gt;/test.yaml</code></td><td>Twin ve board testinin beklentileri: <code>timeout_s</code>, <code>expect</code>, <code>fail_on</code>, <code>summary</code></td></tr>
 <tr><td><code>boards/&lt;kart&gt;.yaml</code></td><td>Kart: vendor, tool, tool_version, part, pinler, clock, lab programlayıcı; isteğe bağlı <code>twin:</code></td></tr>
 <tr><td><code>scripts/flow.mjs</code>, <code>flow.tcl</code>, <code>common/</code></td><td>Akış; template'e aittir, <code>factory template update</code> ile güncellenir</td></tr>
@@ -148,7 +148,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 
 <h2 class="pb">10. Bilinen durumlar</h2>
 <ul>
-<li><b>Windows yol sınırı (260):</b> Vitis BSP uzun yollarda derlenmez. Host'taki base path <code>C:\ab</code> kısa ve gerçek bir klasördür (junction değil: Vivado junction'ı uzun hedef yoluna çözer); akış BSP yolunu build'den önce tahmin eder ve aşacaksa parçalarıyla uyarır.</li>
+<li><b>Windows yol sınırı (259):</b> Vitis'in gcc'si 259 karakteri aşan yolu açamaz; <code>LongPathsEnabled</code> da çözmez, çünkü gcc uzun yol desteğini bildirmiyor. Bu yüzden Windows'ta Vitis workspace'i proje kopyasının içinde değil, <code>C:\ab\.v\&lt;8 haneli kod&gt;</code> altındadır ve platformun adı sabittir (<code>platform</code>); en uzun yol, proje ve tasarım adı ne olursa olsun 194 karakterdir. <code>C:\ab</code> kısa ve gerçek bir klasördür (junction değil: Vivado junction'ı uzun hedef yoluna çözer). Eski bir template'le açılmış tasarımın <code>sw/create_vitis.py</code>'si workspace'i hâlâ <code>out/&lt;tasarım&gt;/vitis</code>'e koyar: akış yolu build'den önce tahmin eder, aşacaksa parçalarıyla durur. Çözüm, o dosyayı template'teki <code>hello_ps/sw/create_vitis.py</code> ile değiştirmektir (dosyada tasarım adı geçmez).</li>
 <li><b>Dosyalar 200 KB'da kesik geliyorsa:</b> Windows OpenSSH'ın SFTP'si; akış Windows host'ta <code>scp -O</code> kullanır. Bitstream'ler ~4 MB tam gelmeli.</li>
 <li><b><code>vitis -s</code> hata verse de 0 ile çıkar:</b> ELF kanıttır; eski ELF build'den önce silinir, yoksa stage düşer.</li>
 <li><b>Vivado sürümü:</b> board dosyasındaki <code>tool_version</code> ile host'taki sürüm eşleşmezse build durur; sürüm değişikliği ayrı requirement'tır (IP'leri yükseltir).</li>
