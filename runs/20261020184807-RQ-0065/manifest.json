@@ -1,0 +1,36 @@
+{
+  "runId": "20261020184807-RQ-0065",
+  "requirementId": "RQ-0065",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020184807-RQ-0065/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-20T18:48:07.800Z",
+  "updatedAt": "2026-10-20T18:49:02.829Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T18:48:13.211Z",
+      "finishedAt": "2026-10-20T18:49:02.829Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/templates/embedded/scripts/flow.mjs",
+    "packages/agent-factory/templates/embedded/scripts/vitis_sw.py",
+    "packages/agent-factory/templates/embedded/scripts/vivado-host.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
