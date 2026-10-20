@@ -34,13 +34,28 @@ export function jobOwner(env, projectName = basename(PROJECT_ROOT)) {
   return `${projectName}/${user}`.replace(/[^A-Za-z0-9._@/:-]/g, '_').slice(0, 64);
 }
 
-// fetch's "fetch failed" says nothing; the cause (ECONNREFUSED, ...) does.
-export async function reach(stage, what, request) {
-  try {
-    return await request();
-  } catch (error) {
-    const cause = error?.cause?.code ?? error?.cause?.message ?? error?.message ?? String(error);
-    throw new CommandError(`${stage} FAILED: cannot reach the lab bot for ${what}: ${cause}`, 1);
+// fetch's "fetch failed" says nothing; the cause (ECONNRESET, ...) does.
+// `retries` is for requests that may be sent again unchanged (an upload under
+// the same name, a download, asking for a job): a connection dropped on the
+// way, as a ZeroTier link does now and then, is tried again after a pause
+// (RQ-0060). A request that starts something is never sent twice.
+export const RETRY_PAUSE_MS = () => Number(process.env.BOT_API_RETRY_MS ?? 5000);
+
+const causeOf = (error) => error?.cause?.code ?? error?.cause?.message ?? error?.message ?? String(error);
+
+export async function reach(stage, what, request, { retries = 0 } = {}) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await request();
+    } catch (error) {
+      if (error instanceof CommandError) throw error;
+      if (attempt >= retries) {
+        const tries = retries > 0 ? ` (${attempt + 1} tries)` : '';
+        throw new CommandError(`${stage} FAILED: cannot reach the lab bot for ${what}: ${causeOf(error)}${tries}`, 1);
+      }
+      console.error(`${stage}: ${what}: ${causeOf(error)}; trying again in ${Math.round(RETRY_PAUSE_MS() / 1000)} s (${attempt + 1}/${retries})`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS()));
+    }
   }
 }
 
@@ -66,11 +81,11 @@ export async function botCommand(env, path, stage = 'BOARD') {
 // A file into the bot's store for an agent's jobs; the bot answers with its URL.
 export async function botUpload(env, agent, name, data, stage = 'TWIN') {
   const bot = botSettings(env, stage);
-  const response = await reach(stage, `the upload of ${name}`, () => fetch(`${bot.url}/api/agents/${encodeURIComponent(agent)}/files/${encodeURIComponent(name)}`, {
+  const response = await reach(stage, `the upload of ${name} (${Math.round(data.length / 1024)} KB)`, () => fetch(`${bot.url}/api/agents/${encodeURIComponent(agent)}/files/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${bot.token}`, 'Content-Type': 'application/octet-stream' },
     body: data,
-  }));
+  }), { retries: 3 });
   const body = await answer(response, stage, `the upload of ${name}`);
   return body.url;
 }
@@ -112,7 +127,7 @@ export async function botJobWait(env, job, { deadlineMs, pause = 3000, stage = '
   while (!jobIsFinal(current)) {
     if (now() >= deadlineMs) throw new CommandError(`${stage} FAILED: job ${job.id} did not end in time; the bot still reports it ${current?.status ?? 'unknown'}.`, 1);
     await new Promise((resolve) => setTimeout(resolve, pause));
-    const response = await reach(stage, `job ${job.id}`, () => fetch(`${bot.url}/api/jobs/${encodeURIComponent(job.id)}`, { headers: { Authorization: `Bearer ${bot.token}` } }));
+    const response = await reach(stage, `job ${job.id}`, () => fetch(`${bot.url}/api/jobs/${encodeURIComponent(job.id)}`, { headers: { Authorization: `Bearer ${bot.token}` } }), { retries: 3 });
     current = await answer(response, stage, `job ${job.id}`);
   }
   return current;
@@ -123,8 +138,12 @@ export function outputUrl(job) {
   return /^OUTPUT=(\S+)\s*$/m.exec(job?.stdout ?? '')?.[1];
 }
 
+// The body is read inside the retry: a drop halfway through is a drop too.
 export async function botDownload(url, path, stage = 'TWIN') {
-  const response = await reach(stage, `the output ${url}`, () => fetch(url));
-  if (!response.ok) throw new CommandError(`${stage} FAILED: the bot answered ${response.status} for ${url}.`, 1);
-  writeFileSync(path, Buffer.from(await response.arrayBuffer()));
+  const data = await reach(stage, `the download of ${url}`, async () => {
+    const response = await fetch(url);
+    if (!response.ok) throw new CommandError(`${stage} FAILED: the bot answered ${response.status} for ${url}.`, 1);
+    return Buffer.from(await response.arrayBuffer());
+  }, { retries: 3 });
+  writeFileSync(path, data);
 }
