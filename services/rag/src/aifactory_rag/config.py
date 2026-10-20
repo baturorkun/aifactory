@@ -157,21 +157,13 @@ DEFAULT_INCLUDE = [
     "**/*.graphql",
     "**/*.gql",
     "**/*.dml",
-    # FPGA projects (RQ-0059): HDL, constraints and the Tcl that builds them,
-    # indexed as code. Before this a board's pins (an .xdc) were never in a
-    # corpus that held the board's firmware.
+    # FPGA projects (RQ-0059): HDL, Xilinx constraints and the Tcl that builds
+    # them, indexed as code. Before this a board's pins (an .xdc) were never in
+    # a corpus that held the board's firmware.
     "**/*.v",
-    "**/*.vh",
     "**/*.sv",
-    "**/*.svh",
     "**/*.vhd",
-    "**/*.vhdl",
     "**/*.xdc",
-    "**/*.sdc",
-    "**/*.pdc",
-    "**/*.ucf",
-    "**/*.qsf",
-    "**/*.lpf",
     "**/*.tcl",
     "**/*.simics",
     "**/*.mk",
@@ -227,11 +219,10 @@ class RagSourceConfig(BaseModel):
             "**/*.min.js",
             "**/*.map",
             "**/*.lock",
-            # What an FPGA tool generates beside a project (RQ-0059): Vivado's
-            # IP output and run directories, and Quartus's databases. The
-            # sources, constraints and Tcl a project is made of stay in; a
-            # generated IP model (one transceiver wizard alone is 244 chunks)
-            # would bury them.
+            # What Vivado generates beside a project (RQ-0059): its IP output
+            # and run directories. The sources, constraints and Tcl a project
+            # is made of stay in; a generated IP model (one transceiver wizard
+            # alone is 244 chunks) would bury them.
             "**/*.gen/**",
             "**/*.ip_user_files/**",
             "**/*.cache/**",
@@ -240,7 +231,6 @@ class RagSourceConfig(BaseModel):
             "**/*.hw/**",
             "**/*.srcs/**/ip/**",
             "**/.Xil/**",
-            "**/incremental_db/**",
         ]
     )
     exclude_additions: list[str] = Field(default_factory=list, alias="excludeAdditions")

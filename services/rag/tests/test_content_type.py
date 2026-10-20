@@ -49,18 +49,10 @@ class ContentTypeTests(unittest.TestCase):
 
         for path in (
             "amd/zedboard/prj-2dge-zed/hw/constraints/io.xdc",
-            "hw/timing.sdc",
-            "libero/io.pdc",
-            "ise/board.ucf",
-            "quartus/de10.qsf",
-            "lattice/pins.lpf",
             "hw/bd/system.tcl",
             "rtl/top.v",
-            "rtl/defs.vh",
             "rtl/fifo.sv",
-            "rtl/pkg.svh",
             "rtl/uart.vhd",
-            "rtl/uart_tx.vhdl",
         ):
             self.assertEqual(classify(path), {"contentType": "code"}, path)
             suffix = "." + path.rsplit(".", 1)[1]
@@ -92,7 +84,6 @@ class ContentTypeTests(unittest.TestCase):
             "prj/prj.sim/sim_1/behav/xsim/glbl.v",
             "prj/prj.srcs/sources_1/bd/system/ip/system_vdma_0/system_vdma_0.xdc",
             "prj/.Xil/Vivado-1/x.tcl",
-            "quartus/incremental_db/compiled_partitions/x.v",
         ):
             self.assertFalse(paths.matches(generated), generated)
 
