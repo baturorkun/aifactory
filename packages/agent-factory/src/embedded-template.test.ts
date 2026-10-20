@@ -2,6 +2,7 @@
 // the phase-ordered gates and the CI that runs them.
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer as createHttpServer } from 'node:http';
@@ -640,7 +641,7 @@ async function hostModule(root: string) {
     parseRanges: (text: string) => number[];
     chunkBytes: (env: Record<string, string>) => number;
     botStatusScript: (job: { jobDirectory: string; offset: number }) => string;
-    botCollectScript: (job: { settings: unknown; jobDirectory: string; pulls: string[] }) => string;
+    botCollectScript: (job: { settings: unknown; jobDirectory: string; pulls: string[]; chunkBytes?: number }) => string;
     botStopScript: (job: { jobDirectory: string }) => string;
     botCleanScript: (job: { jobDirectory: string }) => string;
     parseStep: (text: string) => Record<string, string> & { log: string };
@@ -652,8 +653,15 @@ async function hostModule(root: string) {
 // store, the upload-file job. The steps' answers are canned; what the real
 // PowerShell does is checked by parsing the scripts (when pwsh is here).
 // `need` is what the diff step answers: every file in the list, or none.
-function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 'none' = 'all') {
-  const seen = { steps: [] as string[], scripts: {} as Record<string, string>, uploads: {} as Record<string, number>, stored: {} as Record<string, Buffer>, uploadFile: undefined as undefined | string[], tokens: new Set<string>(), requestedBy: new Set<string>() };
+// `resultParts`: how many parts the collect step cuts the results into (RQ-0066).
+function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 'none' = 'all', resultParts = 1) {
+  const seen = { steps: [] as string[], scripts: {} as Record<string, string>, uploads: {} as Record<string, number>, stored: {} as Record<string, Buffer>, uploadFile: undefined as undefined | string[], uploadFiles: [] as string[][], tokens: new Set<string>(), requestedBy: new Set<string>() };
+  const archive = () => readFileSync(resultsArchive);
+  const slice = (part: number) => {
+    const data = archive();
+    const size = Math.ceil(data.length / resultParts);
+    return data.subarray(part * size, (part + 1) * size);
+  };
   let polls = 0;
   const server = createHttpServer((req, res) => {
     const url = req.url ?? '';
@@ -689,7 +697,10 @@ function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 
           if (polls === 1) return done('STATUS=RUNNING\nOFFSET=20\nLOG:\nRunning on BUILDER\n');
           return done(`STATUS=DONE\nEXIT=${exitCode}\nOFFSET=40\nLOG:\nxsim finished\n`);
         }
-        if (step === 'collect') return done('STATUS=OK\nPRESENT=1\nARCHIVE=C:\\ab\\.fw-ada-job-1\\results.tar.gz\n');
+        if (step === 'collect') {
+          const parts = resultParts > 1 ? Array.from({ length: resultParts }, (_, n) => `C:\\ab\\.fw-ada-job-1\\results.tar.gz.part${String(n).padStart(3, '0')}`) : [];
+          return done(`STATUS=OK\nPRESENT=1\nARCHIVE=C:\\ab\\.fw-ada-job-1\\results.tar.gz\nPARTS=${parts.length || 1}\n${parts.length ? `LOG:\n${parts.join('\n')}\n` : ''}`);
+        }
         if (step === 'stop') return done('STATUS=STOPPED\n');
         if (step === 'clean') return done('STATUS=OK\n');
         return json(400, { error: `unknown step in ${script.slice(0, 80)}` });
@@ -698,10 +709,13 @@ function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 
         const job = JSON.parse(body.toString('utf8')) as { command: string; args: string[] };
         if (job.command !== 'upload-file') return json(400, { error: `unexpected job ${job.command}` });
         seen.uploadFile = job.args;
+        seen.uploadFiles.push(job.args);
         const port = (server.address() as { port: number }).port;
         return json(200, { id: 'up-1', agent_id: 'builder', command: 'upload-file', status: 'succeeded', exit_code: 0, stdout: `uploaded_url=http://127.0.0.1:${port}/download/agent-files/builder/${job.args[1]}\nsize=1`, stderr: '', error: '' });
       }
-      if (url.startsWith('/download/agent-files/builder/') && url.endsWith('-results.tar.gz')) { res.writeHead(200, { 'Content-Type': 'application/gzip' }); return res.end(readFileSync(resultsArchive)); }
+      if (url.startsWith('/download/agent-files/builder/') && url.endsWith('-results.tar.gz')) { res.writeHead(200, { 'Content-Type': 'application/gzip' }); return res.end(archive()); }
+      const part = /-results\.tar\.gz\.part(\d{3})$/.exec(url);
+      if (url.startsWith('/download/agent-files/builder/') && part) { res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); return res.end(slice(Number(part[1]))); }
       json(404, { error: `unexpected ${req.method} ${url}` });
     });
   });
@@ -832,7 +846,7 @@ test('the build stages over the bot: the sources through the store, the command 
     }
 
     // Nothing changed on the builder's side: no archive at all.
-    const unchanged = fakeBuilderBot(join(results, 'results.tar.gz'), 0, 'none');
+    const unchanged = fakeBuilderBot(join(results, 'results.tar.gz'), 0, 'none', 3);
     const port3 = await unchanged.listen();
     try {
       writeFileSync(join(project.root, '.env'), env().replace(`127.0.0.1:${port}`, `127.0.0.1:${port3}`));
@@ -841,6 +855,12 @@ test('the build stages over the bot: the sources through the store, the command 
       assert.match(result.stdout, /Sources: up to date on builder \(\d+ files\)/);
       assert.deepEqual(Object.keys(unchanged.seen.uploads).filter((name) => !name.endsWith('-manifest.gz')), [], 'only the list goes up');
       assert.deepEqual(unchanged.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+      // The results in three parts (RQ-0066): each through the store on its own, joined here.
+      assert.deepEqual(unchanged.seen.uploadFiles.map((args) => args[1].replace(/^fw-ada-\d+-\d+-/, '')), ['results.tar.gz.part000', 'results.tar.gz.part001', 'results.tar.gz.part002']);
+      assert.deepEqual(unchanged.seen.uploadFiles.map((args) => args[0].slice(-7)), ['part000', 'part001', 'part002']);
+      assert.match(result.stdout, /Results: part 3 of 3/);
+      assert.equal(project.read('out/led_counter/artifacts/sim.log'), 'from the builder\n');
+      assert.match(unchanged.seen.scripts.collect, /\$ChunkBytes = \[long\]8388608/, 'BOT_API_CHUNK_KB sizes the parts');
     } finally {
       unchanged.server.closeAllConnections();
       unchanged.server.close();
@@ -946,6 +966,29 @@ test('the sources go to the builder only as they change: the diff and sync steps
     assert.deepEqual(repaired, { needed: [flow], removed: 1 });
     assert.ok(sameAsHere(flow));
     assert.ok(!existsSync(join(copy, 'scripts/stray.tcl')));
+
+    // The results in parts (RQ-0066): the collect step cuts the archive; the
+    // parts joined in order are the archive, and it unpacks to what was there.
+    mkdirSync(join(copy, 'out/led_counter/artifacts'), { recursive: true });
+    const bitstream = randomBytes(50_000); // a bitstream does not compress much either
+    writeFileSync(join(copy, 'out/led_counter/artifacts/top.bit'), bitstream);
+    const collectJob = join(work, 'job-collect');
+    mkdirSync(collectJob);
+    const collected = host.parseStep(await pwsh(host.botCollectScript({ settings, jobDirectory: collectJob, pulls: ['out/led_counter/artifacts', 'out/led_counter/missing.log'], chunkBytes: 16 * 1024 }), 'collect'));
+    assert.equal(collected.PRESENT, '1');
+    const parts = collected.log.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    assert.equal(Number(collected.PARTS), parts.length);
+    assert.ok(parts.length > 1, `in parts: ${parts.join(', ')}`);
+    assert.deepEqual(parts.map((path) => path.slice(-7)), parts.map((_, n) => `part${String(n).padStart(3, '0')}`));
+    for (const path of parts) assert.ok(readFileSync(path).length <= 16 * 1024);
+    assert.ok(Buffer.concat(parts.map((path) => readFileSync(path))).equals(readFileSync(collected.ARCHIVE)), 'the parts are the archive');
+    const unpacked = join(work, 'unpacked');
+    mkdirSync(unpacked);
+    writeFileSync(join(work, 'joined.tar.gz'), Buffer.concat(parts.map((path) => readFileSync(path))));
+    assert.equal(spawnSync('tar', ['-xf', join(work, 'joined.tar.gz'), '-C', unpacked]).status, 0);
+    assert.ok(readFileSync(join(unpacked, 'out/led_counter/artifacts/top.bit')).equals(bitstream));
+    const small = host.parseStep(await pwsh(host.botCollectScript({ settings, jobDirectory: collectJob, pulls: ['out/led_counter/artifacts'] }), 'collect'));
+    assert.deepEqual([small.PARTS, small.log.trim()], ['1', small.ARCHIVE], 'under 8 MB: the archive itself');
 
     // The ranges the diff step answers with.
     assert.deepEqual(host.parseRanges('0-2,5,7-8'), [0, 1, 2, 5, 7, 8]);

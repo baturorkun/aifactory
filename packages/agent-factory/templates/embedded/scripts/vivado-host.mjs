@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { hostname, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -397,22 +397,51 @@ if ($Length -gt $Offset) {
 `;
 }
 
-// collect: what the stage leaves (pulls) into one archive in the job directory.
-export function botCollectScript({ settings, jobDirectory, pulls }) {
+// collect: what the stage leaves (pulls) into one archive in the job
+// directory, cut in parts of chunkBytes (RQ-0066) that go to the store and
+// come back one by one, each retried on its own; LOG: lists them in order.
+export function botCollectScript({ settings, jobDirectory, pulls, chunkBytes = 8 * 1024 * 1024 }) {
   return `${PS_HEADER}
 # aifactory: collect
 $ProjectPath = Decode '${base64Json(projectPathOnHost(settings))}'
 $Job = Decode '${base64Json(jobDirectory)}'
 $Pulls = [string[]](Decode '${base64Json(pulls)}')
+$ChunkBytes = [long]${Number(chunkBytes)}
 $Present = @($Pulls | Where-Object { Test-Path -LiteralPath (Join-Path $ProjectPath $_) })
 $Archive = Join-Path $Job 'results.tar.gz'
+$Parts = New-Object System.Collections.Generic.List[string]
 if ($Present.Count -gt 0) {
-  & tar.exe -czf $Archive -C $ProjectPath @($Present | ForEach-Object { $_.Replace('\\', '/') })
-  if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
+  $Tar = if ([IO.Path]::DirectorySeparatorChar -eq [char]92) { 'tar.exe' } else { 'tar' }
+  & $Tar -czf $Archive -C $ProjectPath @($Present | ForEach-Object { $_.Replace([char]92, [char]47) })
+  if ($LASTEXITCODE -ne 0) { throw "tar failed with exit code $LASTEXITCODE" }
+  $Length = (Get-Item -LiteralPath $Archive).Length
+  if ($Length -le $ChunkBytes) { $Parts.Add($Archive) } else {
+    $Buffer = New-Object byte[] 1048576
+    $In = [IO.File]::OpenRead($Archive)
+    try {
+      for ($Part = 0; $Part * $ChunkBytes -lt $Length; $Part += 1) {
+        $Path = '{0}.part{1:D3}' -f $Archive, $Part
+        $Out = [IO.File]::Create($Path)
+        try {
+          $Left = [math]::Min($ChunkBytes, $Length - $Part * $ChunkBytes)
+          while ($Left -gt 0) {
+            $Read = $In.Read($Buffer, 0, [int][math]::Min($Buffer.Length, $Left))
+            if ($Read -le 0) { throw "short read in $Archive" }
+            $Out.Write($Buffer, 0, $Read)
+            $Left -= $Read
+          }
+        } finally { $Out.Dispose() }
+        $Parts.Add($Path)
+      }
+    } finally { $In.Dispose() }
+  }
 }
 Write-Output "STATUS=OK"
 Write-Output "PRESENT=$($Present.Count)"
 Write-Output "ARCHIVE=$Archive"
+Write-Output "PARTS=$($Parts.Count)"
+Write-Output "LOG:"
+foreach ($Path in $Parts) { Write-Output $Path }
 `;
 }
 
@@ -601,14 +630,25 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
     if (exitCode !== 0) failure = new CommandError(`${description} failed with exit code ${Number.isFinite(exitCode) ? exitCode : 'unknown'}.`, Number.isFinite(exitCode) && exitCode > 0 ? exitCode : 2);
 
     // What the stage left comes back through the bot's store.
-    const collected = await botStep(settings, botCollectScript({ settings, jobDirectory, pulls }), `${description} results`);
+    const collected = await botStep(settings, botCollectScript({ settings, jobDirectory, pulls, chunkBytes: chunkBytes(settings.botEnv) }), `${description} results`);
     if (Number(collected.PRESENT) > 0) {
       const resultsName = `${settings.projectName}-${jobId}-results.tar.gz`;
-      let upload = await botJob(settings.botEnv, settings.botAgent, 'upload-file', [collected.ARCHIVE, resultsName], { wait: 60, stage: 'BUILD' });
-      upload = await botJobWait(settings.botEnv, upload, { deadlineMs: Date.now() + 300_000, pause: 2000, stage: 'BUILD' });
-      const url = /uploaded_url=(\S+)/.exec(upload.stdout ?? '')?.[1];
-      if (upload.status !== 'succeeded' || !url) throw new CommandError(`Could not bring back the results of ${description}: ${upload.error || upload.stderr || upload.stdout}`.trim(), 2);
-      await botDownload(url, join(temporary, 'results.tar.gz'), 'BUILD');
+      // The archive in parts (RQ-0066): each to the store and back on its own,
+      // a dropped download tried again for that part alone, joined here.
+      const parts = collected.log.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (parts.length === 0) parts.push(collected.ARCHIVE);
+      const joined = join(temporary, 'results.tar.gz');
+      writeFileSync(joined, '');
+      for (const [index, path] of parts.entries()) {
+        if (parts.length > 1) console.log(`Results: part ${index + 1} of ${parts.length}`);
+        const name = parts.length > 1 ? `${resultsName}.part${String(index).padStart(3, '0')}` : resultsName;
+        let upload = await botJob(settings.botEnv, settings.botAgent, 'upload-file', [path, name], { wait: 60, stage: 'BUILD' });
+        upload = await botJobWait(settings.botEnv, upload, { deadlineMs: Date.now() + 300_000, pause: 2000, stage: 'BUILD' });
+        const url = /uploaded_url=(\S+)/.exec(upload.stdout ?? '')?.[1];
+        if (upload.status !== 'succeeded' || !url) throw new CommandError(`Could not bring back the results of ${description}: ${upload.error || upload.stderr || upload.stdout}`.trim(), 2);
+        await botDownload(url, join(temporary, 'part'), 'BUILD');
+        appendFileSync(joined, readFileSync(join(temporary, 'part')));
+      }
       for (const pull of pulls) {
         const local = resolve(PROJECT_ROOT, pull);
         mkdirSync(dirname(local), { recursive: true });
