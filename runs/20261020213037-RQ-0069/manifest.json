@@ -1,0 +1,35 @@
+{
+  "runId": "20261020213037-RQ-0069",
+  "requirementId": "RQ-0069",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020213037-RQ-0069/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-20T21:30:37.385Z",
+  "updatedAt": "2026-10-20T21:32:02.636Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T21:30:42.202Z",
+      "finishedAt": "2026-10-20T21:31:53.601Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/scaffold.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-20T21:32:02.637Z",
+  "approvedBy": "Batur Orkun"
+}

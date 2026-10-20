@@ -40,7 +40,7 @@
 <header>
   <h1>Embedded Template Kullanım Kılavuzu</h1>
   <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
-  <p class="meta">aifactory v0.67 (RQ-0044…RQ-0067) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
+  <p class="meta">aifactory v0.69 (RQ-0044…RQ-0069) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
 </header>
 
 <h2>1. Template ne yapar</h2>
@@ -86,6 +86,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 <tr><td><code>coding-standard/</code></td><td>Seçilen coding standard, kural listesi ve waiver'lar (§9)</td></tr>
 </table>
 <p>Template ile iki örnek tasarım gelir: <code>led_counter</code> (non_project, saf RTL, LED sayacı) ve <code>hello_ps</code> (project mode, Zynq PS, UART'a bir satır basan firmware).</p>
+<p><b>Template güncellemesi.</b> aifactory'de template iyileşince proje bunu kendisi ister: proje klasöründe <code>pnpm factory -- template update</code> (sadece neyin değişeceğini görmek için <code>--dry-run</code>). Komut önce aifactory'yi <code>git pull</code> ile günceller (gerekirse <code>pnpm install</code>), sonra projede <code>template/aifactory-&lt;commit&gt;</code> branch'ini açıp template'e ait dosyaları yazar, <code>pnpm check</code>'i koşturur, push eder ve MR açar; proje <code>main</code>'de kalır. Testi MR'ın pipeline'ı yapar, geçince merge edilir. Proje <code>main</code>'de değilse, commit edilmemiş değişiklik varsa ya da açık bir template MR'ı varsa hiçbir şeye dokunmadan durur ve nedenini söyler. aifactory proje listesi tutmaz; komut hangi projede çalışıyorsa onu günceller. Tasarımlar (<code>designs/</code>), board dosyaları, <code>.env</code> ve requirement'lar değişmez.</p>
 
 <h2>4. Bir requirement'ın yaşam döngüsü</h2>
 <ol>
@@ -166,11 +167,12 @@ pnpm factory -- requirement submit RQ-n
 pnpm factory -- handoff-begin &lt;run&gt;   ·   pnpm flow &lt;stage&gt;   ·   pnpm factory -- handoff-finish &lt;run&gt; [--phases …]
 pnpm factory -- approve &lt;run&gt; --by "&lt;ad&gt;"   ·   git push
 pnpm factory -- requirement complete RQ-n --run &lt;run&gt;
-pnpm factory -- template update [--write]        # template dosyalarını güncel aifactory'ye getirir
+pnpm factory -- template update                  # önce aifactory'yi günceller, sonra projeyi güncel template'e getiren MR'ı açar
+pnpm factory -- template update --dry-run        # sadece neyin değişeceğini listeler
 pnpm flow prune                                  # builder'daki artıkları elle temizler (CI zaten yapar)
 pnpm factory -- standard use cstd --groups misra,bytecraft</code></pre>
 
-<footer>Hazırlayan: Batur Orkun, Bytecraft · 20 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0067 durumu</footer>
+<footer>Hazırlayan: Batur Orkun, Bytecraft · 20 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0069 durumu</footer>
 </main>
 </body>
 </html>

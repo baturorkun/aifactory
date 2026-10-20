@@ -80,6 +80,8 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     assert.match(project.read('designs/hello_ps/project.tcl'), /set MODE\s+project/);
     assert.match(project.read('boards/zedboard.yaml'), /^tool_version: "\d{4}\.\d"/m);
     assert.match(project.read('.gitignore'), /^out\/$/m);
+    // aifactory next to the project (RQ-0069): pnpm factory -- <command> reaches it.
+    assert.equal((JSON.parse(project.read('package.json')) as { scripts: Record<string, string> }).scripts.factory, 'node ../aifactory/packages/agent-factory/bin/factory.js');
 
     const config = JSON.parse(project.read('factory.config.json')) as {
       targetProject: { profile: string; commands: Record<string, string>; commandTimeoutMs: number; allowedPaths: string[] };

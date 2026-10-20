@@ -1781,6 +1781,9 @@ function writeEmbeddedEnv(projectRoot: string, projectName: string, options: New
 function writeEmbeddedTemplate(projectRoot: string): void {
   copyTemplateTree('embedded', projectRoot);
   patchPackageScripts(projectRoot, {
+    // aifactory sits next to every project it makes (RQ-0069): `pnpm factory
+    // -- <command>` reaches it the same way on every machine.
+    factory: 'node ../aifactory/packages/agent-factory/bin/factory.js',
     standard: 'node scripts/coding-standard.mjs',
     flow: 'node scripts/flow.mjs',
     check: 'node scripts/flow.mjs check',
