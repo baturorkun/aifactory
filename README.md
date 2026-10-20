@@ -369,7 +369,9 @@ steps, the results back through the store; no account or key on the builder;
 since RQ-0062 only the files the builder's copy lacks go, compared by SHA-256,
 in parts of `BOT_API_CHUNK_KB`, default 8 MB, and what the project no longer
 has is removed there; since RQ-0066 the results come back in parts of the same
-size, each through the store and retried on its own). `factory env-check` ends with the logins to try. A project made from an older template is
+size, each through the store and retried on its own; since RQ-0067 the sync
+and collect steps also run in the background on the builder and are polled,
+as the command is, so no project size meets the agent's 120 s per run). `factory env-check` ends with the logins to try. A project made from an older template is
 brought up to date with `factory template update` (it lists the changes;
 `--write` applies them): the scripts, the flow, the CI file, `.env.example` and
 `AGENTS.md` are replaced, the gates and package scripts merged, files a design

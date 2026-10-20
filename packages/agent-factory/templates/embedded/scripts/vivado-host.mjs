@@ -522,6 +522,54 @@ export async function runHostScript(settings, script, description) {
   return step;
 }
 
+// A step that may outlast the agent's 120 s (RQ-0067): the sync of a large
+// project's first copy, the collect of large results. The step's own script
+// is started in the background in the job directory, its output going to
+// <name>.out and its exit code to <name>.exit; botPollScript looks at it.
+export function botBackgroundScript({ jobDirectory, name, script }) {
+  return `${PS_HEADER}
+# aifactory: ${name}
+$Job = Decode '${base64Json(jobDirectory)}'
+New-Item -ItemType Directory -Force -Path $Job | Out-Null
+$Shell = if ([IO.Path]::DirectorySeparatorChar -eq [char]92) { 'powershell.exe' } else { 'pwsh' }
+$Inner = Join-Path $Job '${name}.ps1'
+$Runner = Join-Path $Job '${name}-run.ps1'
+[IO.File]::WriteAllText($Inner, [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${base64Text(script)}')))
+$Out = Join-Path $Job '${name}.out'
+$Exit = Join-Path $Job '${name}.exit'
+$Lines = @(
+  ('& ' + "'" + $Shell + "'" + ' -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' + "'" + $Inner + "'" + ' 2>&1 | Out-File -FilePath ' + "'" + $Out + "'" + ' -Encoding utf8'),
+  ('Set-Content -Path ' + "'" + $Exit + "'" + ' -Value $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })')
+)
+[IO.File]::WriteAllText($Runner, ($Lines -join [Environment]::NewLine))
+$Options = @{ FilePath = $Shell; ArgumentList = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $Runner); PassThru = $true }
+if ($Shell -eq 'powershell.exe') { $Options.WindowStyle = 'Hidden' }
+$Process = Start-Process @Options
+Set-Content -Path (Join-Path $Job '${name}.pid') -Value $Process.Id
+Write-Output "STATUS=STARTED"
+`;
+}
+
+// poll: a background step done or still running; once done, its output.
+export function botPollScript({ jobDirectory, name }) {
+  return `${PS_HEADER}
+# aifactory: poll
+# step: ${name}
+$Job = Decode '${base64Json(jobDirectory)}'
+$Exit = Join-Path $Job '${name}.exit'
+$Out = Join-Path $Job '${name}.out'
+if (Test-Path -LiteralPath $Exit) {
+  Write-Output "STATUS=DONE"
+  Write-Output "EXIT=$((Get-Content -LiteralPath $Exit -Raw).Trim())"
+} else {
+  $ProcessId = [int](Get-Content -LiteralPath (Join-Path $Job '${name}.pid') -Raw).Trim()
+  if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Write-Output "STATUS=RUNNING" } else { Write-Output "STATUS=DONE"; Write-Output "EXIT=255" }
+}
+Write-Output "LOG:"
+if (Test-Path -LiteralPath $Exit) { if (Test-Path -LiteralPath $Out) { Get-Content -LiteralPath $Out -Raw } }
+`;
+}
+
 // The STATUS= answer of a step: its fields and what follows LOG:.
 export function parseStep(text) {
   const [head, ...rest] = (text ?? '').split(/^LOG:\r?\n?/m);
@@ -543,6 +591,34 @@ async function botStep(settings, script, description, { wait = 60 } = {}) {
   const step = parseStep(job.stdout);
   if (!step.STATUS) throw new CommandError(`${description} on ${settings.host} through the bot gave no STATUS line: ${job.stdout.slice(0, 400)}`, 2);
   return step;
+}
+
+// Runs a step in the background and asks after it until it ends, so its
+// length meets no limit of the agent's (RQ-0067); the bot out of reach for a
+// while is asked again, as for the command. Its own STATUS= answer.
+async function backgroundStep(settings, jobDirectory, name, script, description, { pause = 3000 } = {}) {
+  const started = await botStep(settings, botBackgroundScript({ jobDirectory, name, script }), `${description} start`);
+  if (started.STATUS !== 'STARTED') throw new CommandError(`${description} on ${settings.host} did not start: ${started.log || started.STATUS}`, 2);
+  let misses = 0;
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, pause));
+    let polled;
+    try {
+      polled = await botStep(settings, botPollScript({ jobDirectory, name }), description, { wait: 30 });
+      misses = 0;
+    } catch (error) {
+      if (!/cannot reach the lab bot|answered 5\d\d/.test(String(error.message)) || ++misses > 12) throw error;
+      console.error(`${description}: ${error.message}; asking again in 15 s (${misses}/12)`);
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+      continue;
+    }
+    if (polled.STATUS !== 'DONE') continue;
+    const output = polled.log.replace(/^\uFEFF/, '');
+    if (Number(polled.EXIT) !== 0) throw new CommandError(`${description} on ${settings.host} failed (exit ${polled.EXIT}): ${output.trim().slice(-1500)}`, 2);
+    const step = parseStep(output);
+    if (!step.STATUS) throw new CommandError(`${description} on ${settings.host} gave no STATUS line: ${output.slice(0, 400)}`, 2);
+    return step;
+  }
 }
 
 async function runThroughBot(settings, command, { pulls, directories, description }) {
@@ -598,7 +674,7 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
       console.log(`Sources: up to date on ${settings.host} (${files.length} files)`);
     }
     const entries = includedTopLevelEntries();
-    const synced = await botStep(settings, botSyncScript({ settings, jobDirectory, partUrls, entries, directories }), `${description} sources`, { wait: 90 });
+    const synced = await backgroundStep(settings, jobDirectory, 'sync', botSyncScript({ settings, jobDirectory, partUrls, entries, directories }), `${description} sources`);
     if (Number(synced.REMOVED) > 0) console.log(`Sources: ${synced.REMOVED} ${Number(synced.REMOVED) === 1 ? 'file' : 'files'} no longer here removed on ${settings.host}`);
     await botStep(settings, botStartScript({ settings, jobDirectory, command }), `${description} start`);
     started = true;
@@ -630,7 +706,7 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
     if (exitCode !== 0) failure = new CommandError(`${description} failed with exit code ${Number.isFinite(exitCode) ? exitCode : 'unknown'}.`, Number.isFinite(exitCode) && exitCode > 0 ? exitCode : 2);
 
     // What the stage left comes back through the bot's store.
-    const collected = await botStep(settings, botCollectScript({ settings, jobDirectory, pulls, chunkBytes: chunkBytes(settings.botEnv) }), `${description} results`);
+    const collected = await backgroundStep(settings, jobDirectory, 'collect', botCollectScript({ settings, jobDirectory, pulls, chunkBytes: chunkBytes(settings.botEnv) }), `${description} results`);
     if (Number(collected.PRESENT) > 0) {
       const resultsName = `${settings.projectName}-${jobId}-results.tar.gz`;
       // The archive in parts (RQ-0066): each to the store and back on its own,
