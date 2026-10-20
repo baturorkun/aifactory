@@ -44,6 +44,11 @@ command runs in is the one updated.
   5. The project is left on main, clean; the local branch is removed.
 - `--local` writes the changes into the worktree only (the old `--write`,
   which is gone).
+- aifactory and its projects always sit side by side in one directory (the
+  user's rule): an embedded project's `package.json` gets the script
+  `factory`: `node ../aifactory/packages/agent-factory/bin/factory.js`, so
+  `pnpm factory -- <command>`, as the guide writes every command, works on
+  every machine; a project takes it with the template update.
 - README and the user guide (v0.69) describe it.
 
 ## Acceptance Criteria

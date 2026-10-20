@@ -382,7 +382,10 @@ runs `pnpm check`, pushes and opens the merge request, whose pipeline runs the
 stages, and leaves the project on main. A project already current gets none,
 and while one template update is open no second is opened. aifactory keeps no
 list of projects: the project the command runs in is the one updated.
-`--local` writes the changes into the worktree only. The scripts, the flow, the
+`--local` writes the changes into the worktree only. aifactory sits next to
+its projects, so an embedded project's `pnpm factory -- <command>` (the script
+`factory`, `node ../aifactory/packages/agent-factory/bin/factory.js`) reaches
+it on every machine. The scripts, the flow, the
 CI file, `.env.example` and `AGENTS.md` are replaced, the gates and package
 scripts merged, files a design lacks (such as `test.yaml`) added; design
 sources, board files, `.env` and requirements are left alone. `factory ci-variables --write` puts the host and
