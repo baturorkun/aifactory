@@ -57,9 +57,14 @@ test('a new embedded project takes its hosts and its board unit from the invento
     assert.equal(env.VIVADO_BOT_AGENT, 'builder');
     assert.equal(env.TWIN_REMOTE_HOST, '192.168.1.2');
     assert.equal(env.GITLAB_PROJECT_ID, 'agentic/fw');
-    // One copy per person on each host.
-    assert.match(env.VIVADO_REMOTE_PROJECT_NAME, /^fw-[a-z0-9-]+$/);
-    assert.equal(env.BOARD_REMOTE_PROJECT_NAME, env.VIVADO_REMOTE_PROJECT_NAME);
+    // No person is named (RQ-0058): BOT_API_AGENT is set by hand, and the account
+    // and the host copies (<project>-<name>) follow from it in the scripts.
+    for (const name of ['BOT_API_AGENT', 'VIVADO_REMOTE_USER', 'VIVADO_REMOTE_PROJECT_NAME', 'BOARD_REMOTE_PROJECT_NAME', 'TWIN_REMOTE_PROJECT_NAME']) {
+      assert.equal(env[name] ?? '', '', `${name} is left to the person`);
+    }
+    const example = readFileSync(join(projectRoot, '.env.example'), 'utf8');
+    assert.ok(example.indexOf('BOT_API_AGENT=') < example.indexOf('VIVADO_ACCESS='), 'the person comes first');
+    assert.match(example, /empty: <project>-<BOT_API_AGENT>/);
     // The secrets stay empty for env-check to name.
     for (const secret of ['GITLAB_TOKEN', 'BOT_API_TOKEN', 'TWIN_GITLAB_TOKEN']) assert.equal(env[secret], '', secret);
     assert.throws(
@@ -73,12 +78,12 @@ test('a new embedded project takes its hosts and its board unit from the invento
 
 test('without a unit the board settings stay empty; .env.example lines keep their order and comments', () => {
   const inventory = loadLabInventory()!;
-  const values = embeddedEnvValues(inventory, 'fw', 'ada', undefined, 'ada');
-  assert.equal(values.VIVADO_REMOTE_USER, 'ada', 'the developer\'s own account on the Vivado host (RQ-0054)');
+  const values = embeddedEnvValues(inventory, 'fw');
+  assert.equal(values.VIVADO_REMOTE_USER, undefined, 'the account follows BOT_API_AGENT in the scripts (RQ-0058)');
   assert.equal(labWideCiValues(inventory).VIVADO_REMOTE_USER, inventory.vivado.user, 'CI keeps the inventory\'s account');
   assert.equal(values.BOARD_JTAG_CABLE, undefined);
   assert.equal(values.BOARD_ACCESS, undefined, 'the .env.example keeps its ssh default');
-  assert.equal(values.VIVADO_REMOTE_PROJECT_NAME, 'fw-ada');
+  assert.equal(values.VIVADO_REMOTE_PROJECT_NAME, undefined);
   assert.equal(fillEnv('# hosts\nVIVADO_REMOTE_HOST=\nOTHER=x\nVIVADO_REMOTE_HOST=\n', values), '# hosts\nVIVADO_REMOTE_HOST=192.168.1.3\nOTHER=x\nVIVADO_REMOTE_HOST=\n');
 });
 

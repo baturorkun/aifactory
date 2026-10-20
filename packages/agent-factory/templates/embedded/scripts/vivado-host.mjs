@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { hostname, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { botDownload, botJob, botJobWait, botPowershell, botUpload } from './lab-bot.mjs';
 
@@ -58,6 +58,19 @@ export function loadEnvFile(env = { ...process.env }) {
 
 const value = (env, name) => (env[name] ?? '').trim();
 
+// The person running the stages, by the name the bot knows them
+// (BOT_API_AGENT): the one place a developer's .env names them. Their copy of
+// the project on a host is <project>-<name> and their Vivado host account is
+// <name> unless .env says otherwise (RQ-0058).
+export function personOf(env) {
+  return value(env, 'BOT_API_AGENT');
+}
+
+export function defaultHostProject(env, projectName = basename(PROJECT_ROOT)) {
+  const person = personOf(env);
+  return person ? `${projectName}-${person}`.replace(/[^A-Za-z0-9._-]/g, '-') : '';
+}
+
 // The host and tool settings of one tool host, checked. A remote host needs a
 // user, a base path and a project name; the tool locations are needed
 // wherever the tools run. `prefix` is VIVADO (Vivado and Vitis) or TWIN (the twin's Docker).
@@ -84,10 +97,11 @@ export function hostSettings(env, prefix = 'VIVADO') {
     remote: host !== '' || access === 'bot',
     hostType,
     host,
-    user: value(env, name('REMOTE_USER')),
+    // The Vivado host's account is the person's own; the lab host's is the lab's.
+    user: value(env, name('REMOTE_USER')) || (prefix === 'VIVADO' ? personOf(env) : ''),
     port: value(env, name('REMOTE_PORT')) || '22',
     basePath: value(env, name('REMOTE_BASE_PATH')),
-    projectName: value(env, name('REMOTE_PROJECT_NAME')),
+    projectName: value(env, name('REMOTE_PROJECT_NAME')) || defaultHostProject(env),
     identityFile: value(env, name('REMOTE_IDENTITY_FILE')),
     knownHosts: value(env, name('REMOTE_KNOWN_HOSTS')),
     vivado: value(env, 'VIVADO_BIN'),
@@ -103,7 +117,7 @@ export function hostSettings(env, prefix = 'VIVADO') {
     if (hostType !== 'windows') throw new CommandError('VIVADO_HOST_TYPE must be windows with VIVADO_ACCESS=bot: the bot\'s agent is a Windows agent.', 2);
     if (!settings.host) settings.host = settings.botAgent;
     for (const [key, setting] of [['basePath', name('REMOTE_BASE_PATH')], ['projectName', name('REMOTE_PROJECT_NAME')]]) {
-      if (!settings[key]) throw new CommandError(`${setting} is not set, but VIVADO_ACCESS=bot runs the tools on the Vivado host. Add it to .env.`);
+      if (!settings[key]) throw new CommandError(`${setting} is not set, but VIVADO_ACCESS=bot runs the tools on the Vivado host. Add it to .env${key === 'projectName' ? ' (or BOT_API_AGENT, which names it <project>-<you>)' : ''}.`);
     }
     if (!/^[A-Za-z0-9._-]+$/.test(settings.projectName)) {
       throw new CommandError(`${name('REMOTE_PROJECT_NAME')} may contain only letters, numbers, dot, underscore and hyphen.`);
@@ -115,7 +129,10 @@ export function hostSettings(env, prefix = 'VIVADO') {
   }
   if (settings.remote) {
     for (const [key, setting] of [['user', name('REMOTE_USER')], ['basePath', name('REMOTE_BASE_PATH')], ['projectName', name('REMOTE_PROJECT_NAME')]]) {
-      if (!settings[key]) throw new CommandError(`${setting} is not set, but ${name('REMOTE_HOST')} names a remote ${what}. Add it to .env.`);
+      if (!settings[key]) {
+        const derived = key === 'projectName' || (key === 'user' && prefix === 'VIVADO') ? ' (or BOT_API_AGENT, your name, which it follows from)' : '';
+        throw new CommandError(`${setting} is not set, but ${name('REMOTE_HOST')} names a remote ${what}. Add it to .env${derived}.`);
+      }
     }
     if (!/^[A-Za-z0-9._:[\]-]+$/.test(settings.host)) throw new CommandError(`${name('REMOTE_HOST')} contains unsupported characters.`);
     if (!/^[A-Za-z0-9._@\\-]+$/.test(settings.user)) throw new CommandError(`${name('REMOTE_USER')} contains unsupported characters.`);

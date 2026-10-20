@@ -139,7 +139,8 @@ export function stageHosts(values: Map<string, string>): string[] {
   const login = (prefix: string): string | null => {
     const host = values.get(`${prefix}_REMOTE_HOST`);
     if (!host) return null;
-    const user = values.get(`${prefix}_REMOTE_USER`) || '<user>';
+    // The Vivado account follows the person's name when it is not set (RQ-0058).
+    const user = values.get(`${prefix}_REMOTE_USER`) || (prefix === 'VIVADO' && values.get('BOT_API_AGENT')) || '<user>';
     const port = values.get(`${prefix}_REMOTE_PORT`);
     return `ssh ${port && port !== '22' ? `-p ${port} ` : ''}${user}@${host}`;
   };
