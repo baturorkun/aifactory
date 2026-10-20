@@ -41,9 +41,38 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
       'common/boards/README.md', 'ip/README.md', 'boards/zedboard.yaml', 'scripts/flow.mjs', 'scripts/vivado-host.mjs',
       'designs/led_counter/project.tcl', 'designs/led_counter/src/counter.vhd', 'designs/led_counter/tb/tb_counter.vhd',
       'designs/led_counter/constraints/zedboard.xdc', 'designs/hello_ps/project.tcl', 'designs/hello_ps/tcl/bd.tcl',
-      'designs/hello_ps/sw/src/main.c', 'designs/hello_ps/sw/create_vitis.py',
+      'designs/hello_ps/sw/src/main.c', 'designs/hello_ps/sw/create_vitis.py', 'scripts/vitis_sw.py',
     ]) {
       assert.ok(existsSync(join(project.root, path)), `${path} is there`);
+    }
+    // The Vitis workspace (RQ-0063): the design's script hands its work to the
+    // template's; on Windows the workspace is short and fixed, elsewhere under out/.
+    assert.match(project.read('designs/hello_ps/sw/create_vitis.py'), /^import vitis_sw\b.*\n\nvitis_sw\.main\(SW_DIR\)/m);
+    const python = spawnSync('python3', ['-c', 'exit(0)'], { stdio: 'pipe' });
+    if (python.status === 0) {
+      const fake = mkdtempSync(join(tmpdir(), 'fake-vitis-'));
+      try {
+        writeFileSync(join(fake, 'vitis.py'), '');
+        const probe = [
+          'import sys, os',
+          `sys.path[:0] = [${JSON.stringify(fake)}, ${JSON.stringify(join(project.root, 'scripts'))}]`,
+          'import vitis_sw',
+          "print(vitis_sw.workspace_of('/x/ab/embedded1-b-factory-rq-0004', 'hdmi_colorbar', '/x/ab/embedded1-b-factory-rq-0004/out/hdmi_colorbar'))",
+          "vitis_sw.os.name = 'nt'",
+          "print(vitis_sw.workspace_of('/x/ab/embedded1-b-factory-rq-0004', 'hdmi_colorbar', '/x/ab/embedded1-b-factory-rq-0004/out/hdmi_colorbar'))",
+          "print(vitis_sw.workspace_of('/x/ab/embedded1-kavci', 'hdmi_colorbar', '/x/ab/embedded1-kavci/out/hdmi_colorbar'))",
+          'print(vitis_sw.PLATFORM_NAME)',
+        ].join('\n');
+        const run = spawnSync('python3', ['-I', '-c', probe], { stdio: 'pipe' });
+        assert.equal(run.status, 0, String(run.stderr));
+        const [elsewhere, windows, other, platform] = String(run.stdout).trim().split('\n');
+        assert.equal(elsewhere, '/x/ab/embedded1-b-factory-rq-0004/out/hdmi_colorbar/vitis');
+        assert.match(windows, /^\/x\/ab\/\.v\/[0-9a-f]{8}$/, 'next to the copies, named by a hash');
+        assert.notEqual(windows, other, 'one per copy and design');
+        assert.equal(platform, 'platform');
+      } finally {
+        rmSync(fake, { recursive: true, force: true });
+      }
     }
     assert.match(project.read('designs/led_counter/project.tcl'), /set MODE\s+non_project/);
     assert.match(project.read('designs/hello_ps/project.tcl'), /set MODE\s+project/);
@@ -190,12 +219,15 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
     const onDemand = job('embedded_board_on_demand');
     assert.match(onDemand, /when: manual\n {6}allow_failure: true/);
     assert.match(onDemand, /- node scripts\/flow\.mjs board\n/);
-    // Each Vivado job has its own project on the host, one ref at a time.
-    assert.match(job('embedded_sim'), /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
+    // Each Vivado job has its own project on the host, one ref at a time,
+    // named short: its name is in the Vitis BSP's longest path (RQ-0063).
+    assert.match(job('embedded_sim'), /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-s-\$CI_COMMIT_REF_SLUG"/);
+    assert.match(job('embedded_build'), /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-b-\$CI_COMMIT_REF_SLUG"/);
+    assert.match(job('embedded_build'), /resource_group: "vivado-embedded_build-\$CI_COMMIT_REF_SLUG"/);
     assert.match(job('embedded_sim'), /resource_group: "vivado-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
     // The factory job reaches the same host for its gates, with its own project.
     const factory = job('ai_factory_requirement_branch');
-    assert.match(factory, /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-factory-\$CI_COMMIT_REF_SLUG"/);
+    assert.match(factory, /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-f-\$CI_COMMIT_REF_SLUG"/);
     assert.match(factory, /chmod 600 "\$VIVADO_REMOTE_IDENTITY_FILE"/);
     assert.match(factory, /- designs\//);
     assert.doesNotMatch(factory, /- public\/|- dist\//);
