@@ -323,7 +323,8 @@ export async function twinStage(settings, design, boardText, env) {
       const url = outputUrl(job);
       if (!url) throw new CommandError(`TWIN FAILED: the bot kept no output for job ${job.id}: ${job.error || job.stderr || 'no OUTPUT line'}`, 1);
       await botDownload(url, join(local, 'output.tar.gz'));
-      const tar = spawnSync('tar', ['-xzf', 'output.tar.gz'], { cwd: local, stdio: 'pipe' });
+      // No -z: fetch unpacks what the bot serves with Content-Encoding: gzip.
+      const tar = spawnSync('tar', ['-xf', 'output.tar.gz'], { cwd: local, stdio: 'pipe' });
       if (tar.status !== 0) throw new CommandError(`TWIN FAILED: cannot unpack the job's output: ${String(tar.stderr).trim()}`, 1);
     } catch (error) {
       runError = error;
