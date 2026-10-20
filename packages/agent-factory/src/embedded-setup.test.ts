@@ -192,17 +192,37 @@ test('on a Windows host files come back whole, the Vitis path is checked first, 
     assert.ok(!host.scpOptions({ ...settings, hostType: 'linux' }).includes('-O'));
 
     const flow = await import(pathToFileURL(join(projectRoot, 'scripts/flow.mjs')).href) as {
-      checkVitisPath: (s: unknown, d: unknown) => void;
+      checkVitisPath: (s: unknown, d: unknown, layout?: string) => void;
+      vitisLayout: (root: string, design: string) => string;
     };
     const windows = { remote: true, hostType: 'windows' };
     const design = { name: 'hello_ps', CPU: 'ps7_cortexa9_0' };
-    // The cases measured on 18 October: 236 failed in the BSP build, 211 and 210 built.
+    const hdmi = { name: 'hdmi_colorbar', CPU: 'ps7_cortexa9_0' };
+    // The cases measured: on 18 October the long base path failed in the BSP
+    // build and C:\ab built; on 20 October hdmi_colorbar's 261 characters in a
+    // CI copy failed (RQ-0063), which the estimate before called 220.
+    // A design with an older template's create_vitis.py: the workspace under out/<design>/vitis.
     assert.throws(
-      () => flow.checkVitisPath({ ...windows, basePath: 'C:\\Users\\Batur\\aifactory-builds', projectName: 'embedded1-embedded_build-factory-rq-0001' }, design),
-      /about 236 characters[\s\S]*41 {2}host project \(VIVADO_REMOTE_PROJECT_NAME\)/,
+      () => flow.checkVitisPath({ ...windows, basePath: 'C:\\Users\\Batur\\aifactory-builds', projectName: 'embedded1-embedded_build-factory-rq-0001' }, design, 'project'),
+      /about 2\d\d characters[\s\S]*41 {2}host project \(VIVADO_REMOTE_PROJECT_NAME\)/,
     );
-    flow.checkVitisPath({ ...windows, basePath: 'C:\\Users\\Batur\\aifactory-builds', projectName: 'embedded1-batur' }, design);
-    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-embedded_build-factory-rq-0001' }, design);
+    assert.throws(
+      () => flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-embedded_build-factory-rq-0004' }, hdmi, 'project'),
+      /about 261 characters[\s\S]*29 {2}the BSP's build directory[\s\S]*93 {2}Vitis' deepest BSP object[\s\S]*calls scripts\/vitis_sw\.py/,
+    );
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\Users\\Batur\\aifactory-builds', projectName: 'embedded1-batur' }, design, 'project');
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-embedded_build-factory-rq-0001' }, design, 'project');
+    // The CI copies' names now (RQ-0063), and a developer's.
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-b-factory-rq-0004' }, hdmi, 'project');
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-f-factory-rq-0004' }, hdmi, 'project');
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'embedded1-kavci' }, hdmi, 'project');
+    // The template's create_vitis.py (scripts/vitis_sw.py): neither name counts, any length passes.
+    assert.equal(flow.vitisLayout(projectRoot, 'hello_ps'), 'short');
+    assert.equal(flow.vitisLayout(projectRoot, 'no_such_design'), 'project');
+    const long = { name: 'a_design_with_a_very_long_descriptive_name_indeed', CPU: 'ps7_cortexa9_0' };
+    flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'a-project-with-a-long-name-b-factory-rq-0123' }, long, 'short');
+    assert.throws(() => flow.checkVitisPath({ ...windows, basePath: 'C:\\ab', projectName: 'p' }, long, 'project'), /about \d+ characters/);
+    assert.throws(() => flow.checkVitisPath({ ...windows, basePath: `C:\\${'x'.repeat(70)}`, projectName: 'p' }, long, 'short'), /the short workspace/, 'the base path still counts');
     flow.checkVitisPath({ remote: true, hostType: 'linux', basePath: '/very/long/'.repeat(30), projectName: 'x' }, design);
 
     const ci = readFileSync(join(projectRoot, '.gitlab-ci.yml'), 'utf8');

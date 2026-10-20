@@ -238,6 +238,13 @@ function boardJobs(projectName: string): string[] {
   ];
 }
 
+// A CI job's copy of the project on the builder: <project>-<tag>-<ref>, the
+// tag one letter, as every character of it is in the Vitis BSP's longest
+// path and Windows stops that at 259 (RQ-0063). The resource groups keep the
+// jobs' full names.
+export const BUILDER_COPY_TAG: Record<string, string> = { embedded_sim: 's', embedded_build: 'b', factory: 'f' };
+const builderCopy = (job: string): string => `$CI_PROJECT_NAME-${BUILDER_COPY_TAG[job] ?? job}-$CI_COMMIT_REF_SLUG`;
+
 function embeddedJobs(projectName: string): string[] {
   const everyPush = [
     '  rules:',
@@ -258,7 +265,7 @@ function embeddedJobs(projectName: string): string[] {
       ? [
           `  resource_group: "${host.toLowerCase()}-${name}-$CI_COMMIT_REF_SLUG"`,
           '  variables:',
-          `    ${host}_REMOTE_PROJECT_NAME: "$CI_PROJECT_NAME-${name}-$CI_COMMIT_REF_SLUG"`,
+          `    ${host}_REMOTE_PROJECT_NAME: "${host === 'VIVADO' ? builderCopy(name) : `$CI_PROJECT_NAME-${name}-$CI_COMMIT_REF_SLUG`}"`,
           '  before_script:',
           '    - ' + VIVADO_KEY_SETUP.replace(/VIVADO_/g, `${host}_`),
         ]
@@ -847,7 +854,7 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       '  variables:',
       '    GIT_DEPTH: "0"',
       ...(embedded
-        ? ['    # The gates build on the Vivado host; the factory job has its own project there.', '    VIVADO_REMOTE_PROJECT_NAME: "$CI_PROJECT_NAME-factory-$CI_COMMIT_REF_SLUG"']
+        ? ['    # The gates build on the Vivado host; the factory job has its own project there.', `    VIVADO_REMOTE_PROJECT_NAME: "${builderCopy('factory')}"`]
         : []),
       '  rules:',
       '    - if: \'$CI_COMMIT_BRANCH =~ /^factory\\/RQ-[0-9]+$/\'',

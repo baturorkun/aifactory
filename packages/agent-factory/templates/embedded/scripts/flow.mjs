@@ -208,29 +208,49 @@ async function vivadoStage(settings, design, stage, jobs) {
 }
 
 // The longest path the Vitis BSP writes on a Windows host, part by part: its
-// gcc is not long-path aware, so past MAX_PATH (260) the BSP build fails
-// with "opening dependency file ... No such file or directory". The parts
-// after the design are Vitis' own; the BSP's build directory adds about 25
-// characters on top, so the estimate must stay at or below WINDOWS_PATH_BUDGET.
-// On 18 October 236 failed and 211 built.
-export const WINDOWS_PATH_BUDGET = 225;
-export function vitisPathParts(basePath, projectName, design, cpu) {
+// gcc is not long-path aware, so past MAX_PATH (260 with the closing NUL, so
+// 259 characters) the BSP build fails with "opening dependency file ... No
+// such file or directory". The parts after the design are Vitis' own: the
+// BSP's CMake build directory and the deepest dependency file in it, as a
+// failed build printed them (RQ-0063). Measured: 251 built (hello_ps in a CI
+// copy, 18 October), 261 failed (hdmi_colorbar in a CI copy, 20 October); the
+// budget leaves a few characters for an object deeper than the ones seen.
+//
+// A design whose create_vitis.py calls the template's scripts/vitis_sw.py
+// (RQ-0063) has its workspace at <base path>\.v\<8 characters>\ with the
+// platform named "platform": the longest path no longer holds the project's
+// or the design's name, about 195 characters under C:\ab. A design with the
+// script of an older template keeps it under out/<design>/vitis.
+export const WINDOWS_PATH_BUDGET = 255;
+export function vitisPathParts(basePath, projectName, design, cpu, layout = 'project') {
+  const workspace = layout === 'short'
+    ? [['the short workspace', '.v/12345678/'], ['the platform', 'platform/']]
+    : [['host project (VIVADO_REMOTE_PROJECT_NAME)', `${projectName}/`], ['design, twice', `out/${design}/vitis/${design}_platform/`]];
   return [
     ['base path (VIVADO_REMOTE_BASE_PATH)', `${basePath.replace(/[\\/]+$/, '')}/`],
-    ['host project (VIVADO_REMOTE_PROJECT_NAME)', `${projectName}/`],
-    ['design, twice', `out/${design}/vitis/${design}_platform/`],
+    ...workspace,
     ['processor and domain', `${cpu}/standalone_${cpu}/bsp/`],
-    ["Vitis' deepest BSP object", 'libsrc/coresightps_dcc/src/CMakeFiles/coresightps_dcc.dir/xcoresightpsdcc.c.obj.d'],
+    ["the BSP's build directory", 'libsrc/build_configs/gen_bsp/'],
+    ["Vitis' deepest BSP object", 'libsrc/standalone/src/CMakeFiles/xilstandalone.dir/arm/cortexa9/gcc/translation_table.S.obj.d'],
   ];
 }
 
-export function checkVitisPath(settings, design) {
+// short: the design's create_vitis.py hands its work to scripts/vitis_sw.py.
+export function vitisLayout(root, designName) {
+  const script = join(root, 'designs', designName, 'sw', 'create_vitis.py');
+  return existsSync(script) && /^\s*import vitis_sw\b/m.test(readFileSync(script, 'utf8')) ? 'short' : 'project';
+}
+
+export function checkVitisPath(settings, design, layout = vitisLayout(PROJECT_ROOT, design.name)) {
   if (!settings.remote || settings.hostType !== 'windows') return;
-  const parts = vitisPathParts(settings.basePath, settings.projectName, design.name, design.CPU || 'ps7_cortexa9_0');
+  const parts = vitisPathParts(settings.basePath, settings.projectName, design.name, design.CPU || 'ps7_cortexa9_0', layout);
   const length = parts.reduce((total, [, text]) => total + text.length, 0);
   if (length <= WINDOWS_PATH_BUDGET) return;
   const table = parts.map(([what, text]) => `  ${String(text.length).padStart(3)}  ${what}: ${text}`).join('\n');
-  throw new CommandError(`SW FAILED: on the Windows host the Vitis BSP would write paths of about ${length} characters (budget ${WINDOWS_PATH_BUDGET}, the limit is 260 and Vitis' gcc cannot pass it). Shorten one of the parts you choose:\n${table}`, 1);
+  const better = layout === 'project'
+    ? `\nOr give designs/${design.name}/sw/create_vitis.py the template's, which calls scripts/vitis_sw.py: its workspace path holds neither name (RQ-0063).`
+    : '';
+  throw new CommandError(`SW FAILED: on the Windows host the Vitis BSP would write paths of about ${length} characters (budget ${WINDOWS_PATH_BUDGET}, the limit is 259 and Vitis' gcc cannot pass it). Shorten one of the parts you choose:\n${table}${better}`, 1);
 }
 
 async function softwareStage(settings, design) {

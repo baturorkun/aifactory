@@ -272,6 +272,7 @@ boards/zedboard.yaml     part, board part, tool_version, processor ports
 designs/led_counter/     plain RTL, non-project mode, self-checking testbench
 designs/hello_ps/        Zynq PS block design (project mode) and a Vitis Unified app
 scripts/flow.mjs         every stage, here or on the Vivado host, and the design check
+scripts/vitis_sw.py      the Vitis workspace a design's sw/create_vitis.py hands its work to
 ```
 
 `pnpm flow <stage> [design]` runs `check`, `sim`, `synth`, `impl`, `bit`,
@@ -283,6 +284,14 @@ go to that host over SSH (`VIVADO_HOST_TYPE` windows or linux,
 bitstream, XSA, ELF, reports, logs and `summary.json` (WNS, WHS, utilisation,
 DRC errors, stage durations, tool version, build host). The expected Vivado
 version is the board file's `tool_version`, committed with the project.
+Vitis' gcc on Windows cannot open a path past 259 characters, and the BSP it
+builds goes about 175 deep under the workspace: on a Windows host the
+workspace is `<base path>\.v\<8-character hash>` with the platform named
+`platform` (RQ-0063), so the longest path holds neither the project copy's
+nor the design's name (194 characters under `C:\ab`). A design whose
+`create_vitis.py` comes from an older template keeps its workspace under
+`out/<design>/vitis`; the sw stage estimates its longest path before the
+build and, past 255, stops naming the parts and the template's script.
 
 A requirement of an embedded project is of kind `embedded` and passes through
 phases in order, each with its gates: `spec` (`designCheck`), `sim`
