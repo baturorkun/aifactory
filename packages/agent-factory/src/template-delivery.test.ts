@@ -8,7 +8,7 @@ import { createTargetProject } from './scaffold';
 import { bringMainUpToDate, deliverTemplateUpdate, TemplateDeliveryError, updateAifactory } from './template-delivery';
 import type { ChangeRequest, RepositoryPlatformAdapter } from './repository-platform/types';
 
-// RQ-0069: template update --write delivers the current template as a merge
+// RQ-0069: template update delivers the current template as a merge
 // request, from a clean, current main only. Real Git repositories with a bare
 // origin each; the merge request platform is a fake that records its calls.
 
@@ -66,7 +66,7 @@ function setup() {
   return { work, aifactory, project, done: () => rmSync(work, { recursive: true, force: true }) };
 }
 
-test('template update --write opens a merge request with the template-owned changes and leaves the project on a clean main', async () => {
+test('template update opens a merge request with the template-owned changes and leaves the project on a clean main', async () => {
   const { aifactory, project, done } = setup();
   try {
     const { adapter, calls } = fakePlatform();
@@ -104,7 +104,7 @@ test('template update --write opens a merge request with the template-owned chan
   }
 });
 
-test('template update --write touches nothing unless the project is on a clean main that is not ahead of origin', async () => {
+test('template update touches nothing unless the project is on a clean main that is not ahead of origin', async () => {
   const { aifactory, project, work, done } = setup();
   try {
     const { adapter, calls } = fakePlatform();

@@ -1058,10 +1058,10 @@ program
   .command('template')
   .description('Embedded projects: bring the template-owned files up to this aifactory')
   .command('update')
-  .description('List what changes to reach the current embedded template; --write delivers them as a merge request')
-  .option('--write', 'Bring aifactory up to date, then open a merge request with the changes (from a clean, current main)', false)
+  .description('Bring aifactory up to date, then open a merge request that takes this project to the current embedded template (from a clean, current main)')
+  .option('--dry-run', 'Only list what would change; touch nothing', false)
   .option('--local', 'Write the changes into this worktree only, no branch and no merge request', false)
-  .action(async (opts: { write: boolean; local: boolean }) => {
+  .action(async (opts: { dryRun: boolean; local: boolean }) => {
     try {
       const config = loadConfig();
       const root = resolve(config.targetProject.root ?? '.');
@@ -1070,7 +1070,7 @@ program
           console.log(`  ${change.kind.padEnd(8)} ${change.path}${change.kind === 'merge' ? chalk.dim(`  (${change.detail})`) : ''}`);
         }
       };
-      if (!opts.write) {
+      if (opts.dryRun || opts.local) {
         const changes = updateEmbeddedProject(root, { write: opts.local });
         if (changes.length === 0) {
           console.log(chalk.green('✓ The project is on the current embedded template.'));
@@ -1079,7 +1079,7 @@ program
         listChanges(changes);
         console.log(opts.local
           ? chalk.green(`\n✓ ${changes.length} change(s) written here. Review them with git diff and run pnpm check.`)
-          : chalk.dim(`\n${changes.length} change(s). Nothing written: --write opens a merge request with them.`));
+          : chalk.dim(`\n${changes.length} change(s). Nothing written: without --dry-run a merge request opens with them.`));
         return;
       }
 
@@ -1087,7 +1087,7 @@ program
       const aifactoryRoot = process.env.AIFACTORY_HOME || resolve(__dirname, '../../..');
       if (!process.env.AIFACTORY_TEMPLATE_PULLED && updateAifactory(aifactoryRoot, (line) => console.log(chalk.dim(line)))) {
         // The template's writer is the code just pulled: run it.
-        const again = spawnSync(process.execPath, [join(aifactoryRoot, 'packages', 'agent-factory', 'bin', 'factory.js'), 'template', 'update', '--write'], {
+        const again = spawnSync(process.execPath, [join(aifactoryRoot, 'packages', 'agent-factory', 'bin', 'factory.js'), 'template', 'update'], {
           cwd: process.cwd(),
           stdio: 'inherit',
           env: { ...process.env, AIFACTORY_TEMPLATE_PULLED: '1' },
@@ -1096,7 +1096,7 @@ program
         return;
       }
       const resolved = resolveRepositoryPlatform(config);
-      if (resolved.provider === 'none') throw new Error('template update --write opens a merge request: the project has no GitLab or GitHub settings.');
+      if (resolved.provider === 'none') throw new Error('template update opens a merge request: the project has no GitLab or GitHub settings (--local writes here only).');
       const result = await deliverTemplateUpdate(root, {
         aifactoryRoot,
         adapter: platformAdapterFor(root, resolved),

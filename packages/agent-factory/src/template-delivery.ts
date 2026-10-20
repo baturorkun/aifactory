@@ -4,7 +4,7 @@ import { join } from 'path';
 import type { RepositoryPlatformAdapter } from './repository-platform/types';
 import { updateEmbeddedProject, type TemplateChange } from './template-update';
 
-// `factory template update --write` (RQ-0069): an embedded project takes the
+// `factory template update` (RQ-0069): an embedded project takes the
 // current template as a merge request, never as files left in a worktree.
 // aifactory knows no project: the one the command runs in is the one updated.
 //
@@ -109,7 +109,7 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
     const draft = await options.adapter.createDraftChangeRequest({
       title: `aifactory template update (${commit})`,
       description: [
-        `The embedded template of aifactory at \`${commit}\` (${subject}), by \`factory template update --write\`.`,
+        `The embedded template of aifactory at \`${commit}\` (${subject}), by \`factory template update\`.`,
         '',
         'Template-owned files only: the scripts, the CI file, `.env.example`, `AGENTS.md`, merged package scripts and gates. Designs, boards, `.env` and requirements are not touched.',
         '',

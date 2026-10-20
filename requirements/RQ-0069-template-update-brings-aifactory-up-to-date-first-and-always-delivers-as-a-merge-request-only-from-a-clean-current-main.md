@@ -25,8 +25,9 @@ command runs in is the one updated.
 
 ## What it does
 
-- `factory template update` still lists the changes. `--write` now delivers
-  them as a merge request, from the project's directory:
+- `factory template update`, run in the project's directory, delivers the
+  changes as a merge request (the user's choice: the work is the command's
+  default, a flag is for the exceptions); `--dry-run` only lists them:
   1. aifactory brings itself up to date: its checkout must be on main and
      clean; it is fast-forwarded to origin/main, and `pnpm install` runs when
      `pnpm-lock.yaml` moved. When anything moved the command runs again in a
@@ -41,7 +42,8 @@ command runs in is the one updated.
      and a merge request opened (ready, not draft) with the list and the
      aifactory commit. A failing check pushes nothing.
   5. The project is left on main, clean; the local branch is removed.
-- `--local` writes the changes into the worktree only (the old `--write`).
+- `--local` writes the changes into the worktree only (the old `--write`,
+  which is gone).
 - README and the user guide (v0.69) describe it.
 
 ## Acceptance Criteria

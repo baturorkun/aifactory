@@ -373,8 +373,8 @@ size, each through the store and retried on its own; since RQ-0067 the sync
 and collect steps also run in the background on the builder and are polled,
 as the command is, so no project size meets the agent's 120 s per run). `factory env-check` ends with the logins to try. A project made from an older template is
 brought up to date with `factory template update`, run in the project: it
-lists the changes; `--write` delivers them as a merge request (RQ-0069). It
-first brings aifactory itself up to date (a fast-forward of its main, `pnpm
+delivers the changes as a merge request (RQ-0069; `--dry-run` only lists them).
+It first brings aifactory itself up to date (a fast-forward of its main, `pnpm
 install` when the lockfile moved) and runs again with the code it pulled;
 then, from the project's main only, clean and not ahead of origin (behind is
 fast-forwarded), it writes the changes on a branch `template/aifactory-<commit>`,
