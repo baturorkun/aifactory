@@ -40,7 +40,7 @@
 <header>
   <h1>Embedded Template Kullanım Kılavuzu</h1>
   <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
-  <p class="meta">aifactory v0.57 (RQ-0044…RQ-0057) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 19 Ekim 2026</p>
+  <p class="meta">aifactory v0.62 (RQ-0044…RQ-0062) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
 </header>
 
 <h2>1. Template ne yapar</h2>
@@ -113,7 +113,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 <tr><td><code>pnpm board [tasarım]</code></td><td>Kartı açar, programlar, konsolu dinler, kapatır</td><td>lab host + kart</td></tr>
 <tr><td><code>pnpm flow clean</code></td><td>out/ temizliği</td><td></td></tr>
 </table>
-<p>Vivado host <code>.env</code>'de <code>VIVADO_REMOTE_*</code> ile tanımlıdır (bugün 192.168.1.3, Windows, Vivado/Vitis 2025.2). Proje kaynakları her koşuda tar ile host'a gider, <code>out/</code> host'ta kalır ve sadece artifact'ler geri gelir. Host'taki proje adı kişi başınadır (<code>&lt;proje&gt;-&lt;kullanıcı&gt;</code>), CI kendi adını kullanır; iki kişi aynı Vivado projesini paylaşmaz. Build yaklaşık 8–10 dakika, sim 20 saniye, Vitis 1 dakika sürer.</p>
+<p>Vivado host <code>.env</code>'de <code>VIVADO_REMOTE_*</code> ile tanımlıdır (bugün 192.168.1.3, Windows, Vivado/Vitis 2025.2). Proje kaynakları her koşuda host'a gider: <code>VIVADO_ACCESS=bot</code> ile sadece host'taki kopyada olmayan veya farklı olan dosyalar (SHA-256 ile karşılaştırılır, büyük arşiv 8 MB'lık parçalarla, <code>BOT_API_CHUNK_KB</code>), projeden silinen dosyalar host'tan da silinir; <code>ssh</code> ile her seferinde tüm kaynaklar tar ile. <code>out/</code> host'ta kalır ve sadece artifact'ler geri gelir. Host'taki proje adı kişi başınadır (<code>&lt;proje&gt;-&lt;BOT_API_AGENT&gt;</code>), CI kendi adını kullanır; iki kişi aynı Vivado projesini paylaşmaz. Build yaklaşık 8–10 dakika, sim 20 saniye, Vitis 1 dakika sürer.</p>
 <p>Önce <code>out/&lt;tasarım&gt;/artifacts/summary.json</code>'a bakın: WNS/WHS, LUT/FF/BRAM/DSP, DRC, süreler, build host ve git sha. Raporlar yanındadır.</p>
 
 <h2>6. Twin</h2>
@@ -148,7 +148,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 
 <h2 class="pb">10. Bilinen durumlar</h2>
 <ul>
-<li><b>Windows yol sınırı (260):</b> Vitis BSP uzun yollarda derlenmez. Host'taki base path <code>C:\ab</code> junction'ıdır; akış BSP yolunu build'den önce tahmin eder ve aşacaksa parçalarıyla uyarır.</li>
+<li><b>Windows yol sınırı (260):</b> Vitis BSP uzun yollarda derlenmez. Host'taki base path <code>C:\ab</code> kısa ve gerçek bir klasördür (junction değil: Vivado junction'ı uzun hedef yoluna çözer); akış BSP yolunu build'den önce tahmin eder ve aşacaksa parçalarıyla uyarır.</li>
 <li><b>Dosyalar 200 KB'da kesik geliyorsa:</b> Windows OpenSSH'ın SFTP'si; akış Windows host'ta <code>scp -O</code> kullanır. Bitstream'ler ~4 MB tam gelmeli.</li>
 <li><b><code>vitis -s</code> hata verse de 0 ile çıkar:</b> ELF kanıttır; eski ELF build'den önce silinir, yoksa stage düşer.</li>
 <li><b>Vivado sürümü:</b> board dosyasındaki <code>tool_version</code> ile host'taki sürüm eşleşmezse build durur; sürüm değişikliği ayrı requirement'tır (IP'leri yükseltir).</li>

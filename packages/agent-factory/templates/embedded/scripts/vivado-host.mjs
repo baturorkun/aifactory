@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { hostname, tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -15,8 +16,9 @@ import { botDownload, botJob, botJobWait, botPowershell, botUpload } from './lab
 //                               host over SSH, and the command runs in the copy
 //   VIVADO_ACCESS=bot           the same copy on the Vivado host, but through the
 //                               lab bot's Windows agent there (VIVADO_BOT_AGENT),
-//                               with no login and no key: the archive goes through
-//                               the bot's store, the command runs in the background
+//                               with no login and no key: the sources go through
+//                               the bot's store, only the files the copy there
+//                               lacks (RQ-0062), the command runs in the background
 //                               and is followed, the results come back through the
 //                               store (RQ-0057)
 //
@@ -32,6 +34,10 @@ import { botDownload, botJob, botJobWait, botPowershell, botUpload } from './lab
 export const PROJECT_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 const EXCLUDED_TOP_LEVEL = new Set(['.env', '.git', '.DS_Store', 'node_modules', 'out', 'references', 'runs', 'handoffs']);
+// Left out of the sources at any depth, as tar's --exclude does.
+const EXCLUDED_NAMES = ['.git', '.env', '.DS_Store', '._*', '__MACOSX', 'node_modules', 'out', 'runs', 'handoffs', 'references', '*.log'];
+const excludedName = (name) => EXCLUDED_NAMES.some((pattern) => (pattern.startsWith('*') ? name.endsWith(pattern.slice(1))
+  : pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern));
 
 export class CommandError extends Error {
   constructor(message, exitCode = 2) {
@@ -198,30 +204,159 @@ Set-Content -Path (Join-Path $Job 'exit.txt') -Value $Code
 `;
 }
 
-// prepare: the sources from the bot's store into the project copy, the
-// command started in the background, its pid and log in the job directory.
-export function botPrepareScript({ settings, jobDirectory, archiveUrl, entries, command, directories }) {
+// The sources' list, as the stage puts it in the store (one line per file:
+// sha256, size, path, gzipped), and as the copy records its last sync in
+// .aifactory-sync (sha256, size, the file's timestamp there, path).
+// The bot serves a .gz file with Content-Encoding: gzip, so Invoke-WebRequest
+// may have unpacked it already: the list is read either way, as tar is.
+const PS_LISTS = `$Tab = [char]9
+function Read-Manifest($Path) {
+  $Bytes = [IO.File]::ReadAllBytes($Path)
+  if ($Bytes.Length -ge 2 -and $Bytes[0] -eq 31 -and $Bytes[1] -eq 139) {
+    $Stream = New-Object IO.MemoryStream(,$Bytes)
+    $Gzip = New-Object IO.Compression.GZipStream($Stream, [IO.Compression.CompressionMode]::Decompress)
+    $Reader = New-Object IO.StreamReader($Gzip, [Text.Encoding]::UTF8)
+    $Text = $Reader.ReadToEnd()
+    $Reader.Dispose()
+  } else { $Text = [Text.Encoding]::UTF8.GetString($Bytes) }
+  $Text.Split([char]10) | Where-Object { $_ }
+}
+function Read-Recorded($ProjectPath) {
+  $Recorded = @{}
+  $Path = Join-Path $ProjectPath '.aifactory-sync'
+  if (Test-Path -LiteralPath $Path) {
+    foreach ($Line in [IO.File]::ReadAllLines($Path)) {
+      $Parts = $Line.Split([char[]]@($Tab), 4)
+      if ($Parts.Count -eq 4) { $Recorded[$Parts[3]] = $Parts }
+    }
+  }
+  $Recorded
+}`;
+
+// diff: which of the listed files the copy lacks or has otherwise. A file
+// whose size and timestamp are what the last sync recorded keeps its recorded
+// hash; another is hashed, for at most a minute of the step (the agent kills
+// a run at 120 s), past that it is sent. The answer is index ranges into the
+// list: NEED=0-4,9.
+export function botDiffScript({ settings, jobDirectory, manifestUrl }) {
   return `${PS_HEADER}
-# aifactory: prepare
+${PS_LISTS}
+# aifactory: diff
 $ProjectPath = Decode '${base64Json(projectPathOnHost(settings))}'
 $Job = Decode '${base64Json(jobDirectory)}'
-$ArchiveUrl = Decode '${base64Json(archiveUrl)}'
-$Entries = [string[]](Decode '${base64Json(entries)}')
-$CommandArgs = [string[]](Decode '${base64Json(command)}')
-$Directories = [string[]](Decode '${base64Json(directories)}')
-$StagePath = Join-Path $Job 'stage'
-New-Item -ItemType Directory -Force -Path $ProjectPath, $Job, $StagePath | Out-Null
-Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile (Join-Path $Job 'src.tar.gz')
-& tar.exe -xzf (Join-Path $Job 'src.tar.gz') -C $StagePath
-if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
-foreach ($Entry in $Entries) {
-  if ($Entry -in @('.', '..', 'out') -or $Entry -match '[\\/]') { throw "Unsafe entry: $Entry" }
-  $Target = Join-Path $ProjectPath $Entry
-  if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Recurse -Force }
-  Move-Item -LiteralPath (Join-Path $StagePath $Entry) -Destination $Target
+$ManifestUrl = Decode '${base64Json(manifestUrl)}'
+New-Item -ItemType Directory -Force -Path $ProjectPath, $Job | Out-Null
+$ManifestFile = Join-Path $Job 'manifest.gz'
+Invoke-WebRequest -UseBasicParsing -Uri $ManifestUrl -OutFile $ManifestFile
+$Recorded = Read-Recorded $ProjectPath
+$Clock = [Diagnostics.Stopwatch]::StartNew()
+$Need = New-Object System.Collections.Generic.List[int]
+$Index = 0
+foreach ($Line in @(Read-Manifest $ManifestFile)) {
+  $Parts = $Line.Split([char[]]@($Tab), 3)
+  $Info = [IO.FileInfo]::new([IO.Path]::Combine($ProjectPath, $Parts[2]))
+  $Same = $false
+  if ($Info.Exists -and $Info.Length -eq [long]$Parts[1]) {
+    $Record = $Recorded[$Parts[2]]
+    if ($Record -and [long]$Record[1] -eq $Info.Length -and [long]$Record[2] -eq $Info.LastWriteTimeUtc.Ticks) { $Same = $Record[0] -eq $Parts[0] }
+    elseif ($Clock.Elapsed.TotalSeconds -lt 60) { $Same = (Get-FileHash -LiteralPath $Info.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -eq $Parts[0] }
+  }
+  if (-not $Same) { $Need.Add($Index) }
+  $Index += 1
 }
-foreach ($Directory in $Directories) { New-Item -ItemType Directory -Force -Path (Join-Path $ProjectPath $Directory) | Out-Null }
-Remove-Item -LiteralPath $StagePath, (Join-Path $Job 'src.tar.gz') -Recurse -Force -ErrorAction SilentlyContinue
+$Ranges = New-Object System.Collections.Generic.List[string]
+$At = 0
+while ($At -lt $Need.Count) {
+  $From = $Need[$At]
+  while ($At + 1 -lt $Need.Count -and $Need[$At + 1] -eq $Need[$At] + 1) { $At += 1 }
+  if ($Need[$At] -eq $From) { $Ranges.Add([string]$From) } else { $Ranges.Add(('{0}-{1}' -f $From, $Need[$At])) }
+  $At += 1
+}
+Write-Output "STATUS=OK"
+Write-Output "FILES=$Index"
+Write-Output "NEED=$($Ranges -join ',')"
+`;
+}
+
+// sync: the copy made the list. What the project no longer has goes (under
+// the synced top-level entries, and what the last sync brought); the parts
+// of the archive are joined in order and unpacked over the copy; the list is
+// recorded. out/ and what is not the project's sources stay.
+export function botSyncScript({ settings, jobDirectory, partUrls, entries, directories }) {
+  return `${PS_HEADER}
+${PS_LISTS}
+# aifactory: sync
+$ProjectPath = Decode '${base64Json(projectPathOnHost(settings))}'
+$Job = Decode '${base64Json(jobDirectory)}'
+$PartUrls = [string[]](Decode '${base64Json(partUrls)}')
+$Entries = [string[]](Decode '${base64Json(entries)}')
+$Directories = [string[]](Decode '${base64Json(directories)}')
+$Base = [IO.Path]::GetFullPath($ProjectPath).TrimEnd([char[]]@([char]92, [char]47))
+$Lines = @(Read-Manifest (Join-Path $Job 'manifest.gz'))
+$Wanted = @{}
+foreach ($Line in $Lines) { $Wanted[$Line.Split([char[]]@($Tab), 3)[2]] = $true }
+$Stale = [ordered]@{}
+foreach ($Entry in $Entries) {
+  if ($Entry -in @('.', '..', 'out', '.aifactory-sync') -or $Entry -match '[\\\\/]') { throw "Unsafe entry: $Entry" }
+  $Root = [IO.Path]::Combine($Base, $Entry)
+  if ([IO.File]::Exists($Root)) { if (-not $Wanted.ContainsKey($Entry)) { $Stale[$Entry] = $true } }
+  elseif ([IO.Directory]::Exists($Root)) {
+    foreach ($File in [IO.Directory]::GetFiles($Root, '*', [IO.SearchOption]::AllDirectories)) {
+      $Relative = $File.Substring($Base.Length + 1).Replace([char]92, [char]47)
+      if (-not $Wanted.ContainsKey($Relative)) { $Stale[$Relative] = $true }
+    }
+  }
+}
+foreach ($Path in (Read-Recorded $Base).Keys) {
+  if ($Path -match '(^|/)[.][.](/|$)') { continue }
+  if (-not $Wanted.ContainsKey($Path) -and [IO.File]::Exists([IO.Path]::Combine($Base, $Path))) { $Stale[$Path] = $true }
+}
+foreach ($Relative in $Stale.Keys) {
+  $Target = [IO.Path]::Combine($Base, $Relative)
+  Remove-Item -LiteralPath $Target -Force
+  $Parent = [IO.Path]::GetDirectoryName($Target)
+  while ($Parent.Length -gt $Base.Length -and [IO.Directory]::Exists($Parent) -and @([IO.Directory]::GetFileSystemEntries($Parent)).Count -eq 0) {
+    [IO.Directory]::Delete($Parent)
+    $Parent = [IO.Path]::GetDirectoryName($Parent)
+  }
+}
+if ($PartUrls.Count -gt 0) {
+  $Archive = Join-Path $Job 'src.tar.gz'
+  $Part = Join-Path $Job 'part'
+  $Out = [IO.File]::Create($Archive)
+  try {
+    foreach ($Url in $PartUrls) {
+      Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Part
+      $In = [IO.File]::OpenRead($Part)
+      try { $In.CopyTo($Out) } finally { $In.Dispose() }
+    }
+  } finally { $Out.Dispose() }
+  $Tar = if ([IO.Path]::DirectorySeparatorChar -eq [char]92) { 'tar.exe' } else { 'tar' }
+  & $Tar -xf $Archive -C $Base
+  if ($LASTEXITCODE -ne 0) { throw "tar failed with exit code $LASTEXITCODE" }
+  Remove-Item -LiteralPath $Archive, $Part -Force
+}
+$Record = New-Object System.Collections.Generic.List[string]
+foreach ($Line in $Lines) {
+  $Parts = $Line.Split([char[]]@($Tab), 3)
+  $Info = [IO.FileInfo]::new([IO.Path]::Combine($Base, $Parts[2]))
+  if (-not $Info.Exists) { throw "Missing after the sync: $($Parts[2])" }
+  $Record.Add($Parts[0] + $Tab + $Info.Length + $Tab + $Info.LastWriteTimeUtc.Ticks + $Tab + $Parts[2])
+}
+[IO.File]::WriteAllLines((Join-Path $Base '.aifactory-sync'), $Record.ToArray())
+foreach ($Directory in $Directories) { New-Item -ItemType Directory -Force -Path (Join-Path $Base $Directory) | Out-Null }
+Write-Output "STATUS=SYNCED"
+Write-Output "REMOVED=$($Stale.Count)"
+`;
+}
+
+// start: the command started in the background in the synced copy, its pid
+// and log in the job directory.
+export function botStartScript({ settings, jobDirectory, command }) {
+  return `${PS_HEADER}
+# aifactory: start
+$ProjectPath = Decode '${base64Json(projectPathOnHost(settings))}'
+$Job = Decode '${base64Json(jobDirectory)}'
 [IO.File]::WriteAllText((Join-Path $Job 'run.ps1'), [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${base64Text(botRunnerScript({ settings, jobDirectory, command }))}')))
 Set-Content -Path (Join-Path $Job 'log') -Value "Running on $env:COMPUTERNAME in $ProjectPath" -Encoding utf8
 $Process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Job 'run.ps1')) -WindowStyle Hidden -PassThru
@@ -329,6 +464,7 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
   const jobId = `${process.pid}-${Date.now()}`;
   const jobDirectory = `${settings.basePath.replace(/[\\/]+$/, '')}\\.${settings.projectName}-job-${jobId}`;
   const archiveName = `${settings.projectName}-${jobId}-src.tar.gz`;
+  let created = false;
   let started = false;
   let ended = false;
   let stopping = false;
@@ -341,17 +477,44 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
   // removed before this process ends.
   const onSignal = (signal) => {
     stop()
-      .then(() => (started ? botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {}) : undefined))
+      .then(() => (created ? botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {}) : undefined))
       .finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
   };
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
   let failure;
   try {
-    createArchive(join(temporary, archiveName));
-    const archiveUrl = await botUpload(settings.botEnv, settings.botAgent, archiveName, readFileSync(join(temporary, archiveName)), 'BUILD');
+    // The sources: their list to the builder, back the files its copy lacks,
+    // only those through the store, in parts (RQ-0062).
+    const files = sourceManifest();
+    const manifestName = `${settings.projectName}-${jobId}-manifest.gz`;
+    const manifest = gzipSync(Buffer.from(files.map((file) => `${file.hash}\t${file.size}\t${file.path}\n`).join(''), 'utf8'));
+    const manifestUrl = await botUpload(settings.botEnv, settings.botAgent, manifestName, manifest, 'BUILD');
+    created = true;
+    const diff = await botStep(settings, botDiffScript({ settings, jobDirectory, manifestUrl }), `${description} sources`, { wait: 90 });
+    if (Number(diff.FILES) !== files.length || diff.NEED === undefined) {
+      throw new CommandError(`${description} sources on ${settings.host}: the builder read ${diff.FILES ?? 'no'} files of ${files.length} in the list.`, 2);
+    }
+    const needed = parseRanges(diff.NEED).map((index) => files[index]);
+    const partUrls = [];
+    if (needed.length > 0) {
+      createArchive(join(temporary, archiveName), needed.map((file) => file.path));
+      const data = readFileSync(join(temporary, archiveName));
+      const chunk = chunkBytes(settings.botEnv);
+      const count = Math.ceil(data.length / chunk);
+      for (let part = 0; part < count; part += 1) {
+        if (count > 1) console.log(`Sources: part ${part + 1} of ${count}`);
+        const name = count > 1 ? `${archiveName}.part${String(part).padStart(3, '0')}` : archiveName;
+        partUrls.push(await botUpload(settings.botEnv, settings.botAgent, name, data.subarray(part * chunk, (part + 1) * chunk), 'BUILD'));
+      }
+      console.log(`Sources: ${needed.length} of ${files.length} files changed (${formatBytes(data.length)}) sent to ${settings.host}`);
+    } else {
+      console.log(`Sources: up to date on ${settings.host} (${files.length} files)`);
+    }
     const entries = includedTopLevelEntries();
-    await botStep(settings, botPrepareScript({ settings, jobDirectory, archiveUrl, entries, command, directories }), `${description} start`);
+    const synced = await botStep(settings, botSyncScript({ settings, jobDirectory, partUrls, entries, directories }), `${description} sources`, { wait: 90 });
+    if (Number(synced.REMOVED) > 0) console.log(`Sources: ${synced.REMOVED} ${Number(synced.REMOVED) === 1 ? 'file' : 'files'} no longer here removed on ${settings.host}`);
+    await botStep(settings, botStartScript({ settings, jobDirectory, command }), `${description} start`);
     started = true;
 
     // Follow the log until the command ends; the agent's own runs stay short.
@@ -394,7 +557,9 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
         mkdirSync(dirname(local), { recursive: true });
         rmSync(local, { recursive: true, force: true });
       }
-      const extracted = spawnSync('tar', ['-xzf', join(temporary, 'results.tar.gz'), '-C', PROJECT_ROOT], { stdio: 'pipe' });
+      // No -z: the archive may come unpacked (Content-Encoding: gzip), and tar
+      // tells a compressed one from the file itself; GNU tar's -z would refuse it.
+      const extracted = spawnSync('tar', ['-xf', join(temporary, 'results.tar.gz'), '-C', PROJECT_ROOT], { stdio: 'pipe' });
       if (extracted.status !== 0) throw new CommandError(`Could not unpack the results of ${description}: ${String(extracted.stderr).trim()}`, 2);
       for (const pull of pulls) if (existsSync(resolve(PROJECT_ROOT, pull))) console.log(`Brought back ${pull}`);
     } else if (!failure && pulls.length > 0) {
@@ -405,7 +570,7 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
     process.off('SIGTERM', onSignal);
     // The job directory goes once the command has ended (or was stopped);
     // a command the stage lost sight of keeps running, and its directory says so.
-    if (started && (ended || stopping)) await botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {});
+    if (created && (!started || ended || stopping)) await botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {});
     else if (started) console.error(`${description} may still be running on ${settings.host}; its job directory ${jobDirectory} is left there.`);
     rmSync(temporary, { recursive: true, force: true });
   }
@@ -434,20 +599,63 @@ function sshOptions(settings, portFlag) {
   return args;
 }
 
-function includedTopLevelEntries() {
-  return readdirSync(PROJECT_ROOT)
+function includedTopLevelEntries(root = PROJECT_ROOT) {
+  return readdirSync(root)
     .filter((name) => !EXCLUDED_TOP_LEVEL.has(name) && !name.endsWith('.log'))
     .sort();
 }
 
-function createArchive(archivePath) {
-  const exclusions = ['.git', '.env', '.DS_Store', '._*', '__MACOSX', 'node_modules', 'out', 'runs', 'handoffs', 'references', '*.log'];
+// The project's sources, or only `files` (project-relative, / separated).
+function createArchive(archivePath, files) {
   // macOS tar would add extended attributes that GNU tar on a Linux host
   // reports, one warning per file.
   const quiet = process.platform === 'darwin' ? ['--no-mac-metadata', '--no-xattrs'] : [];
-  run('tar', ['-czf', archivePath, ...quiet, ...exclusions.map((item) => `--exclude=${item}`), ...includedTopLevelEntries()],
+  let what = [...EXCLUDED_NAMES.map((item) => `--exclude=${item}`), ...includedTopLevelEntries()];
+  if (files) {
+    const list = `${archivePath}.files`;
+    writeFileSync(list, files.map((file) => `${file}\n`).join(''));
+    what = ['-T', list];
+  }
+  run('tar', ['-czf', archivePath, ...quiet, ...what],
     'Source archive', { cwd: PROJECT_ROOT, env: { ...process.env, COPYFILE_DISABLE: '1' } });
 }
+
+// The files createArchive would take, each with its size and SHA-256, in a
+// fixed order: what the builder's copy is compared with (RQ-0062).
+export function sourceManifest(root = PROJECT_ROOT) {
+  const files = [];
+  const walk = (relative, names) => {
+    for (const name of names) {
+      const path = relative ? `${relative}/${name}` : name;
+      const stats = statSync(join(root, path));
+      if (stats.isDirectory()) walk(path, readdirSync(join(root, path)).filter((child) => !excludedName(child)).sort());
+      else if (stats.isFile()) files.push({ path, size: stats.size, hash: createHash('sha256').update(readFileSync(join(root, path))).digest('hex') });
+    }
+  };
+  walk('', includedTopLevelEntries(root).filter((name) => !excludedName(name)));
+  return files;
+}
+
+// NEED=0-4,9 from the diff step: the indexes it names.
+export function parseRanges(text) {
+  const indexes = [];
+  for (const range of String(text ?? '').split(',').filter(Boolean)) {
+    const [from, to = from] = range.split('-').map(Number);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || to < from) throw new CommandError(`Not an index range: ${range}`, 2);
+    for (let index = from; index <= to; index += 1) indexes.push(index);
+  }
+  return indexes;
+}
+
+// An archive larger than this goes to the store in parts, each uploaded and
+// retried on its own (BOT_API_CHUNK_KB, default 8 MB).
+export function chunkBytes(env) {
+  const kilobytes = Number((env.BOT_API_CHUNK_KB ?? '').trim() || 8192);
+  if (!Number.isInteger(kilobytes) || kilobytes <= 0) throw new CommandError('BOT_API_CHUNK_KB must be a positive whole number of kilobytes.', 2);
+  return kilobytes * 1024;
+}
+
+const formatBytes = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 const base64Json = (data) => Buffer.from(JSON.stringify(data), 'utf8').toString('base64');
 

@@ -359,7 +359,10 @@ through the bot, the ELF in and the results out through the bot's store, no
 token on the lab host); the builder's is RQ-0057 (`VIVADO_ACCESS=bot`: the
 sources through the bot's store to the builder, the command started there by
 the bot's Windows agent `VIVADO_BOT_AGENT` and followed in short PowerShell
-steps, the results back through the store; no account or key on the builder). `factory env-check` ends with the logins to try. A project made from an older template is
+steps, the results back through the store; no account or key on the builder;
+since RQ-0062 only the files the builder's copy lacks go, compared by SHA-256,
+in parts of `BOT_API_CHUNK_KB`, default 8 MB, and what the project no longer
+has is removed there). `factory env-check` ends with the logins to try. A project made from an older template is
 brought up to date with `factory template update` (it lists the changes;
 `--write` applies them): the scripts, the flow, the CI file, `.env.example` and
 `AGENTS.md` are replaced, the gates and package scripts merged, files a design
