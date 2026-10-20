@@ -436,6 +436,63 @@ Write-Output "STATUS=OK"
 `;
 }
 
+// prune (RQ-0065): what the project leaves on a Windows Vivado host and no
+// longer needs. A CI copy <project>-<tag>-<ref> (s, b, f; the job's full name
+// before RQ-0063) whose ref is not among `keep`, the refs that still exist;
+// a Vitis workspace in .v whose .owner, the copy it was made for, is gone,
+// or one with no .owner a week old; a job or sync directory of this project
+// a day old. Nothing touched in the last two hours goes (a job may be in it),
+// and a person's copy, <project>-<name>, never does.
+export function hostPruneScript({ settings, project, keep }) {
+  return `${PS_HEADER}
+# aifactory: prune
+$Base = [IO.Path]::GetFullPath((Decode '${base64Json(settings.basePath)}')).TrimEnd([char[]]@([char]92, [char]47))
+$Project = Decode '${base64Json(project)}'
+$Keep = [string[]](Decode '${base64Json(keep)}')
+$Now = Get-Date
+$Removed = New-Object System.Collections.Generic.List[string]
+function Remove-Old($Item, $Hours) {
+  if (($Now - $Item.LastWriteTime).TotalHours -lt $Hours) { return }
+  Remove-Item -LiteralPath $Item.FullName -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not (Test-Path -LiteralPath $Item.FullName)) { $Removed.Add($Item.FullName.Substring($Base.Length + 1)) }
+}
+$Copy = '^' + [regex]::Escape($Project) + '-(s|b|f|embedded_sim|embedded_build|factory)-(.+)$'
+foreach ($Item in @(Get-ChildItem -LiteralPath $Base -Directory -Force -ErrorAction SilentlyContinue)) {
+  $Match = [regex]::Match($Item.Name, $Copy)
+  if ($Match.Success) { if ($Keep -notcontains $Match.Groups[2].Value) { Remove-Old $Item 2 } }
+  elseif ($Item.Name -like ('.' + $Project + '-*-job-*') -or $Item.Name -like ('.' + $Project + '-*-sync-*')) { Remove-Old $Item 24 }
+}
+$Workspaces = Join-Path $Base '.v'
+foreach ($Item in @(Get-ChildItem -LiteralPath $Workspaces -Directory -Force -ErrorAction SilentlyContinue)) {
+  $Owner = Join-Path $Item.FullName '.owner'
+  if (Test-Path -LiteralPath $Owner) {
+    $Root = [IO.Path]::GetFullPath((Get-Content -LiteralPath $Owner -Raw).Trim()).TrimEnd([char[]]@([char]92, [char]47))
+    $Mine = [IO.Path]::GetFileName($Root) -like ($Project + '-*')
+    if ($Mine -and -not (Test-Path -LiteralPath $Root)) { Remove-Old $Item 2 }
+  } else { Remove-Old $Item 168 }
+}
+Write-Output "STATUS=OK"
+Write-Output "REMOVED=$($Removed.Count)"
+Write-Output "LOG:"
+foreach ($Name in $Removed) { Write-Output $Name }
+`;
+}
+
+// A PowerShell script on the Windows Vivado host at its base path, over SSH
+// or through the bot: its STATUS= answer.
+export async function runHostScript(settings, script, description) {
+  if (!settings.remote || settings.hostType !== 'windows') {
+    throw new CommandError(`${description} works on a Windows Vivado host (VIVADO_REMOTE_HOST, VIVADO_HOST_TYPE=windows).`, 2);
+  }
+  if (settings.access === 'bot') return botStep(settings, script, description, { wait: 90 });
+  const result = spawnSync('ssh', [...sshOptions(settings, '-p'), `${settings.user}@${settings.host}`, ...powershellCommand(script)], { stdio: ['ignore', 'pipe', 'inherit'] });
+  if (result.error) throw new CommandError(`${description} could not start: ${result.error.message}`);
+  if (result.status !== 0) throw new CommandError(`${description} on ${settings.host} failed with exit code ${result.status ?? 'unknown'}.`, result.status ?? 2);
+  const step = parseStep(String(result.stdout));
+  if (!step.STATUS) throw new CommandError(`${description} on ${settings.host} gave no STATUS line.`, 2);
+  return step;
+}
+
 // The STATUS= answer of a step: its fields and what follows LOG:.
 export function parseStep(text) {
   const [head, ...rest] = (text ?? '').split(/^LOG:\r?\n?/m);

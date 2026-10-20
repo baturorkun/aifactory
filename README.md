@@ -292,6 +292,12 @@ nor the design's name (194 characters under `C:\ab`). A design whose
 `create_vitis.py` comes from an older template keeps its workspace under
 `out/<design>/vitis`; the sw stage estimates its longest path before the
 build and, past 255, stops naming the parts and the template's script.
+The builder keeps a copy per CI job and branch and a workspace per copy and
+design; `node scripts/flow.mjs prune` removes the CI copies of branches origin
+no longer has, the workspaces whose copy is gone and job directories a day
+old, never a person's copy nor anything touched in the last two hours
+(RQ-0065). CI runs it as `embedded_builder_prune` after every push to the
+default branch.
 
 A requirement of an embedded project is of kind `embedded` and passes through
 phases in order, each with its gates: `spec` (`designCheck`), `sim`

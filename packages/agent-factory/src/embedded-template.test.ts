@@ -2,7 +2,7 @@
 // the phase-ordered gates and the CI that runs them.
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
@@ -70,6 +70,7 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
         assert.match(windows, /^\/x\/ab\/\.v\/[0-9a-f]{8}$/, 'next to the copies, named by a hash');
         assert.notEqual(windows, other, 'one per copy and design');
         assert.equal(platform, 'platform');
+        assert.match(project.read('scripts/vitis_sw.py'), /open\(os\.path\.join\(workspace, "\.owner"\), "w"/, 'the workspace names its copy (RQ-0065)');
       } finally {
         rmSync(fake, { recursive: true, force: true });
       }
@@ -225,6 +226,12 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
     assert.match(job('embedded_build'), /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-b-\$CI_COMMIT_REF_SLUG"/);
     assert.match(job('embedded_build'), /resource_group: "vivado-embedded_build-\$CI_COMMIT_REF_SLUG"/);
     assert.match(job('embedded_sim'), /resource_group: "vivado-embedded_sim-\$CI_COMMIT_REF_SLUG"/);
+    // The builder's leftovers go after every push to the default branch (RQ-0065).
+    const prune = job('embedded_builder_prune');
+    assert.match(prune, /- node scripts\/flow\.mjs prune\n/);
+    assert.match(prune, /allow_failure: true/);
+    assert.match(prune, /if: '\$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH'/);
+    assert.match(prune, /needs: \[\]/);
     // The factory job reaches the same host for its gates, with its own project.
     const factory = job('ai_factory_requirement_branch');
     assert.match(factory, /VIVADO_REMOTE_PROJECT_NAME: "\$CI_PROJECT_NAME-f-\$CI_COMMIT_REF_SLUG"/);
@@ -949,6 +956,98 @@ test('the sources go to the builder only as they change: the diff and sync steps
     assert.throws(() => host.chunkBytes({ BOT_API_CHUNK_KB: 'big' }), /BOT_API_CHUNK_KB must be a positive whole number/);
   } finally {
     server.close();
+    project.done();
+    rmSync(work, { recursive: true, force: true });
+  }
+});
+
+// The builder's leftovers (RQ-0065): the prune script under PowerShell
+// against a base directory holding every kind of entry, and the branches
+// that keep their CI copies read from origin.
+test('prune removes the CI copies of gone branches, orphaned Vitis workspaces and stale job directories, and never a person\'s copy', async (t) => {
+  const project = scaffold();
+  const work = mkdtempSync(join(tmpdir(), 'builder-prune-'));
+  try {
+    const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as {
+      refSlug: (name: string) => string;
+      liveRefSlugs: (root: string) => string[];
+    };
+    assert.equal(flow.refSlug('factory/RQ-0004'), 'factory-rq-0004');
+    assert.equal(flow.refSlug('Feature/Über_HDMI--x'), 'feature--ber-hdmi--x');
+    assert.equal(flow.refSlug(`-${'a'.repeat(70)}`), 'a'.repeat(62));
+
+    // origin's branches, as GitLab keeps them after a merge removed one.
+    const git = (cwd: string, ...args: string[]) => {
+      const run = spawnSync('git', args, { cwd, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+      assert.equal(run.status, 0, `git ${args.join(' ')}: ${String(run.stderr)}`);
+    };
+    const origin = join(work, 'origin.git');
+    const clone = join(work, 'clone');
+    git(work, 'init', '-q', '--bare', origin);
+    git(work, 'init', '-q', '-b', 'main', clone);
+    writeFileSync(join(clone, 'a'), 'a');
+    git(clone, 'add', 'a');
+    git(clone, 'commit', '-q', '-m', 'a');
+    git(clone, 'remote', 'add', 'origin', origin);
+    assert.throws(() => flow.liveRefSlugs(clone), /origin lists no branch; nothing removed/, 'an empty answer removes nothing');
+    git(clone, 'push', '-q', 'origin', 'main', 'main:factory/RQ-0004');
+    assert.deepEqual(flow.liveRefSlugs(clone), ['factory-rq-0004', 'main']);
+    // Not a clone, and no "origin" next to it git could read as a path.
+    const nowhere = join(work, 'nowhere');
+    mkdirSync(nowhere);
+    assert.throws(() => flow.liveRefSlugs(nowhere), /PRUNE FAILED: git ls-remote origin/);
+
+    if (spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { stdio: 'pipe' }).status !== 0) {
+      t.diagnostic('pwsh is not installed: the prune script itself is not run');
+      return;
+    }
+    const host = await import(pathToFileURL(join(project.root, 'scripts/vivado-host.mjs')).href) as {
+      hostPruneScript: (job: { settings: unknown; project: string; keep: string[] }) => string;
+      parseStep: (text: string) => Record<string, string> & { log: string };
+    };
+    const base = join(work, 'ab');
+    const old = (hours: number) => new Date(Date.now() - hours * 3600_000);
+    const entry = (path: string, hours: number, owner?: string) => {
+      mkdirSync(join(base, path), { recursive: true });
+      writeFileSync(join(base, path, 'file'), 'x');
+      if (owner !== undefined) writeFileSync(join(base, path, '.owner'), owner);
+      utimesSync(join(base, path), old(hours), old(hours));
+    };
+    entry('embedded1-b-main', 30);                              // its branch is there
+    entry('embedded1-b-factory-rq-0004', 30);                   // so is this one's
+    entry('embedded1-b-factory-rq-0009', 30);                   // merged and gone
+    entry('embedded1-s-factory-rq-0010', 1);                    // gone, but touched an hour ago
+    entry('embedded1-embedded_build-factory-rq-0002', 300);     // the name before RQ-0063
+    entry('embedded1-kavci', 900);                              // a person's copy
+    entry('other-b-factory-rq-0001', 300);                      // another project's
+    entry('.embedded1-batur-job-1-2', 30);                      // a bot job left behind
+    entry('.embedded1-batur-job-3-4', 3);                       // one that may be running
+    entry('.embedded1-b-main-sync-77', 30);                     // an ssh sync left behind
+    entry('.v/aaaa1111', 30, join(base, 'embedded1-b-factory-rq-0009'));
+    entry('.v/bbbb2222', 30, join(base, 'embedded1-kavci'));
+    entry('.v/cccc3333', 200);                                  // no owner, over a week
+    entry('.v/dddd4444', 30, join(base, 'other-b-factory-rq-0002'));
+    entry('.v/eeee5555', 30);                                   // no owner, a day old
+    const settings = { basePath: base, projectName: 'embedded1-b-prune' };
+    const script = host.hostPruneScript({ settings, project: 'embedded1', keep: ['factory-rq-0004', 'main'] });
+    assert.match(script, /^# aifactory: prune$/m);
+    assert.doesNotMatch(script, /`/, 'no PowerShell backtick escapes');
+    writeFileSync(join(work, 'prune.ps1'), script);
+    const run = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', join(work, 'prune.ps1')], { stdio: 'pipe' });
+    assert.equal(run.status, 0, String(run.stderr));
+    const step = host.parseStep(String(run.stdout));
+    const removed = step.log.split(/\r?\n/).map((line) => line.trim().replace(/\\/g, '/')).filter(Boolean).sort();
+    assert.deepEqual(removed, [
+      '.embedded1-b-main-sync-77', '.embedded1-batur-job-1-2', '.v/aaaa1111', '.v/cccc3333',
+      'embedded1-b-factory-rq-0009', 'embedded1-embedded_build-factory-rq-0002',
+    ]);
+    assert.equal(step.REMOVED, '6');
+    for (const path of removed) assert.ok(!existsSync(join(base, path)), `${path} is gone`);
+    for (const path of ['embedded1-b-main', 'embedded1-b-factory-rq-0004', 'embedded1-s-factory-rq-0010', 'embedded1-kavci',
+      'other-b-factory-rq-0001', '.embedded1-batur-job-3-4', '.v/bbbb2222', '.v/dddd4444', '.v/eeee5555']) {
+      assert.ok(existsSync(join(base, path)), `${path} stays`);
+    }
+  } finally {
     project.done();
     rmSync(work, { recursive: true, force: true });
   }

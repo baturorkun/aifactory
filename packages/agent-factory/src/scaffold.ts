@@ -238,6 +238,32 @@ function boardJobs(projectName: string): string[] {
   ];
 }
 
+// The builder's leftovers (RQ-0065): after every push to the default branch,
+// which is when a merged branch is gone, the CI copies of gone branches and
+// the Vitis workspaces of gone copies are removed. Not needed by anything,
+// so its failure fails no pipeline.
+function pruneJob(): string[] {
+  return [
+    '',
+    'embedded_builder_prune:',
+    '  stage: build',
+    '  image: "$AIFACTORY_RUNNER_IMAGE"',
+    '  tags:',
+    '    - linux',
+    '  resource_group: "vivado-prune"',
+    '  needs: []',
+    '  variables:',
+    `    VIVADO_REMOTE_PROJECT_NAME: "${builderCopy('prune')}"`,
+    '  before_script:',
+    '    - ' + VIVADO_KEY_SETUP,
+    '  script:',
+    '    - node scripts/flow.mjs prune',
+    '  allow_failure: true',
+    '  rules:',
+    "    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'",
+  ];
+}
+
 // A CI job's copy of the project on the builder: <project>-<tag>-<ref>, the
 // tag one letter, as every character of it is in the Vitis BSP's longest
 // path and Windows stops that at 259 (RQ-0063). The resource groups keep the
@@ -291,6 +317,7 @@ function embeddedJobs(projectName: string): string[] {
     ...job('embedded_sim', 'sim', ['node scripts/flow.mjs sim --requirement-phases'], everyPush, true, ['embedded_check']),
     // The software is built in the same job, from the XSA that build wrote.
     ...job('embedded_build', 'build', ['node scripts/flow.mjs build --requirement-phases', 'node scripts/flow.mjs sw --requirement-phases'], everyPush, true, ['embedded_sim']),
+    ...pruneJob(),
     ...twinJob(projectName, everyPush),
     ...boardJobs(projectName),
     ...codingStandardJob(projectName, true),

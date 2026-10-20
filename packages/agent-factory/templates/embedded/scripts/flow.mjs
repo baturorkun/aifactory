@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CommandError, PROJECT_ROOT, buildHost, hostSettings, loadEnvFile, requireTool, runOnHost } from './vivado-host.mjs';
+import { CommandError, PROJECT_ROOT, buildHost, hostPruneScript, hostSettings, loadEnvFile, requireTool, runHostScript, runOnHost } from './vivado-host.mjs';
 import { parseTestYaml, parseTwinSection, twinAccess, twinStage } from './twin.mjs';
 import { boardAccess, boardStage } from './board.mjs';
 
@@ -27,6 +27,9 @@ Stages
           the Vivado host, with no login to the lab host
   all     sim, build, sw, twin (the board only when asked for)
   clean   out/<design> only
+  prune   on the Windows Vivado host: the CI copies of branches that are gone,
+          the Vitis workspaces whose copy is gone, job directories a day old
+          (CI runs it on the default branch; a person's copy is never touched)
 
 Without a design every design under designs/ is taken; --mode narrows them to
 one Vivado mode. --jobs sets how many Vivado runs go at once
@@ -54,7 +57,32 @@ export function requirementPhases(env, root = PROJECT_ROOT) {
   if (!line) return undefined;
   return { requirement: match[1], phases: line[1].split(',').map((phase) => phase.trim()).filter(Boolean) };
 }
-const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'twin', 'board', 'all']);
+const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'twin', 'board', 'all', 'prune']);
+
+// GitLab's CI_COMMIT_REF_SLUG of a ref: what a CI copy on the host is named by.
+export function refSlug(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 63).replace(/^-+|-+$/g, '');
+}
+
+// The branches origin still has, as slugs: their CI copies stay (RQ-0065).
+export function liveRefSlugs(root = PROJECT_ROOT) {
+  const listed = spawnSync('git', ['ls-remote', '--heads', 'origin'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  if (listed.status !== 0) throw new CommandError(`PRUNE FAILED: git ls-remote origin: ${String(listed.stderr ?? listed.error ?? '').trim()}`, 1);
+  const names = String(listed.stdout).split('\n').map((line) => /\trefs\/heads\/(.+)$/.exec(line.trim())?.[1]).filter(Boolean);
+  // No branch at all is a wrong answer, not an empty repository: nothing goes.
+  if (names.length === 0) throw new CommandError('PRUNE FAILED: origin lists no branch; nothing removed.', 1);
+  return [...new Set(names.map(refSlug))].sort();
+}
+
+async function pruneStage(settings, env) {
+  const project = (env.CI_PROJECT_NAME ?? '').trim() || basename(PROJECT_ROOT);
+  const keep = liveRefSlugs();
+  console.log(`\n▸ prune: ${settings.host}, ${project}'s CI copies of ${keep.join(', ')} stay`);
+  const step = await runHostScript(settings, hostPruneScript({ settings, project, keep }), 'Prune');
+  const removed = step.log.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (const name of removed) console.log(`Removed ${name}`);
+  console.log(`PRUNE: ${removed.length} removed on ${settings.host}`);
+}
 
 // ------------------------------------------------------------
 // Designs and their project.tcl
@@ -361,6 +389,11 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
       console.log(`${options.stage}: not run, ${named.requirement} goes through ${named.phases.join(', ')} (no ${phase}).`);
       return;
     }
+  }
+
+  if (options.stage === 'prune') {
+    await pruneStage(hostSettings(env, 'VIVADO'), env);
+    return;
   }
 
   if (options.stage === 'check') {
