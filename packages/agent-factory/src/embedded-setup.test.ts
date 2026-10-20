@@ -55,6 +55,8 @@ test('a new embedded project takes its hosts and its board unit from the invento
     // The builder through the bot's agent there (RQ-0057); the ssh account stays for ssh.
     assert.equal(env.VIVADO_ACCESS, 'bot');
     assert.equal(env.VIVADO_BOT_AGENT, 'builder');
+    // As many Vivado runs at once as the builder takes for two people (RQ-0061).
+    assert.equal(env.VIVADO_JOBS, '8');
     assert.equal(env.TWIN_REMOTE_HOST, '192.168.1.2');
     assert.equal(env.GITLAB_PROJECT_ID, 'agentic/fw');
     // No person is named (RQ-0058): BOT_API_AGENT is set by hand, and the account

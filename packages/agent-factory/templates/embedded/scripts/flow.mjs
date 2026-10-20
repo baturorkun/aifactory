@@ -29,7 +29,8 @@ Stages
   clean   out/<design> only
 
 Without a design every design under designs/ is taken; --mode narrows them to
-one Vivado mode. Vivado and Vitis run where .env says: VIVADO_REMOTE_HOST
+one Vivado mode. --jobs sets how many Vivado runs go at once
+(VIVADO_JOBS in .env, else 4). Vivado and Vitis run where .env says: VIVADO_REMOTE_HOST
 empty runs them here.
 
 --requirement-phases (CI): on a requirement branch (factory/RQ-n), a stage
@@ -296,7 +297,7 @@ export function parseArguments(argv) {
   if (!STAGES.has(stage)) throw new CommandError(`Unknown stage "${stage}".\n\n${HELP}`);
   const designs = [];
   let mode;
-  let jobs = 4;
+  let jobs;
   let fromRequirement = false;
   for (let index = 0; index < rest.length; index += 1) {
     if (rest[index] === '--requirement-phases') {
@@ -314,8 +315,20 @@ export function parseArguments(argv) {
   return { stage, designs, mode, jobs, fromRequirement };
 }
 
+// How many Vivado runs go at once (launch_runs -jobs): --jobs, else
+// VIVADO_JOBS from .env, sized for the Vivado host (RQ-0061), else 4.
+export function vivadoJobs(options, env) {
+  if (options.jobs !== undefined) return options.jobs;
+  const text = (env.VIVADO_JOBS ?? '').trim();
+  if (!text) return 4;
+  const jobs = Number(text);
+  if (!Number.isInteger(jobs) || jobs < 1) throw new CommandError(`VIVADO_JOBS must be a positive integer, not "${text}".`);
+  return jobs;
+}
+
 export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   const options = parseArguments(argv[0] === '--' ? argv.slice(1) : argv);
+  if (!options.help) options.jobs = vivadoJobs(options, env);
   if (options.help) {
     console.log(HELP);
     return;
