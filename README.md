@@ -372,11 +372,20 @@ has is removed there; since RQ-0066 the results come back in parts of the same
 size, each through the store and retried on its own; since RQ-0067 the sync
 and collect steps also run in the background on the builder and are polled,
 as the command is, so no project size meets the agent's 120 s per run). `factory env-check` ends with the logins to try. A project made from an older template is
-brought up to date with `factory template update` (it lists the changes;
-`--write` applies them): the scripts, the flow, the CI file, `.env.example` and
-`AGENTS.md` are replaced, the gates and package scripts merged, files a design
-lacks (such as `test.yaml`) added; design sources, board files, `.env` and
-requirements are left alone. `factory ci-variables --write` puts the host and
+brought up to date with `factory template update`, run in the project: it
+lists the changes; `--write` delivers them as a merge request (RQ-0069). It
+first brings aifactory itself up to date (a fast-forward of its main, `pnpm
+install` when the lockfile moved) and runs again with the code it pulled;
+then, from the project's main only, clean and not ahead of origin (behind is
+fast-forwarded), it writes the changes on a branch `template/aifactory-<commit>`,
+runs `pnpm check`, pushes and opens the merge request, whose pipeline runs the
+stages, and leaves the project on main. A project already current gets none,
+and while one template update is open no second is opened. aifactory keeps no
+list of projects: the project the command runs in is the one updated.
+`--local` writes the changes into the worktree only. The scripts, the flow, the
+CI file, `.env.example` and `AGENTS.md` are replaced, the gates and package
+scripts merged, files a design lacks (such as `test.yaml`) added; design
+sources, board files, `.env` and requirements are left alone. `factory ci-variables --write` puts the host and
 board settings of `.env` into the GitLab project's CI/CD variables
 (`--with-secrets` adds the tokens, masked). The lab's shared settings
 (Vivado host, lab host, hw_server, xsdb, bot, the bot and twin tokens and the

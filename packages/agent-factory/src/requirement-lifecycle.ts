@@ -978,7 +978,7 @@ export async function cancelRequirement(
   };
 }
 
-function platformAdapterFor(
+export function platformAdapterFor(
   root: string,
   resolved: Exclude<ResolvedRepositoryPlatform, { provider: 'none' }>,
 ): RepositoryPlatformAdapter {

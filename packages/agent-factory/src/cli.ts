@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'child_process';
 import { Command } from 'commander';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { resolve, join } from 'path';
@@ -45,6 +46,7 @@ import {
   commitApprovedRun,
   completeRequirement,
   createDraftRequirement,
+  platformAdapterFor,
   requirementExecutionDecision,
   setRequirementFast,
   setRequirementMode,
@@ -63,7 +65,8 @@ import {
 } from './orchestrator/probe';
 import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
-import { updateEmbeddedProject } from './template-update';
+import { updateEmbeddedProject, type TemplateChange } from './template-update';
+import { deliverTemplateUpdate, updateAifactory } from './template-delivery';
 import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
 import { labWideCiValues, loadLabInventory } from './lab-inventory';
 import { PROFILES, describeCodingStandard } from './coding-standard';
@@ -1055,23 +1058,61 @@ program
   .command('template')
   .description('Embedded projects: bring the template-owned files up to this aifactory')
   .command('update')
-  .description('List (or with --write apply) what changes to reach the current embedded template')
-  .option('--write', 'Apply the changes', false)
-  .action((opts: { write: boolean }) => {
+  .description('List what changes to reach the current embedded template; --write delivers them as a merge request')
+  .option('--write', 'Bring aifactory up to date, then open a merge request with the changes (from a clean, current main)', false)
+  .option('--local', 'Write the changes into this worktree only, no branch and no merge request', false)
+  .action(async (opts: { write: boolean; local: boolean }) => {
     try {
       const config = loadConfig();
       const root = resolve(config.targetProject.root ?? '.');
-      const changes = updateEmbeddedProject(root, { write: opts.write });
-      if (changes.length === 0) {
+      const listChanges = (changes: TemplateChange[]) => {
+        for (const change of changes) {
+          console.log(`  ${change.kind.padEnd(8)} ${change.path}${change.kind === 'merge' ? chalk.dim(`  (${change.detail})`) : ''}`);
+        }
+      };
+      if (!opts.write) {
+        const changes = updateEmbeddedProject(root, { write: opts.local });
+        if (changes.length === 0) {
+          console.log(chalk.green('✓ The project is on the current embedded template.'));
+          return;
+        }
+        listChanges(changes);
+        console.log(opts.local
+          ? chalk.green(`\n✓ ${changes.length} change(s) written here. Review them with git diff and run pnpm check.`)
+          : chalk.dim(`\n${changes.length} change(s). Nothing written: --write opens a merge request with them.`));
+        return;
+      }
+
+      // RQ-0069: aifactory first, then the project, as a merge request.
+      const aifactoryRoot = process.env.AIFACTORY_HOME || resolve(__dirname, '../../..');
+      if (!process.env.AIFACTORY_TEMPLATE_PULLED && updateAifactory(aifactoryRoot, (line) => console.log(chalk.dim(line)))) {
+        // The template's writer is the code just pulled: run it.
+        const again = spawnSync(process.execPath, [join(aifactoryRoot, 'packages', 'agent-factory', 'bin', 'factory.js'), 'template', 'update', '--write'], {
+          cwd: process.cwd(),
+          stdio: 'inherit',
+          env: { ...process.env, AIFACTORY_TEMPLATE_PULLED: '1' },
+        });
+        process.exitCode = again.status ?? 1;
+        return;
+      }
+      const resolved = resolveRepositoryPlatform(config);
+      if (resolved.provider === 'none') throw new Error('template update --write opens a merge request: the project has no GitLab or GitHub settings.');
+      const result = await deliverTemplateUpdate(root, {
+        aifactoryRoot,
+        adapter: platformAdapterFor(root, resolved),
+        log: (line) => console.log(chalk.dim(line)),
+        check: (project) => {
+          const checked = spawnSync('pnpm', ['-s', 'check'], { cwd: project, stdio: 'inherit' });
+          if (checked.status !== 0) throw new Error('pnpm check fails with the new template; nothing was pushed.');
+        },
+      });
+      if (result.status === 'current') {
         console.log(chalk.green('✓ The project is on the current embedded template.'));
         return;
       }
-      for (const change of changes) {
-        console.log(`  ${change.kind.padEnd(8)} ${change.path}${change.kind === 'merge' ? chalk.dim(`  (${change.detail})`) : ''}`);
-      }
-      console.log(opts.write
-        ? chalk.green(`\n✓ ${changes.length} change(s) written. Review them with git diff and run pnpm check.`)
-        : chalk.dim(`\n${changes.length} change(s). Nothing written: add --write to apply them.`));
+      listChanges(result.changes);
+      console.log(chalk.green(`\n✓ ${result.changes.length} change(s) on ${result.branch}: ${result.url}`));
+      console.log(chalk.dim('  Its pipeline runs the stages; merge it when they pass. This checkout stays on main.'));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
