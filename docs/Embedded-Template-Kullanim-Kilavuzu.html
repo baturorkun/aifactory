@@ -40,7 +40,7 @@
 <header>
   <h1>Embedded Template Kullanım Kılavuzu</h1>
   <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
-  <p class="meta">aifactory v0.63 (RQ-0044…RQ-0063) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
+  <p class="meta">aifactory v0.67 (RQ-0044…RQ-0067) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
 </header>
 
 <h2>1. Template ne yapar</h2>
@@ -113,7 +113,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 <tr><td><code>pnpm board [tasarım]</code></td><td>Kartı açar, programlar, konsolu dinler, kapatır</td><td>lab host + kart</td></tr>
 <tr><td><code>pnpm flow clean</code></td><td>out/ temizliği</td><td></td></tr>
 </table>
-<p>Vivado host <code>.env</code>'de <code>VIVADO_REMOTE_*</code> ile tanımlıdır (bugün 192.168.1.3, Windows, Vivado/Vitis 2025.2). Proje kaynakları her koşuda host'a gider: <code>VIVADO_ACCESS=bot</code> ile sadece host'taki kopyada olmayan veya farklı olan dosyalar (SHA-256 ile karşılaştırılır, büyük arşiv 8 MB'lık parçalarla, <code>BOT_API_CHUNK_KB</code>), projeden silinen dosyalar host'tan da silinir; <code>ssh</code> ile her seferinde tüm kaynaklar tar ile. <code>out/</code> host'ta kalır ve sadece artifact'ler geri gelir. Host'taki proje adı kişi başınadır (<code>&lt;proje&gt;-&lt;BOT_API_AGENT&gt;</code>), CI kendi adını kullanır; iki kişi aynı Vivado projesini paylaşmaz. Build yaklaşık 8–10 dakika, sim 20 saniye, Vitis 1 dakika sürer.</p>
+<p>Vivado host <code>.env</code>'de <code>VIVADO_REMOTE_*</code> ile tanımlıdır (bugün 192.168.1.3, Windows, Vivado/Vitis 2025.2). Proje kaynakları her koşuda host'a gider: <code>VIVADO_ACCESS=bot</code> ile sadece host'taki kopyada olmayan veya farklı olan dosyalar (SHA-256 ile karşılaştırılır), projeden silinen dosyalar host'tan da silinir; <code>ssh</code> ile her seferinde tüm kaynaklar tar ile. <code>out/</code> host'ta kalır ve sadece artifact'ler geri gelir. Bot yolunda hem giden kaynaklar hem dönen sonuçlar parça parça taşınır: parça boyutu <code>BOT_API_CHUNK_KB</code> (boş: 8192, yani 8 MB; zayıf bağlantıda örneğin 2048), kopan parça tek başına yeniden denenir. Builder'daki her adım (kaynakların yerleştirilmesi, Vivado/Vitis, sonuçların paketlenmesi) arka planda koşar ve birkaç saniyede bir takip edilir; bot'un adım başına 120 saniyelik sınırı proje büyüklüğünü kısıtlamaz. Host'taki proje adı kişi başınadır (<code>&lt;proje&gt;-&lt;BOT_API_AGENT&gt;</code>), CI kendi adını kullanır; iki kişi aynı Vivado projesini paylaşmaz. Build yaklaşık 8–10 dakika, sim 20 saniye, Vitis 1 dakika sürer.</p>
 <p>Önce <code>out/&lt;tasarım&gt;/artifacts/summary.json</code>'a bakın: WNS/WHS, LUT/FF/BRAM/DSP, DRC, süreler, build host ve git sha. Raporlar yanındadır.</p>
 
 <h2>6. Twin</h2>
@@ -132,6 +132,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 <tr><td><code>embedded_build</code></td><td>build</td><td>aynı; artifact: bit, xsa, elf, raporlar</td></tr>
 <tr><td><code>embedded_twin</code></td><td>twin</td><td>aynı; TWIN_PROJECT yoksa atlar</td></tr>
 <tr><td><code>embedded_board</code> / <code>_on_demand</code></td><td>board</td><td>§7</td></tr>
+<tr><td><code>embedded_builder_prune</code></td><td>—</td><td>main'e her push'ta (merge sonrası); builder'da branch'i silinmiş CI kopyalarını, sahibi kalmamış Vitis workspace'lerini ve bir günden eski iş klasörlerini siler; kişisel kopyalara (<code>&lt;proje&gt;-&lt;ad&gt;</code>) dokunmaz; hata verse de pipeline'ı düşürmez</td></tr>
 </table>
 <p>MR pipeline'ı requirement dosyasındaki fazlara bakar (<code>--requirement-phases</code>); main ve tag'de hepsi koşar. Vivado job'ları runner'dan Vivado host'a SSH ile çıkar; anahtarlar ve host ayarları instance düzeyindeki CI değişkenlerinden gelir.</p>
 
@@ -166,9 +167,10 @@ pnpm factory -- handoff-begin &lt;run&gt;   ·   pnpm flow &lt;stage&gt;   ·   
 pnpm factory -- approve &lt;run&gt; --by "&lt;ad&gt;"   ·   git push
 pnpm factory -- requirement complete RQ-n --run &lt;run&gt;
 pnpm factory -- template update [--write]        # template dosyalarını güncel aifactory'ye getirir
+pnpm flow prune                                  # builder'daki artıkları elle temizler (CI zaten yapar)
 pnpm factory -- standard use cstd --groups misra,bytecraft</code></pre>
 
-<footer>Hazırlayan: Batur Orkun, Bytecraft · 19 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0054 durumu</footer>
+<footer>Hazırlayan: Batur Orkun, Bytecraft · 20 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0067 durumu</footer>
 </main>
 </body>
 </html>

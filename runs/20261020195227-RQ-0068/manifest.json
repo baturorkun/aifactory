@@ -1,0 +1,34 @@
+{
+  "runId": "20261020195227-RQ-0068",
+  "requirementId": "RQ-0068",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020195227-RQ-0068/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-20T19:52:27.525Z",
+  "updatedAt": "2026-10-20T19:53:53.868Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T19:52:33.084Z",
+      "finishedAt": "2026-10-20T19:53:44.853Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "docs/Embedded-Template-Kullanim-Kilavuzu.html",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.pdf"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-10-20T19:53:53.869Z",
+  "approvedBy": "Batur Orkun"
+}
