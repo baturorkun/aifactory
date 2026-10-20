@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
-import { embeddedEnvValues, fillEnv, loadLabInventory, personSlug } from './lab-inventory';
+import { embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
 import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, chooseStandard, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
@@ -1735,7 +1735,7 @@ function writeEmbeddedEnv(projectRoot: string, projectName: string, options: New
       throw new Error(`Lab unit "${options.board}" uses board "${unit.board}", which the template has no board file for (it has: ${boards.join(', ')}).`);
     }
   }
-  const values = embeddedEnvValues(inventory, projectName, personSlug(projectRoot), options.board);
+  const values = embeddedEnvValues(inventory, projectName, options.board);
   const envPath = resolve(projectRoot, '.env');
   if (existsSync(envPath)) return;
   writeFileSync(envPath, fillEnv(readFileSync(resolve(projectRoot, '.env.example'), 'utf8'), values), 'utf8');
@@ -1772,6 +1772,17 @@ function writeEmbeddedTemplate(projectRoot: string): void {
       'GITLAB_PROJECT_ID=',
       'GITLAB_TOKEN=',
       '',
+      '# --- The lab bot, and you ---------------------------------------------------',
+      '# The bot every lab host is reached through in bot mode (RQ-0054..RQ-0057).',
+      'BOT_API_URL=',
+      'BOT_API_TOKEN=',
+      '# Your name as the bot knows you: the agent id of your PC\'s bot agent (e.g.',
+      '# kavci), set by hand like that agent\'s own installer asks. The one line of',
+      '# this file that names you (RQ-0058): consoles and jobs are owned as',
+      '# <project>/<it>, your copy of the project on a host is <project>-<it> and',
+      '# your Vivado host account is <it>, unless the lines below say otherwise.',
+      'BOT_API_AGENT=',
+      '',
       '# --- Vivado and Vitis (embedded template) ---------------------------------',
       '# Where the tools run. VIVADO_REMOTE_HOST empty runs them on this machine;',
       '# set, the sources go to that host (the builder) and the sim, build, xsa and',
@@ -1791,7 +1802,8 @@ function writeEmbeddedTemplate(projectRoot: string): void {
       'VIVADO_BOT_AGENT=',
       'VIVADO_HOST_TYPE=windows',
       'VIVADO_REMOTE_HOST=',
-      '# ssh: your own account on the host (CI uses its own). Your public key goes',
+      '# ssh: your own account on the host (CI uses its own); empty: BOT_API_AGENT.',
+      '# Your public key goes',
       '# where Windows OpenSSH reads it: an administrator\'s into',
       '# C:\\ProgramData\\ssh\\administrators_authorized_keys, anyone else\'s into',
       '# C:\\Users\\<you>\\.ssh\\authorized_keys. ssh-copy-id cannot write either; over a',
@@ -1800,7 +1812,7 @@ function writeEmbeddedTemplate(projectRoot: string): void {
       'VIVADO_REMOTE_PORT=22',
       '# A directory of your own on the host, e.g. C:\\Users\\<you>\\aifactory-builds',
       'VIVADO_REMOTE_BASE_PATH=',
-      '# One per person and per branch, so two builds do not share a project.',
+      '# Your copy of the project there; empty: <project>-<BOT_API_AGENT>, one per person.',
       'VIVADO_REMOTE_PROJECT_NAME=',
       'VIVADO_REMOTE_IDENTITY_FILE=',
       'VIVADO_REMOTE_KNOWN_HOSTS=',
@@ -1858,12 +1870,6 @@ function writeEmbeddedTemplate(projectRoot: string): void {
       '#        xsdb over TCP to BOARD_HW_SERVER. The BOARD_REMOTE_* settings are',
       '#        ignored; XSDB_BIN names xsdb on the Vivado host.',
       '# Developers use bot; CI may keep ssh (RQ-0055).',
-      'BOT_API_URL=',
-      'BOT_API_TOKEN=',
-      '# Your name as the bot knows you: the agent id of your PC\'s bot agent (e.g.',
-      '# kavci), set by hand like that agent\'s own installer asks. bot mode opens',
-      '# the console for <project>/<it> and every bot call is logged as it.',
-      'BOT_API_AGENT=',
       'BOARD_POWER_NAME=',
       'BOARD_ACCESS=ssh',
       'BOARD_CONSOLE=',

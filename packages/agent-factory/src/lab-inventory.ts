@@ -1,6 +1,4 @@
-import { spawnSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
-import { userInfo } from 'os';
 import { resolve } from 'path';
 import { z } from 'zod';
 
@@ -64,35 +62,26 @@ export function loadLabInventory(path = LAB_INVENTORY_PATH): LabInventory | unde
   return LabInventorySchema.parse(data);
 }
 
-// Whose project copy a host keeps: one per person, so two people building the
-// same project do not share a Vivado project.
-export function personSlug(cwd: string): string {
-  const name = spawnSync('git', ['config', 'user.name'], { cwd, encoding: 'utf8' }).stdout?.trim() || userInfo().username;
-  return name.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'user';
-}
-
 // The .env values an embedded project takes from the inventory. A unit, when
 // given, adds the board settings; without one they stay empty.
-// `account` is the developer's login on the Vivado host (RQ-0054): their own,
-// as the host keeps one project copy per person; the inventory's user is the
-// CI account. The lab host's user is the lab's (root) for everyone.
+// No person is named here (RQ-0058): the developer's name is BOT_API_AGENT,
+// set by hand, and their Vivado account (VIVADO_REMOTE_USER) and their copies
+// of the project on the hosts (*_REMOTE_PROJECT_NAME, <project>-<name>)
+// follow from it in the scripts, so a .env handed to someone else changes in
+// that one line. The inventory's Vivado user is the CI account; the lab
+// host's user is the lab's (root) for everyone.
 export function embeddedEnvValues(
   inventory: LabInventory,
   projectName: string,
-  person: string,
   unitName?: string,
-  account: string = userInfo().username,
 ): Record<string, string> {
-  const hostProject = `${projectName}-${person}`;
   const values: Record<string, string> = {
     VIVADO_ACCESS: inventory.vivado.botAgent ? 'bot' : 'ssh',
     ...(inventory.vivado.botAgent ? { VIVADO_BOT_AGENT: inventory.vivado.botAgent } : {}),
     VIVADO_HOST_TYPE: inventory.vivado.hostType,
     VIVADO_REMOTE_HOST: inventory.vivado.host,
-    VIVADO_REMOTE_USER: account,
     VIVADO_REMOTE_PORT: '22',
     VIVADO_REMOTE_BASE_PATH: inventory.vivado.basePath,
-    VIVADO_REMOTE_PROJECT_NAME: hostProject,
     VIVADO_BIN: inventory.vivado.vivadoBin,
     VITIS_BIN: inventory.vivado.vitisBin,
     TWIN_ACCESS: inventory.lab.botAgent ? 'bot' : 'ssh',
@@ -102,7 +91,6 @@ export function embeddedEnvValues(
     TWIN_REMOTE_USER: inventory.lab.user,
     TWIN_REMOTE_PORT: '22',
     TWIN_REMOTE_BASE_PATH: inventory.lab.twinBasePath,
-    TWIN_REMOTE_PROJECT_NAME: hostProject,
     ...(inventory.twin ? { TWIN_GITLAB_URL: inventory.twin.gitlab, TWIN_REGISTRY: inventory.twin.registry } : {}),
     ...(inventory.bot ? { BOT_API_URL: inventory.bot.url } : {}),
     ...(inventory.gitlab ? { GITLAB_URL: inventory.gitlab.url, GITLAB_PROJECT_ID: `${inventory.gitlab.group}/${projectName}` } : {}),
@@ -126,7 +114,6 @@ export function embeddedEnvValues(
     BOARD_REMOTE_USER: inventory.lab.user,
     BOARD_REMOTE_PORT: '22',
     BOARD_REMOTE_BASE_PATH: inventory.lab.boardBasePath,
-    BOARD_REMOTE_PROJECT_NAME: hostProject,
     BOARD_HW_SERVER: inventory.lab.hwServer,
     BOARD_JTAG_CABLE: unit.jtagCable,
     BOARD_SERIAL_PORT: unit.serialPort,

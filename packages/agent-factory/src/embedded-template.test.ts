@@ -669,6 +669,16 @@ test('the build stages over the bot: the sources through the store, the command 
     assert.throws(() => host.hostSettings({ ...botEnv, VIVADO_HOST_TYPE: 'linux' }), /VIVADO_HOST_TYPE must be windows with VIVADO_ACCESS=bot/);
     assert.throws(() => host.hostSettings({ ...botEnv, VIVADO_REMOTE_PROJECT_NAME: '' }), /VIVADO_REMOTE_PROJECT_NAME is not set, but VIVADO_ACCESS=bot/);
     assert.equal(host.hostSettings({ VIVADO_REMOTE_HOST: '', VIVADO_BIN: 'vivado' }).remote, false, 'ssh with no host: this machine');
+    // The person's name, once (RQ-0058): the account and the host copy follow from it.
+    const named = host.hostSettings({ VIVADO_REMOTE_HOST: '192.168.1.3', VIVADO_HOST_TYPE: 'windows', VIVADO_REMOTE_BASE_PATH: 'C:\\ab', BOT_API_AGENT: 'kaan' }) as unknown as { user: string; projectName: string };
+    assert.equal(named.user, 'kaan');
+    assert.match(named.projectName, /^[A-Za-z0-9._-]+-kaan$/);
+    const explicit = host.hostSettings({ VIVADO_REMOTE_HOST: '192.168.1.3', VIVADO_HOST_TYPE: 'windows', VIVADO_REMOTE_BASE_PATH: 'C:\\ab', BOT_API_AGENT: 'kaan', VIVADO_REMOTE_USER: 'kaan.avci', VIVADO_REMOTE_PROJECT_NAME: 'fw-main' }) as unknown as { user: string; projectName: string };
+    assert.deepEqual([explicit.user, explicit.projectName], ['kaan.avci', 'fw-main'], 'a line of .env still wins');
+    assert.match(String((() => { try { host.hostSettings({ VIVADO_REMOTE_HOST: '192.168.1.3', VIVADO_HOST_TYPE: 'windows', VIVADO_REMOTE_BASE_PATH: 'C:\\ab' }); } catch (error) { return (error as Error).message; } return ''; })()), /VIVADO_REMOTE_USER is not set.*BOT_API_AGENT/);
+    const lab = host.hostSettings({ BOARD_REMOTE_HOST: '192.168.1.2', BOARD_REMOTE_USER: 'root', BOARD_REMOTE_BASE_PATH: '/tmp/b', BOT_API_AGENT: 'kaan' }, 'BOARD') as unknown as { user: string; projectName: string };
+    assert.equal(lab.user, 'root', 'the lab host\'s account is the lab\'s, not the person\'s');
+    assert.match(lab.projectName, /-kaan$/);
 
     // The steps: every answer parsed the same way; the scripts carry their step name and no backtick escapes.
     assert.deepEqual(host.parseStep('STATUS=DONE\nEXIT=3\nOFFSET=12\nLOG:\nline one\nline two\n'), { STATUS: 'DONE', EXIT: '3', OFFSET: '12', log: 'line one\nline two\n' });

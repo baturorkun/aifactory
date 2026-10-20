@@ -1,0 +1,38 @@
+{
+  "runId": "20261020092827-RQ-0058",
+  "requirementId": "RQ-0058",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020092827-RQ-0058/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-20T09:28:27.456Z",
+  "updatedAt": "2026-10-20T09:29:10.769Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T09:28:28.128Z",
+      "finishedAt": "2026-10-20T09:29:02.600Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/env-check.ts",
+    "packages/agent-factory/src/lab-inventory.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/templates/embedded/scripts/vivado-host.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-20T09:29:10.770Z",
+  "approvedBy": "Batur Orkun"
+}
