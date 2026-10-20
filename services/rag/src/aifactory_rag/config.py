@@ -227,6 +227,20 @@ class RagSourceConfig(BaseModel):
             "**/*.min.js",
             "**/*.map",
             "**/*.lock",
+            # What an FPGA tool generates beside a project (RQ-0059): Vivado's
+            # IP output and run directories, and Quartus's databases. The
+            # sources, constraints and Tcl a project is made of stay in; a
+            # generated IP model (one transceiver wizard alone is 244 chunks)
+            # would bury them.
+            "**/*.gen/**",
+            "**/*.ip_user_files/**",
+            "**/*.cache/**",
+            "**/*.runs/**",
+            "**/*.sim/**",
+            "**/*.hw/**",
+            "**/*.srcs/**/ip/**",
+            "**/.Xil/**",
+            "**/incremental_db/**",
         ]
     )
     exclude_additions: list[str] = Field(default_factory=list, alias="excludeAdditions")

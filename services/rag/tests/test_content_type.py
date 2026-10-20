@@ -67,6 +67,35 @@ class ContentTypeTests(unittest.TestCase):
             self.assertIn(suffix, SUPPORTED_EXTENSIONS, path)
             self.assertIn(f"**/*{suffix}", DEFAULT_INCLUDE, path)
 
+    def test_what_an_fpga_tool_generates_is_left_out(self) -> None:
+        from aifactory_rag.config import RagSourceConfig
+        from aifactory_rag.ingest.sources import effective_excludes, selected
+
+        source = RagSourceConfig.model_validate({"id": "fpga", "type": "filesystem", "rootPath": "/tmp"})
+
+        class paths:  # noqa: N801 - reads as the filter it stands for
+            @staticmethod
+            def matches(path: str) -> bool:
+                return selected(path, source.include, effective_excludes(source))
+        for kept in (
+            "hw/constraints/io.xdc",
+            "prj/prj.srcs/sources_1/new/top.v",
+            "prj/prj.srcs/constrs_1/new/pins.xdc",
+            "hw/bd/system.tcl",
+        ):
+            self.assertTrue(paths.matches(kept), kept)
+        for generated in (
+            "prj/prj.gen/sources_1/bd/system/ip/system_hdmi_phy_0/src/gt_hdmi/synth/gt.v",
+            "prj/prj.ip_user_files/sim_scripts/run.tcl",
+            "prj/prj.cache/ip/2025.2/x.xdc",
+            "prj/prj.runs/synth_1/system_wrapper.tcl",
+            "prj/prj.sim/sim_1/behav/xsim/glbl.v",
+            "prj/prj.srcs/sources_1/bd/system/ip/system_vdma_0/system_vdma_0.xdc",
+            "prj/.Xil/Vivado-1/x.tcl",
+            "quartus/incremental_db/compiled_partitions/x.v",
+        ):
+            self.assertFalse(paths.matches(generated), generated)
+
     def test_the_directory_no_longer_decides(self) -> None:
         """The same file name is classified the same wherever it lives."""
         self.assertEqual(classify("documentation/live.py"), {"contentType": "code"})
