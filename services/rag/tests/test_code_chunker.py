@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from aifactory_rag.config import RagConfig
 from aifactory_rag.ingest import code_chunker
-from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, SYMBOL_CHUNKER, chunk_code, expected_chunker
+from aifactory_rag.ingest.code_chunker import SIZE_CHUNKER, SYMBOL_CHUNKER, TABLE_CHUNKER, chunk_code, expected_chunker
 from aifactory_rag.ingest.pipeline import _chunks_for, _ingest_config_matches
 from aifactory_rag.query.responder import citation_label, code_location
 
@@ -142,6 +142,63 @@ enum Color { Red }
         self.assertIsNone(chunk_code("x", "models/sample.dml", 200, 20))
 
 
+class TableTests(unittest.TestCase):
+    """RQ-0064: a C table is one symbol, read and asked about whole."""
+
+    TABLE = """#include <stdint.h>
+
+/* ADV7511: YCbCr 4:2:2 in, BT.709 limited -> RGB full CSC, DVI out. */
+static const uint8_t adv_cfg[][2] = {
+    {0x41, 0x10}, {0xD6, 0xC0},
+    {0x24, 0x1F}, {0x25, 0x24}, {0x26, 0x01}, {0x27, 0x35},
+    {0x2C, 0x08}, {0x2D, 0x7C}, {0x2E, 0x1B}, {0x2F, 0x77},
+};
+
+static char line[128];
+static unsigned count = 3;
+
+static int adv_init(void)
+{
+    return adv_cfg[0][0];
+}
+"""
+
+    def test_a_table_is_its_own_chunk_with_its_comment_and_every_element(self) -> None:
+        chunks = chunk_code(self.TABLE, "sw/src/main.c", 1200, 150)
+        table = [chunk for chunk in chunks if chunk.metadata.get("symbol") == "adv_cfg"]
+        self.assertEqual(len(table), 1)
+        self.assertEqual(table[0].metadata["symbolKind"], "variable")
+        self.assertIn("/* ADV7511", table[0].text)
+        self.assertIn("{0x25, 0x24}, {0x26, 0x01}", table[0].text)
+        self.assertIn("{0x2F, 0x77},\n};", table[0].text)
+        self.assertEqual(table[0].metadata["signature"], "static const uint8_t adv_cfg[][2]")
+        # A plain global stays in the file chunk; the function is its own.
+        file_text = "".join(chunk.text for chunk in chunks if chunk.metadata.get("symbolKind") == "file")
+        self.assertIn("static char line[128];", file_text)
+        self.assertIn("static unsigned count = 3;", file_text)
+        self.assertNotIn("0x26", file_text)
+        self.assertEqual([c.metadata["symbol"] for c in chunks if c.metadata.get("symbolKind") == "function"], ["adv_init"])
+
+    def test_a_table_too_long_for_one_chunk_is_cut_at_line_ends_each_part_named(self) -> None:
+        rows = "\n".join(f"    {{0x{n:02X}, 0x{(n * 7) & 0xFF:02X}}}, {{0x{n + 1:02X}, 0x00}}," for n in range(0, 200, 2))
+        text = f"static const uint8_t big_table[][2] = {{\n{rows}\n}};\n"
+        parts = [chunk for chunk in chunk_code(text, "sw/src/tables.c", 600, 60) if chunk.metadata.get("symbol") == "big_table"]
+        self.assertGreater(len(parts), 1)
+        self.assertEqual([chunk.metadata["part"] for chunk in parts], list(range(1, len(parts) + 1)))
+        for chunk in parts:
+            self.assertIn("static const uint8_t big_table[][2]", chunk.text)
+            for row in chunk.text.splitlines()[1:]:
+                self.assertTrue(row.startswith(("static", "    {", "    /*", "};")), row)
+        joined = "".join(chunk.text for chunk in parts)
+        for n in range(200):
+            self.assertIn(f"{{0x{n:02X},", joined)
+
+    def test_a_cpp_table_in_a_namespace_is_qualified(self) -> None:
+        text = "namespace hdmi {\nconst int modes[] = {1, 2, 3};\n}\n"
+        names = [chunk.metadata.get("symbol") for chunk in chunk_code(text, "src/modes.cpp", 1200, 150)]
+        self.assertIn("hdmi::modes", names)
+
+
 class RechunkTests(unittest.TestCase):
     def _existing(self, **metadata: object) -> dict[str, object]:
         return {"metadata": {
@@ -155,10 +212,20 @@ class RechunkTests(unittest.TestCase):
 
     def test_code_chunked_by_size_before_is_chunked_again_without_force(self) -> None:
         config = RagConfig.model_validate({})
-        self.assertEqual(expected_chunker("src/a.c"), SYMBOL_CHUNKER)
+        self.assertEqual(expected_chunker("src/a.ts"), SYMBOL_CHUNKER)
         # Ingested before the chunker was recorded: it was chunked by size.
-        self.assertFalse(_ingest_config_matches(self._existing(), config, "src/a.c"))
-        self.assertTrue(_ingest_config_matches(self._existing(chunker=SYMBOL_CHUNKER), config, "src/a.c"))
+        self.assertFalse(_ingest_config_matches(self._existing(), config, "src/a.ts"))
+        self.assertTrue(_ingest_config_matches(self._existing(chunker=SYMBOL_CHUNKER), config, "src/a.ts"))
+
+    def test_c_and_cpp_are_chunked_again_for_their_tables_and_nothing_else_is(self) -> None:
+        # RQ-0064: only the languages whose chunks changed are embedded again.
+        config = RagConfig.model_validate({})
+        for path in ("src/a.c", "inc/regs.h", "src/b.cpp"):
+            self.assertEqual(expected_chunker(path), TABLE_CHUNKER, path)
+            self.assertFalse(_ingest_config_matches(self._existing(chunker=SYMBOL_CHUNKER), config, path), path)
+            self.assertTrue(_ingest_config_matches(self._existing(chunker=TABLE_CHUNKER), config, path), path)
+        for path in ("src/a.ts", "peripherals/A429.cs", "web/app.js"):
+            self.assertEqual(expected_chunker(path), SYMBOL_CHUNKER, path)
 
     def test_documents_are_not_re_embedded(self) -> None:
         config = RagConfig.model_validate({})

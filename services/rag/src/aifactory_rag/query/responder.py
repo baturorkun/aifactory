@@ -363,11 +363,19 @@ _SECTION_PARTS = """
     WHERE c.document_id = %s
       AND c.status = 'active'
       AND d.status = 'active'
-      AND c.metadata->>'section' = %s
+      AND c.metadata->>%s = %s
       AND c.metadata ? 'part'
     ORDER BY abs((c.metadata->>'part')::int - %s), (c.metadata->>'part')::int
     LIMIT %s
 """
+
+
+def _part_key(chunk: RetrievedChunk) -> str | None:
+    """What a split chunk's parts share: a document's section, a code symbol."""
+    for key in ("section", "symbol"):
+        if chunk.metadata.get(key):
+            return key
+    return None
 
 
 def _expand_sections(config: RagConfig, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
@@ -383,9 +391,13 @@ def _expand_sections(config: RagConfig, chunks: list[RetrievedChunk]) -> list[Re
     one section's parts. A part is never added twice. Being
     of the same document, the parts share its path and content type, so no
     filter can be undone this way.
+
+    A code symbol split into parts (a long function, a large table) is
+    brought along the same way, its parts told by the symbol's name
+    (RQ-0064).
     """
     limit = config.retrieval.section_parts
-    split = [found for found in chunks if int(found.metadata.get("parts") or 0) > 1 and found.metadata.get("section")]
+    split = [found for found in chunks if int(found.metadata.get("parts") or 0) > 1 and _part_key(found)]
     if limit <= 0 or not split:
         return chunks
     budget = max(2, config.retrieval.top_k // 4)
@@ -398,7 +410,8 @@ def _expand_sections(config: RagConfig, chunks: list[RetrievedChunk]) -> list[Re
                 for hit in split:
                     if total >= budget:
                         break
-                    cur.execute(_SECTION_PARTS, (hit.document_id, hit.metadata["section"], int(hit.metadata.get("part") or 1), limit + 1))
+                    key = _part_key(hit)
+                    cur.execute(_SECTION_PARTS, (hit.document_id, key, hit.metadata[key], int(hit.metadata.get("part") or 1), limit + 1))
                     for row in cur.fetchall():
                         if int(row["chunk_id"]) in seen or len(added.get(hit.chunk_id, [])) >= limit or total >= budget:
                             continue
