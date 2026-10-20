@@ -1,0 +1,31 @@
+{
+  "runId": "20261020081226-RQ-0057",
+  "requirementId": "RQ-0057",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020081226-RQ-0057/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-20T08:12:26.421Z",
+  "updatedAt": "2026-10-20T08:13:01.466Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T08:12:26.981Z",
+      "finishedAt": "2026-10-20T08:13:01.466Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/templates/embedded/scripts/vivado-host.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  }
+}
