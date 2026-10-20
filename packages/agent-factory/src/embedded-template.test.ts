@@ -360,6 +360,9 @@ async function twinModule(root: string) {
 
 async function labBotModule(root: string) {
   return import(pathToFileURL(join(root, 'scripts/lab-bot.mjs')).href) as Promise<{
+    botUpload: (env: Record<string, string>, agent: string, name: string, data: Buffer, stage?: string) => Promise<string>;
+    botDownload: (url: string, path: string, stage?: string) => Promise<void>;
+    botJob: (env: Record<string, string>, agent: string, command: string, args: unknown, options?: { wait?: number; stage?: string }) => Promise<{ id: string }>;
     jobOwner: (env: Record<string, string>, projectName?: string) => string;
     outputUrl: (job: { stdout?: string }) => string | undefined;
     jobIsFinal: (job: { status?: string }) => boolean;
@@ -760,6 +763,65 @@ test('the build stages over the bot: the sources through the store, the command 
   } finally {
     project.done();
     rmSync(results, { recursive: true, force: true });
+  }
+});
+
+test('the bot client sends an upload or a download again when the connection drops, and never a request that starts something', async () => {
+  const project = scaffold();
+  const directory = mkdtempSync(join(tmpdir(), 'bot-retry-'));
+  const previous = process.env.BOT_API_RETRY_MS;
+  process.env.BOT_API_RETRY_MS = '10';
+  // Drops the first `drops` connections of each kind before answering, as a
+  // flaky ZeroTier link did on 20 October.
+  const seen = { puts: 0, gets: 0, jobs: 0, stored: 0 };
+  let drops = 2;
+  const server = createHttpServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      if (req.method === 'PUT') {
+        seen.puts += 1;
+        if (seen.puts <= drops) return req.socket.destroy();
+        seen.stored = Buffer.concat(chunks).length;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: true, url: 'http://bot/download/agent-files/builder/src.tar.gz', size: seen.stored }));
+      }
+      if (req.method === 'GET') {
+        seen.gets += 1;
+        if (seen.gets <= drops) return req.socket.destroy();
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+        return res.end('results');
+      }
+      seen.jobs += 1;
+      req.socket.destroy();
+    });
+  });
+  const port = await new Promise<number>((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port)));
+  try {
+    const bot = await labBotModule(project.root);
+    const env = { BOT_API_URL: `http://127.0.0.1:${port}`, BOT_API_TOKEN: 't', BOT_API_AGENT: 'kaan' };
+    assert.equal(await bot.botUpload(env, 'builder', 'src.tar.gz', Buffer.alloc(64 * 1024, 1), 'BUILD'), 'http://bot/download/agent-files/builder/src.tar.gz');
+    assert.equal(seen.puts, 3, 'two drops, then the upload went through');
+    assert.equal(seen.stored, 64 * 1024, 'the whole archive the third time');
+    await bot.botDownload(`http://127.0.0.1:${port}/download/agent-files/builder/results.tar.gz`, join(directory, 'results'), 'BUILD');
+    assert.equal(readFileSync(join(directory, 'results'), 'utf8'), 'results');
+
+    // Starting a job is sent once: a dropped start is an error, not a second job.
+    await assert.rejects(bot.botJob(env, 'builder', 'upload-file', ['C:\\x', 'y'], { stage: 'BUILD' }), /BUILD FAILED: cannot reach the lab bot for upload-file on builder/);
+    assert.equal(seen.jobs, 1);
+
+    // A link that stays down ends with the cause and the tries.
+    drops = 99;
+    seen.puts = 0;
+    await assert.rejects(bot.botUpload(env, 'builder', 'src.tar.gz', Buffer.alloc(10), 'BUILD'), /cannot reach the lab bot for the upload of src\.tar\.gz \(0 KB\): .*\(4 tries\)/);
+    assert.equal(seen.puts, 4);
+  } finally {
+    if (previous === undefined) delete process.env.BOT_API_RETRY_MS;
+    else process.env.BOT_API_RETRY_MS = previous;
+    server.closeAllConnections();
+    server.close();
+    project.done();
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 
