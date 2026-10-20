@@ -238,7 +238,8 @@ if ($Length -gt $Offset) {
     $Stream.Seek($Offset, 'Begin') | Out-Null
     $Bytes = New-Object byte[] ($Length - $Offset)
     $Read = $Stream.Read($Bytes, 0, $Bytes.Length)
-    Write-Output ([Text.Encoding]::UTF8.GetString($Bytes, 0, $Read))
+    $Skip = if ($Offset -eq 0 -and $Read -ge 3 -and $Bytes[0] -eq 0xEF -and $Bytes[1] -eq 0xBB -and $Bytes[2] -eq 0xBF) { 3 } else { 0 }
+    Write-Output ([Text.Encoding]::UTF8.GetString($Bytes, $Skip, $Read - $Skip))
   } finally { $Stream.Dispose() }
 }
 `;
@@ -254,7 +255,7 @@ $Pulls = [string[]](Decode '${base64Json(pulls)}')
 $Present = @($Pulls | Where-Object { Test-Path -LiteralPath (Join-Path $ProjectPath $_) })
 $Archive = Join-Path $Job 'results.tar.gz'
 if ($Present.Count -gt 0) {
-  & tar.exe -czf $Archive -C $ProjectPath @($Present | ForEach-Object { $_ -replace '\\', '/' })
+  & tar.exe -czf $Archive -C $ProjectPath @($Present | ForEach-Object { $_.Replace('\\', '/') })
   if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
 }
 Write-Output "STATUS=OK"
@@ -312,13 +313,20 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
   const jobDirectory = `${settings.basePath.replace(/[\\/]+$/, '')}\\.${settings.projectName}-job-${jobId}`;
   const archiveName = `${settings.projectName}-${jobId}-src.tar.gz`;
   let started = false;
+  let ended = false;
   let stopping = false;
   const stop = async () => {
     if (!started || stopping) return;
     stopping = true;
     await botStep(settings, botStopScript({ jobDirectory }), `Stopping ${description}`).catch(() => {});
   };
-  const onSignal = (signal) => { stop().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143)); };
+  // Ctrl-C: the command's process tree is stopped and the job directory
+  // removed before this process ends.
+  const onSignal = (signal) => {
+    stop()
+      .then(() => (started ? botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {}) : undefined))
+      .finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  };
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
   let failure;
@@ -330,15 +338,28 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
     started = true;
 
     // Follow the log until the command ends; the agent's own runs stay short.
+    // The bot being out of reach for a while (a network hiccup, a restart) is
+    // not the command's failure: the command runs on, so the stage asks again.
     let offset = 0;
     let step;
+    let misses = 0;
     for (;;) {
-      step = await botStep(settings, botStatusScript({ jobDirectory, offset }), `${description} status`, { wait: 30 });
-      if (step.log) process.stdout.write(step.log);
+      try {
+        step = await botStep(settings, botStatusScript({ jobDirectory, offset }), `${description} status`, { wait: 30 });
+        misses = 0;
+      } catch (error) {
+        if (!/cannot reach the lab bot|answered 5\d\d/.test(String(error.message)) || ++misses > 12) throw error;
+        console.error(`${description}: ${error.message}; asking again in 15 s (${misses}/12)`);
+        await new Promise((resolve) => setTimeout(resolve, 15_000));
+        continue;
+      }
+      // The bot trims the step's stdout, so the chunk's last line break is put back.
+      if (step.log) process.stdout.write(step.log.endsWith('\n') ? step.log : `${step.log}\n`);
       offset = Number(step.OFFSET) || offset;
       if (step.STATUS === 'DONE') break;
       await new Promise((resolve) => setTimeout(resolve, 10_000));
     }
+    ended = true;
     const exitCode = Number(step.EXIT);
     if (exitCode !== 0) failure = new CommandError(`${description} failed with exit code ${Number.isFinite(exitCode) ? exitCode : 'unknown'}.`, Number.isFinite(exitCode) && exitCode > 0 ? exitCode : 2);
 
@@ -365,7 +386,10 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
   } finally {
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
-    if (started) await botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {});
+    // The job directory goes once the command has ended (or was stopped);
+    // a command the stage lost sight of keeps running, and its directory says so.
+    if (started && (ended || stopping)) await botStep(settings, botCleanScript({ jobDirectory }), `${description} cleanup`).catch(() => {});
+    else if (started) console.error(`${description} may still be running on ${settings.host}; its job directory ${jobDirectory} is left there.`);
     rmSync(temporary, { recursive: true, force: true });
   }
   if (failure) throw failure;

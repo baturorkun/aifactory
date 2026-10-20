@@ -52,9 +52,13 @@ agent `VIVADO_BOT_AGENT` on the builder, with no login and no key:
    back before. The job directory is removed; the command's exit code is the
    stage's, as before.
 
-Ctrl-C and a CI cancel stop the command's process tree on the builder.
-The command runs as the agent does (SYSTEM), in the project copy named for
-the developer, so two developers never share one.
+Ctrl-C and a CI cancel stop the command's process tree on the builder and
+remove the job directory. The bot being out of reach for a while (a network
+hiccup, a restart) is not the command's failure: the stage asks again for up
+to three minutes, and a command it still loses sight of is left running
+with its job directory, named in the message. The command runs as the agent
+does (SYSTEM), in the project copy named for the developer, so two
+developers never share one.
 
 `VIVADO_REMOTE_USER`, `_PORT`, `_IDENTITY_FILE` and `_KNOWN_HOSTS` are
 ignored in `bot` mode; `VIVADO_HOST_TYPE` must be `windows` (the agent is
