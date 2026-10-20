@@ -49,6 +49,8 @@ class ContentTypeTests(unittest.TestCase):
 
         for path in (
             "amd/zedboard/prj-2dge-zed/hw/constraints/io.xdc",
+            "libero/constraint/io/pins.pdc",
+            "libero/constraint/timing.sdc",
             "hw/bd/system.tcl",
             "rtl/top.v",
             "rtl/defs.vh",

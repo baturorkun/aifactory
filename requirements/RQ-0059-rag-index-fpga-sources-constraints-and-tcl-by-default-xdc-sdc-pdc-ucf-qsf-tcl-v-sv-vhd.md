@@ -14,7 +14,7 @@ githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/96"
 githubIssueIid: 96
 repositoryProvider: github
 ---
-# RQ-0059 - RAG: index FPGA sources, constraints and Tcl by default (xdc, tcl, v, vh, sv, svh, vhd, vhdl)
+# RQ-0059 - RAG: index FPGA sources, constraints and Tcl by default (xdc, pdc, sdc, tcl, v, vh, sv, svh, vhd, vhdl)
 
 A developer's agent working on a ZedBoard HDMI design in embedded1 asked the
 `2d-ge-ipc` corpus for the board's HDMI pins. The corpus holds the reference
@@ -30,7 +30,8 @@ co-simulation examples); only the include list leaves them out.
 ## What it does
 
 - The RAG's default include list takes the HDL sources and headers (`*.v`,
-  `*.vh`, `*.sv`, `*.svh`, `*.vhd`, `*.vhdl`), `*.xdc` and `*.tcl`. Each is read as plain text and labelled `code`, as the firmware
+  `*.vh`, `*.sv`, `*.svh`, `*.vhd`, `*.vhdl`), the constraints (`*.xdc` for
+  Vivado; `*.pdc` and `*.sdc` for Libero, as BFI's SmartFusion2) and `*.tcl`. Each is read as plain text and labelled `code`, as the firmware
   sources are.
 - A new project's RAG source in `factory.config.json` takes the same types.
 - Sources with their own include list keep it.
@@ -53,7 +54,7 @@ ingest.
 
 ## Acceptance Criteria
 
-- `*.v`, `*.vh`, `*.sv`, `*.svh`, `*.vhd`, `*.vhdl`, `*.xdc` and `*.tcl` are in the default include list, are
+- `*.v`, `*.vh`, `*.sv`, `*.svh`, `*.vhd`, `*.vhdl`, `*.xdc`, `*.pdc`, `*.sdc` and `*.tcl` are in the default include list, are
   parsed, and are labelled `code`; files under the generated directories
   above are not taken.
 - After deploy and ingest, a `2d-ge-ipc` query for the ZedBoard HDMI pins

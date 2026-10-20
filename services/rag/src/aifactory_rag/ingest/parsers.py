@@ -78,10 +78,13 @@ PLAIN_TEXT_EXTENSIONS = {
     ".svh",
     ".vhd",
     ".vhdl",
-    # Xilinx constraints and the Tcl that builds the design (RQ-0059): the pins,
-    # clocks and I/O standards of a board live only in the .xdc, and an FPGA
+    # FPGA constraints and the Tcl that builds the design (RQ-0059): the pins,
+    # clocks and I/O standards of a board live only here (.xdc for Vivado;
+    # .pdc and .sdc for Libero, as the SmartFusion2 of BFI), and an FPGA
     # project's flow and block design are Tcl.
     ".xdc",
+    ".pdc",
+    ".sdc",
     ".tcl",
     ".robot",
     ".mk",

@@ -167,6 +167,8 @@ DEFAULT_INCLUDE = [
     "**/*.vhd",
     "**/*.vhdl",
     "**/*.xdc",
+    "**/*.pdc",
+    "**/*.sdc",
     "**/*.tcl",
     "**/*.simics",
     "**/*.mk",
