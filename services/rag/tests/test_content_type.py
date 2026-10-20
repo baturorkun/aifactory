@@ -41,6 +41,32 @@ class ContentTypeTests(unittest.TestCase):
         ):
             self.assertEqual(classify(path), {"contentType": "code"}, path)
 
+    def test_fpga_sources_constraints_and_tcl_are_code_and_included(self) -> None:
+        # RQ-0059: a board's pins live only in its constraints; the corpus that
+        # held a ZedBoard design's firmware did not have its io.xdc.
+        from aifactory_rag.config import DEFAULT_INCLUDE
+        from aifactory_rag.ingest.parsers import SUPPORTED_EXTENSIONS
+
+        for path in (
+            "amd/zedboard/prj-2dge-zed/hw/constraints/io.xdc",
+            "hw/timing.sdc",
+            "libero/io.pdc",
+            "ise/board.ucf",
+            "quartus/de10.qsf",
+            "lattice/pins.lpf",
+            "hw/bd/system.tcl",
+            "rtl/top.v",
+            "rtl/defs.vh",
+            "rtl/fifo.sv",
+            "rtl/pkg.svh",
+            "rtl/uart.vhd",
+            "rtl/uart_tx.vhdl",
+        ):
+            self.assertEqual(classify(path), {"contentType": "code"}, path)
+            suffix = "." + path.rsplit(".", 1)[1]
+            self.assertIn(suffix, SUPPORTED_EXTENSIONS, path)
+            self.assertIn(f"**/*{suffix}", DEFAULT_INCLUDE, path)
+
     def test_the_directory_no_longer_decides(self) -> None:
         """The same file name is classified the same wherever it lives."""
         self.assertEqual(classify("documentation/live.py"), {"contentType": "code"})

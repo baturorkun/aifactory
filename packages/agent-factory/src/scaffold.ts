@@ -3248,7 +3248,8 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
         probeSimulatorRun: 'pnpm probe:sim-run',
       },
       900_000,
-      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile'],
+      ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile',
+        '**/*.v', '**/*.vh', '**/*.sv', '**/*.svh', '**/*.vhd', '**/*.vhdl', '**/*.xdc', '**/*.sdc', '**/*.pdc', '**/*.ucf', '**/*.qsf', '**/*.lpf', '**/*.tcl'],
       'simics',
     );
     writeSimicsTemplate(projectRoot, projectName);

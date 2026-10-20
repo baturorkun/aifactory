@@ -78,6 +78,17 @@ PLAIN_TEXT_EXTENSIONS = {
     ".svh",
     ".vhd",
     ".vhdl",
+    # FPGA constraints and the Tcl that builds the design (RQ-0059): the pins,
+    # clocks and I/O standards of a board live only here, and an FPGA project's
+    # flow and block design are Tcl. Without them the corpus knows a board's
+    # signals by their README and not where they are.
+    ".xdc",
+    ".sdc",
+    ".pdc",
+    ".ucf",
+    ".qsf",
+    ".lpf",
+    ".tcl",
     ".robot",
     ".mk",
     ".inc",
