@@ -3249,7 +3249,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       },
       900_000,
       ['**/*.txt', '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.pdf', '**/*.docx', '**/*.xlsx', '**/*.dml', '**/*.simics', '**/*.py', '**/*.c', '**/*.cc', '**/*.cpp', '**/*.h', '**/*.hpp', '**/*.mk', '**/*.inc', '**/*.include', '**/*.cmake', '**/Makefile', '**/GNUmakefile',
-        '**/*.v', '**/*.sv', '**/*.vhd', '**/*.xdc', '**/*.tcl'],
+        '**/*.v', '**/*.vh', '**/*.sv', '**/*.svh', '**/*.vhd', '**/*.vhdl', '**/*.xdc', '**/*.tcl'],
       'simics',
     );
     writeSimicsTemplate(projectRoot, projectName);

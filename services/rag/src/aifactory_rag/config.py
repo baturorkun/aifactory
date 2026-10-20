@@ -161,8 +161,11 @@ DEFAULT_INCLUDE = [
     # them, indexed as code. Before this a board's pins (an .xdc) were never in
     # a corpus that held the board's firmware.
     "**/*.v",
+    "**/*.vh",
     "**/*.sv",
+    "**/*.svh",
     "**/*.vhd",
+    "**/*.vhdl",
     "**/*.xdc",
     "**/*.tcl",
     "**/*.simics",

@@ -51,8 +51,11 @@ class ContentTypeTests(unittest.TestCase):
             "amd/zedboard/prj-2dge-zed/hw/constraints/io.xdc",
             "hw/bd/system.tcl",
             "rtl/top.v",
+            "rtl/defs.vh",
             "rtl/fifo.sv",
+            "rtl/pkg.svh",
             "rtl/uart.vhd",
+            "rtl/uart_tx.vhdl",
         ):
             self.assertEqual(classify(path), {"contentType": "code"}, path)
             suffix = "." + path.rsplit(".", 1)[1]
