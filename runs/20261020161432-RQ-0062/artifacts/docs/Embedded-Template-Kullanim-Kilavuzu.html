@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Embedded Template Kullanım Kılavuzu</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  :root { --fg:#1c232b; --muted:#5b6672; --line:#d9dee3; --accent:#0e6e6a; --soft:#e8f3f2; --warn:#fff4e5; --warnline:#d08a2a; }
+  html, body { margin:0; padding:0; }
+  body { color:var(--fg); font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; }
+  main { max-width: 100%; }
+  h1 { font-size: 22pt; margin: 0 0 4pt; line-height:1.2; }
+  h2 { font-size: 14pt; margin: 22pt 0 8pt; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 3pt; page-break-after: avoid; }
+  h3 { font-size: 11.5pt; margin: 14pt 0 6pt; page-break-after: avoid; }
+  p { margin: 0 0 7pt; }
+  .lead { color: var(--muted); font-size: 11pt; margin-bottom: 10pt; }
+  .meta { color: var(--muted); font-size: 9.5pt; margin-bottom: 14pt; }
+  code, pre { font-family: Menlo, "SF Mono", Consolas, monospace; font-size: 9pt; }
+  code { background:#f1f3f5; padding: 0 3px; border-radius: 3px; }
+  pre { background:#f6f7f8; border:1px solid var(--line); border-radius:4px; padding:8pt 10pt; margin: 6pt 0 10pt; white-space: pre-wrap; page-break-inside: avoid; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0 12pt; font-size: 9.5pt; page-break-inside: avoid; }
+  th, td { text-align: left; padding: 5pt 7pt; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background:#f6f7f8; }
+  .note { border-left: 3px solid var(--accent); background: var(--soft); padding: 6pt 10pt; margin: 8pt 0 10pt; font-size: 9.8pt; page-break-inside: avoid; }
+  .warn { border-left: 3px solid var(--warnline); background: var(--warn); padding: 6pt 10pt; margin: 8pt 0 10pt; font-size: 9.8pt; page-break-inside: avoid; }
+  ul, ol { margin: 0 0 8pt 18pt; padding: 0; }
+  li { margin-bottom: 3pt; }
+  .flow { display:flex; gap:6pt; align-items:stretch; margin: 8pt 0 12pt; page-break-inside: avoid; }
+  .step { flex:1; border:1px solid var(--line); border-radius:5px; padding:6pt 8pt; font-size:9pt; }
+  .step b { display:block; font-size:9.5pt; margin-bottom:2pt; }
+  .step .gate { color: var(--accent); font-family: Menlo, monospace; font-size:8.5pt; }
+  .step.opt { border-style: dashed; }
+  footer { margin-top: 24pt; padding-top: 8pt; border-top: 1px solid var(--line); color: var(--muted); font-size: 9pt; }
+  .pb { page-break-before: always; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Embedded Template Kullanım Kılavuzu</h1>
+  <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
+  <p class="meta">aifactory v0.62 (RQ-0044…RQ-0062) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
+</header>
+
+<h2>1. Template ne yapar</h2>
+<p>Embedded template, bir FPGA tasarımı ve üzerinde koşan C firmware'ini tek bir projede, requirement odaklı olarak geliştirmek içindir. aifactory projeyi üretir ve requirement akışını yürütür; Vivado ve Vitis işin yapıldığı araçlardır ve projenin kendi script'i (<code>scripts/flow.mjs</code>) ile uzaktaki build host'ta koşar. Kaynaklar metindir (HDL, XDC, Tcl, testbench, C); Vivado/Vitis proje dosyaları çıktıdır ve repoya girmez.</p>
+<p>Her requirement bir dizi <b>faz</b>dan geçer; her fazı bir <b>gate</b> kapatır. Gate geçmeden requirement tamamlanmaz. Fazlar sırayla: <code>spec</code> → <code>sim</code> → <code>build</code> → <code>twin</code> → <code>board</code>.</p>
+
+<div class="flow">
+  <div class="step"><b>spec</b><span class="gate">designCheck</span><br>board dosyası, project.tcl ve block design tutarlı; mutlak yol yok</div>
+  <div class="step"><b>sim</b><span class="gate">hdlSim</span><br>her <code>tb/tb_*</code> xsim'de TEST PASSED basar</div>
+  <div class="step"><b>build</b><span class="gate">fpgaBuild · firmwareBuild</span><br>synth/impl/bit/xsa, WNS/WHS ≥ 0, DRC 0; Vitis ELF üretilir</div>
+  <div class="step opt"><b>twin</b><span class="gate">twinTest</span><br>ELF hardware twin image'ında koşar, test.yaml kontrol eder</div>
+  <div class="step opt"><b>board</b><span class="gate">boardTest</span><br>bitstream + ELF gerçek kartta JTAG ile; konsol beklenen satırı basar</div>
+</div>
+<p>Varsayılan fazlar <code>spec, sim, build</code>'dir. <code>twin</code> ve <code>board</code> requirement bazında seçilir; board gerçek kartı meşgul ettiği için sadece gerektiğinde, gece koşusunda ya da elle tetiklenir.</p>
+
+<h2>2. Proje yaratma</h2>
+<pre><code>cd agentic/aifactory
+pnpm factory -- new &lt;proje&gt; --template embedded --board zedboard --dir ..
+# coding standard ile (bkz. §9):
+pnpm factory -- new &lt;proje&gt; --template embedded --board zedboard --standard cstd --groups misra,bytecraft --dir ..</code></pre>
+<p><code>--board</code> lab envanterindeki (<code>aifactory/lab/inventory.json</code>) bir birimi seçer; Vivado host, lab host, hw_server, bot adresi, JTAG kablo seri numarası ve konsol portu <code>.env</code>'e otomatik dolar. Boş kalan ve sizin doldurmanız gerekenler: <code>GITLAB_TOKEN</code>, <code>BOT_API_TOKEN</code>, <code>TWIN_GITLAB_TOKEN</code> (gizli değerler envanterde tutulmaz). <code>pnpm factory -- env-check</code> eksikleri listeler.</p>
+<div class="warn"><b>Lab host'larına erişim: SSH ya da bot.</b> İki host var; her biri için <code>.env</code>'deki <code>*_ACCESS</code> ayarı (<code>ssh</code> | <code>bot</code>) yolu seçer. Developer'lar <code>bot</code> kullanır: SSH ve anahtar gerekmez, sadece <code>BOT_API_TOKEN</code>. <code>ssh</code> lab yöneticisi ve CI içindir. (Board için <code>bot</code> RQ-0055, twin için <code>TWIN_ACCESS=bot</code> RQ-0056 ile geldi; builder için <code>VIVADO_ACCESS=bot</code> RQ-0057 ile geldi.)
+<ul>
+<li><b>192.168.1.3 (builder, Windows):</b> sim, build, sw. <code>VIVADO_ACCESS=bot</code>: bot'un builder'daki Windows agent'ı (<code>VIVADO_BOT_AGENT</code>) Vivado/Vitis'i koşturur; kaynak ve sonuçlar bot üzerinden gider gelir. <code>VIVADO_ACCESS=ssh</code>: kullanıcı <code>VIVADO_REMOTE_USER</code>, yani sizin builder'daki hesabınız. Hesabınız Administrators grubundaysa Windows OpenSSH anahtarı <code>~/.ssh/authorized_keys</code>'ten değil <code>C:\ProgramData\ssh\administrators_authorized_keys</code>'ten okur; <code>ssh-copy-id</code> Windows'a yazamaz. Parolayla bir kez:<br>
+<code>cat ~/.ssh/id_ed25519.pub | ssh &lt;siz&gt;@192.168.1.3 'powershell -NoProfile -Command "Add-Content -Path C:\ProgramData\ssh\administrators_authorized_keys -Value ([Console]::In.ReadToEnd().Trim())"'</code></li>
+<li><b>192.168.1.2 (lab, Linux):</b> sadece board. <code>BOARD_ACCESS=bot</code>: güç bot'tan, konsol bot'un portmap köprüsünden (<code>BOARD_CONSOLE=lab/COM21</code>; aşama <code>pm start lab com21 owner=&lt;proje&gt;/&lt;siz&gt;</code> ile TCP akışı açar, bitince kapatır; konsol başkasındaysa durur ve kimde olduğunu söyler), JTAG builder'daki xsdb'den hw_server'a. <code>BOARD_ACCESS=ssh</code>: kullanıcı <code>root</code>; bu anahtar yalnızca lab yöneticisinde ve CI'da olur, developer'a verilmez.</li>
+</ul>
+check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Docker'ında bot üzerinden koşar (ELF bot'un deposuna gider, sonuç arşiv olarak gelir), <code>ssh</code> ile kendi Docker'ınızda. <code>pnpm factory -- env-check</code> her aşamanın hangi yoldan hangi host'a gittiğini listeler. CI kendi anahtarlarını kullanır, sizinkilere ihtiyacı yoktur.</div>
+<p>Proje GitLab'da açılır (<code>agentic</code> grubu), runner'ı Settings → CI/CD → Runners'tan etkinleştirin. Lab'ın ortak ayarları (Vivado host, lab host, SSH anahtarları, bot ve twin token'ları) GitLab instance düzeyinde tanımlıdır; projeye yalnızca karta özgü değerler girer: <code>pnpm factory -- ci-variables --write --with-secrets</code> bunu yapar ve ortak olanları atlar.</p>
+
+<h2>3. Proje yerleşimi</h2>
+<table>
+<tr><th>Yol</th><th>Ne</th></tr>
+<tr><td><code>designs/&lt;tasarım&gt;/project.tcl</code></td><td>Tasarımın tanımı: part, mode (<code>non_project</code> saf RTL / <code>project</code> block design + PS), top, VITIS cpu</td></tr>
+<tr><td><code>designs/&lt;tasarım&gt;/src, constraints, tb</code></td><td>HDL, XDC, self-checking testbench'ler (<code>tb_*.vhd|v|sv</code>)</td></tr>
+<tr><td><code>designs/&lt;tasarım&gt;/tcl/bd.tcl</code></td><td>Block design (project mode)</td></tr>
+<tr><td><code>designs/&lt;tasarım&gt;/sw/src</code>, <code>sw/create_vitis.py</code></td><td>Firmware kaynakları ve Vitis workspace script'i</td></tr>
+<tr><td><code>designs/&lt;tasarım&gt;/test.yaml</code></td><td>Twin ve board testinin beklentileri: <code>timeout_s</code>, <code>expect</code>, <code>fail_on</code>, <code>summary</code></td></tr>
+<tr><td><code>boards/&lt;kart&gt;.yaml</code></td><td>Kart: vendor, tool, tool_version, part, pinler, clock, lab programlayıcı; isteğe bağlı <code>twin:</code></td></tr>
+<tr><td><code>scripts/flow.mjs</code>, <code>flow.tcl</code>, <code>common/</code></td><td>Akış; template'e aittir, <code>factory template update</code> ile güncellenir</td></tr>
+<tr><td><code>out/&lt;tasarım&gt;/</code></td><td>Çıktı (gitignore): <code>artifacts/</code> altında summary.json, .bit, .xsa, .elf, raporlar, twin ve board sonuçları</td></tr>
+<tr><td><code>requirements/</code>, <code>handoffs/</code>, <code>runs/</code></td><td>Requirement dosyaları, handoff paketleri, gate kayıtları</td></tr>
+<tr><td><code>coding-standard/</code></td><td>Seçilen coding standard, kural listesi ve waiver'lar (§9)</td></tr>
+</table>
+<p>Template ile iki örnek tasarım gelir: <code>led_counter</code> (non_project, saf RTL, LED sayacı) ve <code>hello_ps</code> (project mode, Zynq PS, UART'a bir satır basan firmware).</p>
+
+<h2>4. Bir requirement'ın yaşam döngüsü</h2>
+<ol>
+<li><b>Aç:</b> <code>pnpm factory -- requirement new "&lt;başlık&gt;" --mode handoff</code>. Terminalde fazlar checkbox ile sorulur; script'te <code>--phases spec,sim,build</code> verilir. Seçim requirement dosyasının başına <code>phases:</code> olarak yazılır.</li>
+<li><b>Yaz:</b> requirement dosyasındaki Design / Behaviour / Build / Acceptance Criteria bölümlerini doldurun. RTL değişikliği requirement'ta önerilir, mühendis onaylar.</li>
+<li><b>Gönder ve başlat:</b> <code>requirement submit RQ-n</code> handoff paketini üretir; <code>handoff-begin &lt;run&gt;</code> temiz çalışma ağacında run'ı açar.</li>
+<li><b>Geliştir:</b> hızlı döngü için tek tek stage koşturun (bkz. §5). Handoff paketinde kurallar, RAG bağlamı ve kısıtlar vardır.</li>
+<li><b>Gate'leri koştur:</b> <code>handoff-finish &lt;run&gt;</code> requirement'ın fazlarını sırayla koşar; ilk düşen fazda durur, sonrakileri "skipped" olarak işaretler. Daha azını koşmak için <code>--phases sim</code> (run açık kalır).</li>
+<li><b>Kaydet:</b> kod commit'i (<code>feat(RQ-n): …</code>) ve run artifact'leri commit'i (<code>chore(RQ-n): capture handoff-finish gate artifacts</code>), sonra <code>approve &lt;run&gt; --by "&lt;ad&gt;"</code> ve push.</li>
+<li><b>CI:</b> merge request pipeline'ı requirement'ın fazlarını koşar; main ve tag'de tüm fazlar koşar.</li>
+<li><b>Kapat:</b> <code>requirement complete RQ-n --run &lt;run&gt;</code> MR'ı merge eder; tamamlama commit'i yeni bir pipeline başlatır, komut "checks pending" derse bitince tekrar çalıştırın.</li>
+</ol>
+<div class="note">Geçmiş bir run sonradan değişen kodla yeniden kullanılamaz: kod değiştiyse yeni run açın (<code>handoff RQ-n</code> → <code>handoff-begin</code> → <code>handoff-finish</code>).</div>
+
+<h2>5. Akışı elle koşturmak: <code>pnpm flow</code></h2>
+<table>
+<tr><th>Komut</th><th>Ne yapar</th><th>Nerede</th></tr>
+<tr><td><code>pnpm flow check</code></td><td>designCheck: board/proje/bd tutarlılığı, mutlak yol taraması</td><td>yerel</td></tr>
+<tr><td><code>pnpm flow sim [tasarım]</code></td><td>xvlog/xvhdl/xelab/xsim ile testbench'ler</td><td>Vivado host</td></tr>
+<tr><td><code>pnpm flow synth | impl | bit | xsa</code></td><td>Tek tek build adımları</td><td>Vivado host</td></tr>
+<tr><td><code>pnpm flow build</code></td><td>synth+impl+bit (+xsa, project mode)</td><td>Vivado host</td></tr>
+<tr><td><code>pnpm flow sw</code></td><td>Vitis workspace + uygulama build'i, ELF</td><td>Vivado host</td></tr>
+<tr><td><code>pnpm flow all</code></td><td>check → sim → build → sw</td><td></td></tr>
+<tr><td><code>pnpm twin [tasarım]</code></td><td>ELF'i twin image'ında koşturur, test.yaml'a bakar</td><td>Docker host (lab)</td></tr>
+<tr><td><code>pnpm board [tasarım]</code></td><td>Kartı açar, programlar, konsolu dinler, kapatır</td><td>lab host + kart</td></tr>
+<tr><td><code>pnpm flow clean</code></td><td>out/ temizliği</td><td></td></tr>
+</table>
+<p>Vivado host <code>.env</code>'de <code>VIVADO_REMOTE_*</code> ile tanımlıdır (bugün 192.168.1.3, Windows, Vivado/Vitis 2025.2). Proje kaynakları her koşuda host'a gider: <code>VIVADO_ACCESS=bot</code> ile sadece host'taki kopyada olmayan veya farklı olan dosyalar (SHA-256 ile karşılaştırılır, büyük arşiv 8 MB'lık parçalarla, <code>BOT_API_CHUNK_KB</code>), projeden silinen dosyalar host'tan da silinir; <code>ssh</code> ile her seferinde tüm kaynaklar tar ile. <code>out/</code> host'ta kalır ve sadece artifact'ler geri gelir. Host'taki proje adı kişi başınadır (<code>&lt;proje&gt;-&lt;BOT_API_AGENT&gt;</code>), CI kendi adını kullanır; iki kişi aynı Vivado projesini paylaşmaz. Build yaklaşık 8–10 dakika, sim 20 saniye, Vitis 1 dakika sürer.</p>
+<p>Önce <code>out/&lt;tasarım&gt;/artifacts/summary.json</code>'a bakın: WNS/WHS, LUT/FF/BRAM/DSP, DRC, süreler, build host ve git sha. Raporlar yanındadır.</p>
+
+<h2>6. Twin</h2>
+<p>Twin projenin içinde değildir; ayrı bir projeden release edilen bir Docker image'ıdır (bfi-sw'nin bfi-simulator'ü kullanması gibi). Hangi twin olduğu <code>.env</code>'de yazar: <code>TWIN_GITLAB_URL</code>, <code>TWIN_PROJECT</code>, <code>TWIN_REGISTRY</code>, <code>TWIN_CONSOLE</code>; boş alanları <code>boards/&lt;kart&gt;.yaml</code>'daki <code>twin:</code> bölümü tamamlar. Her koşu twin'in son release'ini alır (<code>TWIN_TAG</code> sabitler) ve hangi sürümle koştuğunu <code>artifacts/twin/result.json</code>'a yazar. <code>TWIN_PROJECT</code> boşsa twin fazı "no twin yet" diyerek atlanır.</p>
+<p><code>test.yaml</code> twin ve board için ortaktır: <code>expect</code> konsolda görünmesi gereken satırlar, <code>fail_on</code> görünmemesi gerekenler, <code>summary</code> twin'in JSON özetindeki alanlar için min/max.</p>
+
+<h2>7. Board</h2>
+<p><code>pnpm board</code> sırasıyla: lab bot'tan kartın prizini açar (<code>BOARD_POWER_NAME</code>), hw_server üzerinden xsdb ile <code>rst -system</code> → bitstream → ps7_init → ELF → <code>con</code>, konsolu (<code>BOARD_SERIAL_PORT</code>) <code>timeout_s</code> boyunca dinler, sonucu <code>artifacts/board/result.json</code> ve konsol kaydına yazar, prizi yalnızca kendisi açtıysa kapatır. Her xsdb hedefi kablo seri numarasıyla (<code>BOARD_JTAG_CABLE</code>) süzülür; aynı hw_server'a başka kartlar da bağlıdır. Flash'a hiçbir zaman yazılmaz.</p>
+<p>CI'da board job'ı üç durumda koşar: requirement'ın fazlarında <code>board</code> varsa, gece zamanlanmış pipeline'da, ya da <code>embedded_board_on_demand</code> elle tetiklenince. <code>resource_group: lab-board</code> aynı anda tek koşuya izin verir.</p>
+
+<h2>8. CI pipeline</h2>
+<table>
+<tr><th>Job</th><th>Faz</th><th>Ne zaman</th></tr>
+<tr><td><code>embedded_check</code></td><td>spec</td><td>her MR ve branch</td></tr>
+<tr><td><code>embedded_sim</code></td><td>sim</td><td>requirement fazlarında varsa; main/tag her zaman</td></tr>
+<tr><td><code>embedded_build</code></td><td>build</td><td>aynı; artifact: bit, xsa, elf, raporlar</td></tr>
+<tr><td><code>embedded_twin</code></td><td>twin</td><td>aynı; TWIN_PROJECT yoksa atlar</td></tr>
+<tr><td><code>embedded_board</code> / <code>_on_demand</code></td><td>board</td><td>§7</td></tr>
+</table>
+<p>MR pipeline'ı requirement dosyasındaki fazlara bakar (<code>--requirement-phases</code>); main ve tag'de hepsi koşar. Vivado job'ları runner'dan Vivado host'a SSH ile çıkar; anahtarlar ve host ayarları instance düzeyindeki CI değişkenlerinden gelir.</p>
+
+<h2>9. Coding standard (yeni, RQ-0052)</h2>
+<p>Proje bir coding standard'a bağlanabilir: <code>--standard cstd --groups misra,bytecraft [--profile default|dal-a]</code> ile yaratılırken, ya da var olan projede <code>pnpm factory -- standard use cstd --groups misra,bytecraft</code> ile. Standart Bytecraft'ın 5001-K-CSTD'sinden türetilmiş kural gruplarından oluşur:</p>
+<table>
+<tr><th>Grup</th><th>Kurallar</th><th>İçerik</th></tr>
+<tr><td><code>misra</code></td><td>107</td><td>MISRA C:2025 kurallarına birebir atıflı C kuralları</td></tr>
+<tr><td><code>bytecraft</code></td><td>40</td><td>Dosya adları, isimlendirme, biçim, standart kütüphane ve bitfield yasağı, ölçüler</td></tr>
+<tr><td><code>do178c</code></td><td>9</td><td>DO-178C'nin koddan istedikleri (ölü/erişilemeyen kod, kullanılmayan tanım yok)</td></tr>
+<tr><td><code>arm-m3</code></td><td>17</td><td>Cortex-M3 assembly kuralları</td></tr>
+</table>
+<p>Projede <code>coding-standard/standard.json</code> seçimi, <code>index.md</code> yürürlükteki kural listesini, <code>waivers.yaml</code> gerekçeli sapmaları tutar. Kuralın tam metni RAG'dedir (<code>coding-standards</code> kaynağı; "C-045 ne diyor" diye sorulur). Her requirement taslağına "Coding Standard" bölümü, her handoff paketine kural listesi girer. Kodu kurallara karşı otomatik kontrol eden <code>codingStandard</code> gate'i (<code>pnpm standard</code>, RQ-0053) build'den sonra koşar: MISRA kurallarını cppcheck, biçim kurallarını kendi lexical kontrolleri yakalar, kalanı raporda “manuel review” olarak listelenir; ihlal ya düzeltilir ya <code>waivers.yaml</code>'a gerekçesiyle yazılır. Rapor <code>out/coding-standard/report.md</code>.</p>
+
+<h2 class="pb">10. Bilinen durumlar</h2>
+<ul>
+<li><b>Windows yol sınırı (260):</b> Vitis BSP uzun yollarda derlenmez. Host'taki base path <code>C:\ab</code> kısa ve gerçek bir klasördür (junction değil: Vivado junction'ı uzun hedef yoluna çözer); akış BSP yolunu build'den önce tahmin eder ve aşacaksa parçalarıyla uyarır.</li>
+<li><b>Dosyalar 200 KB'da kesik geliyorsa:</b> Windows OpenSSH'ın SFTP'si; akış Windows host'ta <code>scp -O</code> kullanır. Bitstream'ler ~4 MB tam gelmeli.</li>
+<li><b><code>vitis -s</code> hata verse de 0 ile çıkar:</b> ELF kanıttır; eski ELF build'den önce silinir, yoksa stage düşer.</li>
+<li><b>Vivado sürümü:</b> board dosyasındaki <code>tool_version</code> ile host'taki sürüm eşleşmezse build durur; sürüm değişikliği ayrı requirement'tır (IP'leri yükseltir).</li>
+<li><b>Build host'ta aynı anda tek Vivado:</b> iki build çakışırsa ikincisi bekler; ilk pipeline'da sim nadiren "exit 5" ile sessizce düşebiliyor, yeniden deneyin.</li>
+<li><b>Board "no target with cable serial":</b> kart kapalı ya da kablo başka hw_server'da; bot güç durumunu <code>power/status</code> ile verir.</li>
+</ul>
+
+<h2>11. Komut özeti</h2>
+<pre><code>pnpm factory -- new &lt;proje&gt; --template embedded --board zedboard [--standard cstd --groups …]
+pnpm factory -- env-check                       # eksik .env değerleri
+pnpm factory -- ci-variables --write --with-secrets
+pnpm factory -- requirement new "&lt;başlık&gt;" --mode handoff [--phases spec,sim,build,twin,board]
+pnpm factory -- requirement submit RQ-n
+pnpm factory -- handoff-begin &lt;run&gt;   ·   pnpm flow &lt;stage&gt;   ·   pnpm factory -- handoff-finish &lt;run&gt; [--phases …]
+pnpm factory -- approve &lt;run&gt; --by "&lt;ad&gt;"   ·   git push
+pnpm factory -- requirement complete RQ-n --run &lt;run&gt;
+pnpm factory -- template update [--write]        # template dosyalarını güncel aifactory'ye getirir
+pnpm factory -- standard use cstd --groups misra,bytecraft</code></pre>
+
+<footer>Hazırlayan: Batur Orkun, Bytecraft · 19 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0054 durumu</footer>
+</main>
+</body>
+</html>
