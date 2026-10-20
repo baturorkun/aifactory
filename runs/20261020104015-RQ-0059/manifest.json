@@ -1,0 +1,34 @@
+{
+  "runId": "20261020104015-RQ-0059",
+  "requirementId": "RQ-0059",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020104015-RQ-0059/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-20T10:40:15.616Z",
+  "updatedAt": "2026-10-20T10:40:58.831Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T10:40:16.197Z",
+      "finishedAt": "2026-10-20T10:40:51.008Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/tests/test_content_type.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-10-20T10:40:58.832Z",
+  "approvedBy": "Batur Orkun"
+}

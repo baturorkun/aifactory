@@ -1,0 +1,36 @@
+{
+  "runId": "20261020094647-RQ-0059",
+  "requirementId": "RQ-0059",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261020094647-RQ-0059/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-20T09:46:47.544Z",
+  "updatedAt": "2026-10-20T09:47:34.167Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-20T09:46:48.166Z",
+      "finishedAt": "2026-10-20T09:47:23.054Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/scaffold.ts",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/ingest/parsers.py",
+    "services/rag/tests/test_content_type.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-20T09:47:34.167Z",
+  "approvedBy": "Batur Orkun"
+}
