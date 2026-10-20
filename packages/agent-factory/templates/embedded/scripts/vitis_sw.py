@@ -136,6 +136,10 @@ def main(sw_dir):
     try:
         fresh = not os.path.isdir(os.path.join(workspace, app_name))
         os.makedirs(workspace, exist_ok=True)
+        # The copy the workspace was made for: `flow.mjs prune` removes the
+        # workspace once that copy is gone (RQ-0065).
+        with open(os.path.join(workspace, ".owner"), "w", encoding="utf-8") as handle:
+            handle.write(os.path.abspath(root))
         client.set_workspace(path=workspace)
         names = sorted(name for name in os.listdir(sources) if not name.startswith("."))
         if fresh:
