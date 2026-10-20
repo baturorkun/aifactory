@@ -348,13 +348,13 @@ export async function boardStage(settings, design, boardText, env) {
   process.once('SIGTERM', onSignal);
   try {
     if (access === 'ssh') {
-      runOnHost(settings, ['sh', `${relative}/run.sh`, xsdb, port, baud, String(Math.ceil(test.timeout_s))], {
+      await runOnHost(settings, ['sh', `${relative}/run.sh`, xsdb, port, baud, String(Math.ceil(test.timeout_s))], {
         pulls: [relative],
         description: `Board run of ${design.name}`,
       });
     } else {
       // xsdb on the Vivado host; its directory comes back with xsdb.log.
-      runOnHost(settings, [xsdb, `${relative}/load.tcl`], { pulls: [relative], description: `Board load of ${design.name}` });
+      await runOnHost(settings, [xsdb, `${relative}/load.tcl`], { pulls: [relative], description: `Board load of ${design.name}` });
       await waitForConsole(reader, test);
     }
   } catch (error) {

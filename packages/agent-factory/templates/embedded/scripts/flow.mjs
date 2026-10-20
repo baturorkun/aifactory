@@ -188,7 +188,7 @@ function recordHost(design, settings) {
   writeFileSync(path, JSON.stringify(summary, null, 2) + '\n');
 }
 
-function vivadoStage(settings, design, stage, jobs) {
+async function vivadoStage(settings, design, stage, jobs) {
   const vivado = requireTool(settings, 'vivado', 'VIVADO_BIN');
   const sha = gitSha();
   const command = [vivado, '-mode', 'batch', '-nojournal', '-notrace',
@@ -196,7 +196,7 @@ function vivadoStage(settings, design, stage, jobs) {
     '-tclargs', design, stage, '--jobs', String(jobs), ...(sha ? ['--git-sha', sha] : [])];
   console.log(`\n▸ ${design}: ${stage} (Vivado on ${buildHost(settings)})`);
   try {
-    runOnHost(settings, command, {
+    await runOnHost(settings, command, {
       directories: [`out/${design}`],
       pulls: stage === 'clean' ? [] : [`out/${design}/artifacts`, `out/${design}/vivado-${stage}.log`],
       description: `Vivado ${stage} of ${design}`,
@@ -232,12 +232,12 @@ export function checkVitisPath(settings, design) {
   throw new CommandError(`SW FAILED: on the Windows host the Vitis BSP would write paths of about ${length} characters (budget ${WINDOWS_PATH_BUDGET}, the limit is 260 and Vitis' gcc cannot pass it). Shorten one of the parts you choose:\n${table}`, 1);
 }
 
-function softwareStage(settings, design) {
+async function softwareStage(settings, design) {
   checkVitisPath(settings, design);
   const vitis = requireTool(settings, 'vitis', 'VITIS_BIN');
   console.log(`\n▸ ${design.name}: sw (Vitis on ${buildHost(settings)})`);
   try {
-    runOnHost(settings, [vitis, '-s', `designs/${design.name}/sw/create_vitis.py`], {
+    await runOnHost(settings, [vitis, '-s', `designs/${design.name}/sw/create_vitis.py`], {
       directories: [`out/${design.name}`],
       pulls: [`out/${design.name}/artifacts`],
       description: `Vitis build of ${design.name}`,
@@ -375,22 +375,22 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
         await twinStage(renode(), design, board(design), env);
         break;
       case 'sw':
-        if (design.VITIS) softwareStage(settings, design);
+        if (design.VITIS) await softwareStage(settings, design);
         else console.log(`\n▸ ${design.name}: no software (VITIS is not set)`);
         break;
       case 'xsa':
-        if (design.MODE === 'project') vivadoStage(settings, design.name, 'xsa', options.jobs);
+        if (design.MODE === 'project') await vivadoStage(settings, design.name, 'xsa', options.jobs);
         else console.log(`\n▸ ${design.name}: no XSA in non-project mode`);
         break;
       case 'all':
-        vivadoStage(settings, design.name, 'all', options.jobs);
+        await vivadoStage(settings, design.name, 'all', options.jobs);
         if (design.VITIS) {
-          softwareStage(settings, design);
+          await softwareStage(settings, design);
           await twinStage(renode(), design, board(design), env);
         }
         break;
       default:
-        vivadoStage(settings, design.name, options.stage, options.jobs);
+        await vivadoStage(settings, design.name, options.stage, options.jobs);
     }
   }
 }

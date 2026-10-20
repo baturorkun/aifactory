@@ -338,7 +338,7 @@ export async function twinStage(settings, design, boardText, env) {
     chmodSync(join(local, '.token'), 0o600);
     console.log(`${label} (${twin.project} ${release.tag} on ${host}'s Docker, ${seconds} s)`);
     try {
-      runOnHost(settings, ['sh', `${relative}/run.sh`, release.image, seconds, twin.registry, release.user], {
+      await runOnHost(settings, ['sh', `${relative}/run.sh`, release.image, seconds, twin.registry, release.user], {
         pulls: [relative],
         description: `Twin run of ${design.name}`,
       });

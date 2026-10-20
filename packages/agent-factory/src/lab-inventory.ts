@@ -30,6 +30,9 @@ export const LabInventorySchema = z.object({
     host: z.string().min(1),
     user: z.string().min(1),
     hostType: z.enum(['windows', 'linux']),
+    // The bot's name for its agent on this host: with one, a new project runs the
+    // tools there through the bot (VIVADO_ACCESS=bot, RQ-0057).
+    botAgent: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
     basePath: z.string().min(1),
     vivadoBin: z.string().min(1),
     vitisBin: z.string().min(1),
@@ -82,6 +85,8 @@ export function embeddedEnvValues(
 ): Record<string, string> {
   const hostProject = `${projectName}-${person}`;
   const values: Record<string, string> = {
+    VIVADO_ACCESS: inventory.vivado.botAgent ? 'bot' : 'ssh',
+    ...(inventory.vivado.botAgent ? { VIVADO_BOT_AGENT: inventory.vivado.botAgent } : {}),
     VIVADO_HOST_TYPE: inventory.vivado.hostType,
     VIVADO_REMOTE_HOST: inventory.vivado.host,
     VIVADO_REMOTE_USER: account,
