@@ -637,6 +637,8 @@ async function hostModule(root: string) {
     botDiffScript: (job: { settings: unknown; jobDirectory: string; manifestUrl: string }) => string;
     botSyncScript: (job: { settings: unknown; jobDirectory: string; partUrls: string[]; entries: string[]; directories: string[] }) => string;
     botStartScript: (job: { settings: unknown; jobDirectory: string; command: string[] }) => string;
+    botBackgroundScript: (job: { jobDirectory: string; name: string; script: string }) => string;
+    botPollScript: (job: { jobDirectory: string; name: string }) => string;
     sourceManifest: (root?: string) => { path: string; size: number; hash: string }[];
     parseRanges: (text: string) => number[];
     chunkBytes: (env: Record<string, string>) => number;
@@ -648,6 +650,13 @@ async function hostModule(root: string) {
   }>;
 }
 
+// The step a background launcher (RQ-0067) writes out and starts: the longest
+// base64 text in it.
+const innerScript = (launcher: string) => {
+  const encoded = [...launcher.matchAll(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/g)].map((match) => match[1]).sort((a, b) => b.length - a.length)[0] ?? '';
+  return Buffer.from(encoded, 'base64').toString('utf8');
+};
+
 // The bot's Windows agent on the builder, as the stage uses it: free-form
 // PowerShell steps (told apart by their "# aifactory: <step>" line), the
 // store, the upload-file job. The steps' answers are canned; what the real
@@ -657,6 +666,10 @@ async function hostModule(root: string) {
 function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 'none' = 'all', resultParts = 1) {
   const seen = { steps: [] as string[], scripts: {} as Record<string, string>, uploads: {} as Record<string, number>, stored: {} as Record<string, Buffer>, uploadFile: undefined as undefined | string[], uploadFiles: [] as string[][], tokens: new Set<string>(), requestedBy: new Set<string>() };
   const archive = () => readFileSync(resultsArchive);
+  const collectAnswer = () => {
+    const parts = resultParts > 1 ? Array.from({ length: resultParts }, (_, n) => `C:\\ab\\.fw-ada-job-1\\results.tar.gz.part${String(n).padStart(3, '0')}`) : [];
+    return `STATUS=OK\nPRESENT=1\nARCHIVE=C:\\ab\\.fw-ada-job-1\\results.tar.gz\nPARTS=${parts.length || 1}\n${parts.length ? `LOG:\n${parts.join('\n')}\n` : ''}`;
+  };
   const slice = (part: number) => {
     const data = archive();
     const size = Math.ceil(data.length / resultParts);
@@ -690,16 +703,18 @@ function fakeBuilderBot(resultsArchive: string, exitCode: number, need: 'all' | 
           const files = manifest ? gunzipSync(manifest).toString('utf8').split('\n').filter(Boolean).length : 0;
           return done(`STATUS=OK\nFILES=${files}\nNEED=${need === 'all' && files > 0 ? `0-${files - 1}` : ''}\n`);
         }
-        if (step === 'sync') return done('STATUS=SYNCED\nREMOVED=0\n');
+        // sync and collect run in the background (RQ-0067): started, then polled.
+        if (step === 'sync' || step === 'collect') return done('STATUS=STARTED\n');
+        if (step === 'poll') {
+          const name = /^# step: (\w+)$/m.exec(script)?.[1];
+          if (name === 'sync') return done('STATUS=DONE\nEXIT=0\nLOG:\nSTATUS=SYNCED\nREMOVED=0\n');
+          if (name === 'collect') return done(`STATUS=DONE\nEXIT=0\nLOG:\n${collectAnswer()}`);
+        }
         if (step === 'start') return done('STATUS=STARTED\nPID=4242\n');
         if (step === 'status') {
           polls += 1;
           if (polls === 1) return done('STATUS=RUNNING\nOFFSET=20\nLOG:\nRunning on BUILDER\n');
           return done(`STATUS=DONE\nEXIT=${exitCode}\nOFFSET=40\nLOG:\nxsim finished\n`);
-        }
-        if (step === 'collect') {
-          const parts = resultParts > 1 ? Array.from({ length: resultParts }, (_, n) => `C:\\ab\\.fw-ada-job-1\\results.tar.gz.part${String(n).padStart(3, '0')}`) : [];
-          return done(`STATUS=OK\nPRESENT=1\nARCHIVE=C:\\ab\\.fw-ada-job-1\\results.tar.gz\nPARTS=${parts.length || 1}\n${parts.length ? `LOG:\n${parts.join('\n')}\n` : ''}`);
         }
         if (step === 'stop') return done('STATUS=STOPPED\n');
         if (step === 'clean') return done('STATUS=OK\n');
@@ -799,7 +814,7 @@ test('the build stages over the bot: the sources through the store, the command 
       assert.match(result.stdout, /Running on BUILDER[\s\S]*xsim finished/, 'the log as it grew');
       assert.match(result.stdout, /Brought back out\/led_counter\/artifacts/);
       assert.equal(project.read('out/led_counter/artifacts/sim.log'), 'from the builder\n');
-      assert.deepEqual(bot.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+      assert.deepEqual(bot.seen.steps, ['diff', 'sync', 'poll', 'start', 'status', 'status', 'collect', 'poll', 'clean']);
       const [manifestName, archiveName] = Object.keys(bot.seen.uploads);
       assert.match(manifestName, /^fw-ada-\d+-\d+-manifest\.gz$/, 'the list first');
       assert.match(archiveName, /^fw-ada-\d+-\d+-src\.tar\.gz$/, 'then one archive: under 8 MB, no parts');
@@ -811,7 +826,7 @@ test('the build stages over the bot: the sources through the store, the command 
       assert.match(result.stdout, new RegExp(`Sources: ${listed.length} of ${listed.length} files changed \\(\\d+ KB\\) sent to builder`));
       // Values travel base64-encoded JSON, so cmd.exe's quoting never sees them.
       const archiveUrl = `http://127.0.0.1/download/agent-files/builder/${archiveName}`;
-      assert.ok(bot.seen.scripts.sync.includes(Buffer.from(JSON.stringify([archiveUrl])).toString('base64')), 'the sync step fetches the archive the stage put in the store');
+      assert.ok(innerScript(bot.seen.scripts.sync).includes(Buffer.from(JSON.stringify([archiveUrl])).toString('base64')), 'the sync step fetches the archive the stage put in the store');
       assert.deepEqual(bot.seen.uploadFile?.[0], 'C:\\ab\\.fw-ada-job-1\\results.tar.gz');
       assert.match(bot.seen.uploadFile?.[1] ?? '', /^fw-ada-\d+-\d+-results\.tar\.gz$/);
       assert.deepEqual([...bot.seen.tokens], ['Bearer bot-token']);
@@ -830,7 +845,7 @@ test('the build stages over the bot: the sources through the store, the command 
       const result = await flowAsync(project.root, 'sim', 'led_counter');
       assert.equal(result.status, 3, result.stderr + result.stdout);
       assert.match(result.stderr, /failed with exit code 3/);
-      assert.deepEqual(failing.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+      assert.deepEqual(failing.seen.steps, ['diff', 'sync', 'poll', 'start', 'status', 'status', 'collect', 'poll', 'clean']);
       // Over BOT_API_CHUNK_KB the archive goes in parts, each its own upload, joined in order on the builder.
       const parts = Object.keys(failing.seen.uploads).filter((name) => /-src\.tar\.gz\.part\d{3}$/.test(name));
       assert.ok(parts.length > 1, `in parts: ${Object.keys(failing.seen.uploads).join(', ')}`);
@@ -838,7 +853,7 @@ test('the build stages over the bot: the sources through the store, the command 
       const joined = Buffer.concat(parts.map((name) => failing.seen.stored[name]));
       assert.ok(gunzipSync(joined).length > 0, 'the parts join into the archive');
       const urls = parts.map((name) => `http://127.0.0.1/download/agent-files/builder/${name}`);
-      assert.ok(failing.seen.scripts.sync.includes(Buffer.from(JSON.stringify(urls)).toString('base64')), 'the sync step gets every part, in order');
+      assert.ok(innerScript(failing.seen.scripts.sync).includes(Buffer.from(JSON.stringify(urls)).toString('base64')), 'the sync step gets every part, in order');
       assert.match(result.stdout, /Sources: part 1 of \d+/);
     } finally {
       failing.server.closeAllConnections();
@@ -854,13 +869,13 @@ test('the build stages over the bot: the sources through the store, the command 
       assert.equal(result.status, 0, result.stderr + result.stdout);
       assert.match(result.stdout, /Sources: up to date on builder \(\d+ files\)/);
       assert.deepEqual(Object.keys(unchanged.seen.uploads).filter((name) => !name.endsWith('-manifest.gz')), [], 'only the list goes up');
-      assert.deepEqual(unchanged.seen.steps, ['diff', 'sync', 'start', 'status', 'status', 'collect', 'clean']);
+      assert.deepEqual(unchanged.seen.steps, ['diff', 'sync', 'poll', 'start', 'status', 'status', 'collect', 'poll', 'clean']);
       // The results in three parts (RQ-0066): each through the store on its own, joined here.
       assert.deepEqual(unchanged.seen.uploadFiles.map((args) => args[1].replace(/^fw-ada-\d+-\d+-/, '')), ['results.tar.gz.part000', 'results.tar.gz.part001', 'results.tar.gz.part002']);
       assert.deepEqual(unchanged.seen.uploadFiles.map((args) => args[0].slice(-7)), ['part000', 'part001', 'part002']);
       assert.match(result.stdout, /Results: part 3 of 3/);
       assert.equal(project.read('out/led_counter/artifacts/sim.log'), 'from the builder\n');
-      assert.match(unchanged.seen.scripts.collect, /\$ChunkBytes = \[long\]8388608/, 'BOT_API_CHUNK_KB sizes the parts');
+      assert.match(innerScript(unchanged.seen.scripts.collect), /\$ChunkBytes = \[long\]8388608/, 'BOT_API_CHUNK_KB sizes the parts');
     } finally {
       unchanged.server.closeAllConnections();
       unchanged.server.close();
@@ -989,6 +1004,27 @@ test('the sources go to the builder only as they change: the diff and sync steps
     assert.ok(readFileSync(join(unpacked, 'out/led_counter/artifacts/top.bit')).equals(bitstream));
     const small = host.parseStep(await pwsh(host.botCollectScript({ settings, jobDirectory: collectJob, pulls: ['out/led_counter/artifacts'] }), 'collect'));
     assert.deepEqual([small.PARTS, small.log.trim()], ['1', small.ARCHIVE], 'under 8 MB: the archive itself');
+
+    // In the background (RQ-0067): a step started, polled until it ends, its
+    // own answer read from its output; a step that throws ends non-zero.
+    const background = async (name: string, script: string) => {
+      const jobDirectory = join(work, `bg-${name}`);
+      assert.equal(host.parseStep(await pwsh(host.botBackgroundScript({ jobDirectory, name, script }), `${name}-start`)).STATUS, 'STARTED');
+      for (let tries = 0; tries < 120; tries += 1) {
+        const polled = host.parseStep(await pwsh(host.botPollScript({ jobDirectory, name }), `${name}-poll`));
+        if (polled.STATUS === 'DONE') return polled;
+        assert.equal(polled.STATUS, 'RUNNING');
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error(`${name} did not end`);
+    };
+    const slow = await background('slow', "$ErrorActionPreference = 'Stop'\nStart-Sleep -Seconds 2\nWrite-Output 'STATUS=SYNCED'\nWrite-Output 'REMOVED=4'\nWrite-Output 'LOG:'\nWrite-Output 'a/b.v'\n");
+    assert.equal(slow.EXIT, '0');
+    const answer = host.parseStep(slow.log.replace(/^\uFEFF/, ''));
+    assert.deepEqual([answer.STATUS, answer.REMOVED, answer.log.trim()], ['SYNCED', '4', 'a/b.v']);
+    const broken = await background('broken', "$ErrorActionPreference = 'Stop'\nthrow 'no tar here'\n");
+    assert.notEqual(broken.EXIT, '0');
+    assert.match(broken.log, /no tar here/);
 
     // The ranges the diff step answers with.
     assert.deepEqual(host.parseRanges('0-2,5,7-8'), [0, 1, 2, 5, 7, 8]);
