@@ -199,7 +199,8 @@ test('the GitLab CI runs every phase on every push and merge request, as far as 
     assert.match(job('embedded_check'), /node scripts\/flow\.mjs check/);
     // Every design is built, the software from the XSA in the same job.
     const full = job('embedded_build');
-    assert.match(full, /- node scripts\/flow\.mjs build --requirement-phases\n {4}- node scripts\/flow\.mjs sw --requirement-phases/);
+    // Content built before is taken instead (RQ-0078): restore first, save last.
+    assert.match(full, /- code=0; node scripts\/build-reuse\.mjs restore \|\| code=\$\?; if \[ "\$code" -eq 0 \]; then exit 0; elif \[ "\$code" -ne 10 \]; then exit "\$code"; fi\n {4}- node scripts\/flow\.mjs build --requirement-phases\n {4}- node scripts\/flow\.mjs sw --requirement-phases\n {4}- node scripts\/build-reuse\.mjs save\n/);
     assert.match(job('embedded_sim'), /node scripts\/flow\.mjs sim --requirement-phases/);
     assert.match(full, /- out\/\*\/artifacts\//);
     for (const name of ['embedded_check', 'embedded_sim', 'embedded_build']) {
@@ -1390,6 +1391,97 @@ test('the board stage names a missing lab setting', () => {
     assert.equal(result.status, 2);
     assert.match(result.stderr, /BOARD_HW_SERVER is not set/);
   } finally {
+    project.done();
+  }
+});
+
+// RQ-0078: a build's artifacts kept by what it was built from, in a stand-in
+// for GitLab's generic package registry, and taken by a job with the same inputs.
+test('build reuse keeps a passed build under its inputs and takes it for the same content only', async () => {
+  const project = scaffold();
+  const stored = new Map<string, Buffer>();
+  const seen: string[] = [];
+  const server = createHttpServer((request, response) => {
+    seen.push(`${request.method} ${request.headers['job-token'] ?? '-'}`);
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => {
+      const url = request.url ?? '';
+      if (request.method === 'PUT') {
+        stored.set(url, Buffer.concat(chunks));
+        response.writeHead(201).end('{}');
+      } else if (stored.has(url)) {
+        response.writeHead(200).end(stored.get(url));
+      } else {
+        response.writeHead(404).end('{"message":"404 Package Not Found"}');
+      }
+    });
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const port = (server.address() as { port: number }).port;
+  const git = (...args: string[]) => {
+    const run = spawnSync('git', args, { cwd: project.root, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+    assert.equal(run.status, 0, `git ${args.join(' ')}: ${String(run.stderr)}`);
+  };
+  const commit = (path: string, text: string) => {
+    mkdirSync(join(project.root, path, '..'), { recursive: true });
+    writeFileSync(join(project.root, path), text);
+    git('add', '-A');
+    git('commit', '-q', '--allow-empty', '-m', path);
+  };
+  try {
+    const reuse = await import(pathToFileURL(join(project.root, 'scripts/build-reuse.mjs')).href) as {
+      main: (argv: string[], env: Record<string, string>, root: string) => Promise<number>;
+      inputsKey: (env: Record<string, string>, root: string) => string;
+    };
+    if (!existsSync(join(project.root, '.git'))) git('init', '-q', '-b', 'main');
+    writeFileSync(join(project.root, '.gitignore'), 'out/\n');
+    commit('requirements/RQ-0001-a.md', '---\nid: RQ-0001\nstatus: ready\n---\n');
+    const ci = (api = `http://127.0.0.1:${port}/api/v4`) => ({
+      PATH: process.env.PATH ?? '', CI_JOB_TOKEN: 'job-token', CI_API_V4_URL: api, CI_PROJECT_ID: '31',
+      CI_COMMIT_SHA: 'abc12345', CI_JOB_URL: 'http://gitlab/job/1', VIVADO_BIN: 'C:\\Xilinx\\vivado.bat', VITIS_BIN: '',
+    });
+    const key = reuse.inputsKey(ci(), project.root);
+
+    // Nothing built yet: build. Then a passed build keeps its artifacts.
+    assert.equal(await reuse.main(['restore'], ci(), project.root), 10);
+    const bit = join(project.root, 'out/hello_ps/artifacts/hello_ps.bit');
+    mkdirSync(join(project.root, 'out/hello_ps/artifacts/sw'), { recursive: true });
+    writeFileSync(bit, 'bitstream');
+    writeFileSync(join(project.root, 'out/hello_ps/artifacts/sw/compile_commands.vitis.json'), JSON.stringify([{ file: 'C:/ab/x/src/main.c', arguments: ['gcc', '-DX=1', '-c', 'main.c'] }]));
+    mkdirSync(join(project.root, 'out/hello_ps/project'), { recursive: true });
+    writeFileSync(join(project.root, 'out/hello_ps/project/big.dcp'), 'not kept');
+    assert.equal(await reuse.main(['save'], ci(), project.root), 0);
+    assert.deepEqual([...stored.keys()], [`/api/v4/projects/31/packages/generic/embedded_build/${key}/artifacts.tar.gz`]);
+    assert.ok(seen.every((line) => line.endsWith(' job-token')), 'the job token goes with every request');
+    assert.ok(!existsSync(join(project.root, 'build-reuse.json')), 'the record is not left behind');
+
+    // The completion commit changes only the requirement: same key, taken.
+    rmSync(join(project.root, 'out'), { recursive: true, force: true });
+    commit('requirements/RQ-0001-a.md', '---\nid: RQ-0001\nstatus: completed\n---\n');
+    commit('runs/r1/manifest.json', '{}');
+    assert.equal(reuse.inputsKey(ci(), project.root), key);
+    assert.equal(await reuse.main(['restore'], ci(), project.root), 0);
+    assert.equal(readFileSync(bit, 'utf8'), 'bitstream');
+    assert.ok(!existsSync(join(project.root, 'out/hello_ps/project')), 'only artifacts are kept');
+    assert.ok(existsSync(join(project.root, 'out/hello_ps/artifacts/sw/compile_commands.json')), 'the compile database is written for this checkout');
+
+    // Another Vivado, or any other file, is other content: build.
+    assert.notEqual(reuse.inputsKey({ ...ci(), VIVADO_BIN: 'C:\\Xilinx\\2026.1\\vivado.bat' }, project.root), key);
+    commit('designs/hello_ps/sw/src/main.c', 'int main(void) { return 1; }\n');
+    assert.notEqual(reuse.inputsKey(ci(), project.root), key);
+    assert.equal(await reuse.main(['restore'], ci(), project.root), 10);
+
+    // No registry, or no CI: build, and keeping fails nothing.
+    const closed = `http://127.0.0.1:1/api/v4`;
+    assert.equal(await reuse.main(['restore'], ci(closed), project.root), 10);
+    assert.equal(await reuse.main(['save'], ci(closed), project.root), 0);
+    const requests = seen.length;
+    assert.equal(await reuse.main(['restore'], { PATH: process.env.PATH ?? '' }, project.root), 10);
+    assert.equal(await reuse.main(['save'], { PATH: process.env.PATH ?? '' }, project.root), 0);
+    assert.equal(seen.length, requests, 'outside CI the registry is not asked');
+  } finally {
+    server.close();
     project.done();
   }
 });

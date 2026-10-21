@@ -316,7 +316,14 @@ function embeddedJobs(projectName: string): string[] {
     ...job('embedded_check', 'check', ['node scripts/flow.mjs check'], everyPush, false),
     ...job('embedded_sim', 'sim', ['node scripts/flow.mjs sim --requirement-phases'], everyPush, true, ['embedded_check']),
     // The software is built in the same job, from the XSA that build wrote.
-    ...job('embedded_build', 'build', ['node scripts/flow.mjs build --requirement-phases', 'node scripts/flow.mjs sw --requirement-phases'], everyPush, true, ['embedded_sim']),
+    // Content built before (the merge request's, before main's merge or the
+    // completion commit) is taken from the package registry (RQ-0078).
+    ...job('embedded_build', 'build', [
+      'code=0; node scripts/build-reuse.mjs restore || code=$?; if [ "$code" -eq 0 ]; then exit 0; elif [ "$code" -ne 10 ]; then exit "$code"; fi',
+      'node scripts/flow.mjs build --requirement-phases',
+      'node scripts/flow.mjs sw --requirement-phases',
+      'node scripts/build-reuse.mjs save',
+    ], everyPush, true, ['embedded_sim']),
     ...pruneJob(),
     ...twinJob(projectName, everyPush),
     ...boardJobs(projectName),
