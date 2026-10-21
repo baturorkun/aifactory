@@ -1238,11 +1238,35 @@ test('the threads of one Vivado run: --threads, else VIVADO_THREADS, else 8, in 
     assert.match(project.read('scripts/flow.mjs'), /'--threads', String\(options\.threads\)/);
     // Vivado takes it in this session and, through a hook, in each project run.
     const lib = project.read('common/flow_lib.tcl');
-    assert.match(lib, /--jobs 4 --threads ""\]/);
+    assert.match(lib, /--jobs 4 --threads ""/);
     assert.match(lib, /set_param general\.maxThreads \$threads/);
     assert.match(lib, /foreach \{run step\} \{synth_1 SYNTH_DESIGN impl_1 INIT_DESIGN\}/);
     assert.match(lib, /set_property STEPS\.\$step\.TCL\.PRE \$hook \$handle/);
-    assert.match(lib, /update_compile_order -fileset sources_1\n {4}thread_hooks\n\}/);
+    assert.match(lib, /update_compile_order -fileset sources_1\n {4}thread_hooks\n/);
+  } finally {
+    project.done();
+  }
+});
+
+test('the out-of-context IP cache is shared by the copies on a build host, and implementation may be incremental', async () => {
+  const project = scaffold();
+  try {
+    const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as {
+      ipCachePath: (settings: { remote: boolean; basePath: string; hostType: string }) => string;
+    };
+    // Beside the copies on the host (C:\ab\.ipc, not in any copy), else under out/.
+    assert.equal(flow.ipCachePath({ remote: true, basePath: 'C:\\ab', hostType: 'windows' }), 'C:\\ab\\.ipc');
+    assert.equal(flow.ipCachePath({ remote: true, basePath: 'C:\\ab\\', hostType: 'windows' }), 'C:\\ab\\.ipc');
+    assert.equal(flow.ipCachePath({ remote: true, basePath: '/srv/builds/', hostType: 'linux' }), '/srv/builds/.ipc');
+    assert.equal(flow.ipCachePath({ remote: false, basePath: '', hostType: 'linux' }), 'out/ip_cache');
+    assert.match(project.read('scripts/flow.mjs'), /'--ip-cache', ipCachePath\(settings\)/);
+    const lib = project.read('common/flow_lib.tcl');
+    assert.match(lib, /--threads "" --ip-cache ""\]/);
+    // Set before the block design's output products are made, so its IP runs use it.
+    const cache = lib.indexOf('config_ip_cache -use_cache_location');
+    assert.ok(cache > 0 && cache < lib.indexOf('generate_target all $bd'));
+    assert.match(lib, /set_property AUTO_INCREMENTAL_CHECKPOINT 1 \$impl/);
+    assert.match(lib, /lsearch -exact \[list_property \$impl\] AUTO_INCREMENTAL_CHECKPOINT/);
   } finally {
     project.done();
   }

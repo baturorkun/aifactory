@@ -9,6 +9,7 @@
 #           --git-sha <sha>       recorded in summary.json (the copy on a build host has no .git)
 #           --jobs <n>            parallel jobs for project-mode runs
 #           --threads <n>         threads per run (general.maxThreads)
+#           --ip-cache <dir>      the out-of-context IP cache, shared by the copies on a host
 #
 # The software stage runs in Vitis, not here: designs/<design>/sw/create_vitis.py,
 # started by scripts/flow.mjs, flow.ps1 or flow.sh.
