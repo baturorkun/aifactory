@@ -6,7 +6,7 @@ import { CommandError, PROJECT_ROOT, buildHost, hostPruneScript, hostSettings, l
 import { parseTestYaml, parseTwinSection, twinAccess, twinStage } from './twin.mjs';
 import { boardAccess, boardStage } from './board.mjs';
 
-const HELP = `Usage: node scripts/flow.mjs <stage> [design...] [--mode project|non_project] [--jobs n] [--requirement-phases]
+const HELP = `Usage: node scripts/flow.mjs <stage> [design...] [--mode project|non_project] [--jobs n] [--threads n] [--requirement-phases]
 
 Stages
   check   the design check: board files, project.tcl, no absolute path (no Vivado needed)
@@ -33,13 +33,16 @@ Stages
 
 Without a design every design under designs/ is taken; --mode narrows them to
 one Vivado mode. --jobs sets how many Vivado runs go at once
-(VIVADO_JOBS in .env, else 4). Vivado and Vitis run where .env says: VIVADO_REMOTE_HOST
+(VIVADO_JOBS in .env, else 4); --threads how many threads one run uses in
+synthesis and implementation (VIVADO_THREADS in .env, else 8; Vivado's own
+default is 2 on Windows). Vivado and Vitis run where .env says: VIVADO_REMOTE_HOST
 empty runs them here.
 
 --requirement-phases (CI): on a requirement branch (factory/RQ-n), a stage
 whose phase the requirement does not name (its "phases:" line) is passed over
 and says so. Elsewhere, on main and tags, every stage runs.`;
 
+const MAX_THREADS = 32;
 const VIVADO_STAGES = new Set(['sim', 'synth', 'impl', 'bit', 'xsa', 'build', 'clean']);
 // The requirement phase each stage belongs to.
 const STAGE_PHASE = { check: 'spec', sim: 'sim', synth: 'build', impl: 'build', bit: 'build', xsa: 'build', build: 'build', sw: 'build', twin: 'twin', board: 'board' };
@@ -225,12 +228,12 @@ function recordHost(design, settings) {
   writeFileSync(path, JSON.stringify(summary, null, 2) + '\n');
 }
 
-async function vivadoStage(settings, design, stage, jobs) {
+async function vivadoStage(settings, design, stage, options) {
   const vivado = requireTool(settings, 'vivado', 'VIVADO_BIN');
   const sha = gitSha();
   const command = [vivado, '-mode', 'batch', '-nojournal', '-notrace',
     '-log', `out/${design}/vivado-${stage}.log`, '-source', 'flow.tcl',
-    '-tclargs', design, stage, '--jobs', String(jobs), ...(sha ? ['--git-sha', sha] : [])];
+    '-tclargs', design, stage, '--jobs', String(options.jobs), '--threads', String(options.threads), ...(sha ? ['--git-sha', sha] : [])];
   console.log(`\n▸ ${design}: ${stage} (Vivado on ${buildHost(settings)})`);
   try {
     await runOnHost(settings, command, {
@@ -354,6 +357,7 @@ export function parseArguments(argv) {
   const designs = [];
   let mode;
   let jobs;
+  let threads;
   let fromRequirement = false;
   for (let index = 0; index < rest.length; index += 1) {
     if (rest[index] === '--requirement-phases') {
@@ -364,11 +368,14 @@ export function parseArguments(argv) {
     } else if (rest[index] === '--jobs') {
       jobs = Number(rest[++index]);
       if (!Number.isInteger(jobs) || jobs < 1) throw new CommandError('--jobs is a positive integer.');
+    } else if (rest[index] === '--threads') {
+      threads = Number(rest[++index]);
+      if (!Number.isInteger(threads) || threads < 1 || threads > MAX_THREADS) throw new CommandError(`--threads is 1 to ${MAX_THREADS}.`);
     } else {
       designs.push(rest[index]);
     }
   }
-  return { stage, designs, mode, jobs, fromRequirement };
+  return { stage, designs, mode, jobs, threads, fromRequirement };
 }
 
 // How many Vivado runs go at once (launch_runs -jobs): --jobs, else
@@ -382,9 +389,24 @@ export function vivadoJobs(options, env) {
   return jobs;
 }
 
+// How many threads one Vivado run uses (general.maxThreads, RQ-0079):
+// --threads, else VIVADO_THREADS from .env, else 8. Vivado's default is 2 on
+// Windows, which left the lab builder's 16 cores mostly idle.
+export function vivadoThreads(options, env) {
+  if (options.threads !== undefined) return options.threads;
+  const text = (env.VIVADO_THREADS ?? '').trim();
+  if (!text) return 8;
+  const threads = Number(text);
+  if (!Number.isInteger(threads) || threads < 1 || threads > MAX_THREADS) throw new CommandError(`VIVADO_THREADS must be 1 to ${MAX_THREADS}, not "${text}".`);
+  return threads;
+}
+
 export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   const options = parseArguments(argv[0] === '--' ? argv.slice(1) : argv);
-  if (!options.help) options.jobs = vivadoJobs(options, env);
+  if (!options.help) {
+    options.jobs = vivadoJobs(options, env);
+    options.threads = vivadoThreads(options, env);
+  }
   if (options.help) {
     console.log(HELP);
     return;
@@ -452,18 +474,18 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
         else console.log(`\n▸ ${design.name}: no software (VITIS is not set)`);
         break;
       case 'xsa':
-        if (design.MODE === 'project') await vivadoStage(settings, design.name, 'xsa', options.jobs);
+        if (design.MODE === 'project') await vivadoStage(settings, design.name, 'xsa', options);
         else console.log(`\n▸ ${design.name}: no XSA in non-project mode`);
         break;
       case 'all':
-        await vivadoStage(settings, design.name, 'all', options.jobs);
+        await vivadoStage(settings, design.name, 'all', options);
         if (design.VITIS) {
           await softwareStage(settings, design);
           await twinStage(renode(), design, board(design), env);
         }
         break;
       default:
-        await vivadoStage(settings, design.name, options.stage, options.jobs);
+        await vivadoStage(settings, design.name, options.stage, options);
     }
   }
 }

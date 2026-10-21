@@ -1222,6 +1222,32 @@ test('the Vivado runs at once: --jobs, else VIVADO_JOBS, else 4', async () => {
   }
 });
 
+test('the threads of one Vivado run: --threads, else VIVADO_THREADS, else 8, in every run', async () => {
+  const project = scaffold();
+  try {
+    const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as {
+      parseArguments: (argv: string[]) => { threads?: number };
+      vivadoThreads: (options: { threads?: number }, env: Record<string, string>) => number;
+    };
+    assert.equal(flow.vivadoThreads(flow.parseArguments(['build']), {}), 8);
+    assert.equal(flow.vivadoThreads(flow.parseArguments(['build']), { VIVADO_THREADS: '4' }), 4);
+    assert.equal(flow.vivadoThreads(flow.parseArguments(['build', '--threads', '2']), { VIVADO_THREADS: '4' }), 2, '--threads wins');
+    assert.throws(() => flow.vivadoThreads(flow.parseArguments(['build']), { VIVADO_THREADS: '64' }), /VIVADO_THREADS must be 1 to 32, not "64"/);
+    assert.throws(() => flow.parseArguments(['build', '--threads', '0']), /--threads is 1 to 32/);
+    assert.match(project.read('.env.example'), /^VIVADO_THREADS=$/m);
+    assert.match(project.read('scripts/flow.mjs'), /'--threads', String\(options\.threads\)/);
+    // Vivado takes it in this session and, through a hook, in each project run.
+    const lib = project.read('common/flow_lib.tcl');
+    assert.match(lib, /--jobs 4 --threads ""\]/);
+    assert.match(lib, /set_param general\.maxThreads \$threads/);
+    assert.match(lib, /foreach \{run step\} \{synth_1 SYNTH_DESIGN impl_1 INIT_DESIGN\}/);
+    assert.match(lib, /set_property STEPS\.\$step\.TCL\.PRE \$hook \$handle/);
+    assert.match(lib, /update_compile_order -fileset sources_1\n {4}thread_hooks\n\}/);
+  } finally {
+    project.done();
+  }
+});
+
 test('the twin stage says when there is nothing to run, and names what is missing', () => {
   const project = scaffold();
   try {

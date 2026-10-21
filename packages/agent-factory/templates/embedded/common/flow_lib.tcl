@@ -26,11 +26,11 @@ proc flow::main {root argv} {
     source [file join $ROOT common gates.tcl]
 
     if {[llength $argv] < 2} {
-        error "usage: vivado -mode batch -source flow.tcl -tclargs <design> <stage> \[--expect-version v\] \[--git-sha sha\] \[--jobs n\]\n  stages: $::flow::STAGES"
+        error "usage: vivado -mode batch -source flow.tcl -tclargs <design> <stage> \[--expect-version v\] \[--git-sha sha\] \[--jobs n\] \[--threads n\]\n  stages: $::flow::STAGES"
     }
     set design [lindex $argv 0]
     set stage [lindex $argv 1]
-    set opts [dict create --expect-version "" --git-sha "" --jobs 4]
+    set opts [dict create --expect-version "" --git-sha "" --jobs 4 --threads ""]
     foreach {key value} [lrange $argv 2 end] {
         if {![dict exists $opts $key]} { error "unknown option $key" }
         dict set opts $key $value
@@ -80,6 +80,14 @@ proc flow::main {root argv} {
     dict set summary mode [cfg MODE]
     dict set summary part [cfg PART]
     if {[dict get $opts --git-sha] ne ""} { dict set summary git_sha [dict get $opts --git-sha] }
+
+    set threads [dict get $opts --threads]
+    if {$threads ne ""} {
+        # This session (non-project mode runs here); project-mode runs are
+        # their own processes and take it from thread_hooks.
+        set_param general.maxThreads $threads
+        puts "FLOW: $threads thread(s) per Vivado run"
+    }
 
     set project [expr {[cfg MODE] eq "project"}]
     switch -- $stage {
@@ -465,6 +473,31 @@ proc flow::project_open {} {
     }
     set_property top [cfg TOP] [current_fileset]
     update_compile_order -fileset sources_1
+    thread_hooks
+}
+
+# A project-mode run is a Vivado process of its own and does not take this
+# session's general.maxThreads (RQ-0079): a hook before synthesis and before
+# implementation's first step sets it there. A hook the design set itself is
+# left alone, with a warning.
+proc flow::thread_hooks {} {
+    variable out
+    set threads [dict get $::flow::opts --threads]
+    if {$threads eq ""} { return }
+    set hook [file normalize [file join $out threads.tcl]]
+    set fh [open $hook w]
+    puts $fh "set_param general.maxThreads $threads"
+    close $fh
+    foreach {run step} {synth_1 SYNTH_DESIGN impl_1 INIT_DESIGN} {
+        set handle [get_runs -quiet $run]
+        if {$handle eq ""} { continue }
+        set current [get_property STEPS.$step.TCL.PRE $handle]
+        if {$current eq "" || [file tail $current] eq "threads.tcl"} {
+            set_property STEPS.$step.TCL.PRE $hook $handle
+        } else {
+            puts "WARNING: $run has its own $step hook ($current): its thread count is Vivado's default."
+        }
+    }
 }
 
 proc flow::wait_run {run} {
