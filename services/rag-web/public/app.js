@@ -522,9 +522,12 @@ async function loadModels() {
       ['Answer', answer.model, `${answer.provider} provider`],
       ['Embedding', embedding.model, `${embedding.provider} provider, ${embedding.dimensions} dimensions`],
     ];
+    // With hosts of their own for questions (RQ-0070) each says what it is for.
+    const uses = { documents: 'ingest', questions: 'questions', both: 'ingest + questions' };
     for (const host of embedding.hosts || []) {
       const detail = host.digest ? `model digest ${host.digest}` : '';
-      rows.push([host.address, host.state, detail, host.state === 'ready' ? 'ready' : 'problem']);
+      const label = host.use ? `${host.address} · ${uses[host.use] || host.use}` : host.address;
+      rows.push([label, host.state, detail, host.state === 'ready' ? 'ready' : 'problem']);
     }
     renderModelFacts(rows);
   } catch {

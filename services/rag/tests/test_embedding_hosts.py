@@ -74,7 +74,7 @@ def numbers(vectors: list[list[float]]) -> list[int]:
     return [int(vector[0]) for vector in vectors]
 
 
-class SeveralHostsTests(unittest.TestCase):
+class HostsTestCase(unittest.TestCase):
     def setUp(self) -> None:
         embeddings._OLLAMA_HOSTS.clear()
         embeddings._OLLAMA_MODEL_DIGESTS.clear()
@@ -93,6 +93,9 @@ class SeveralHostsTests(unittest.TestCase):
     def host(self, client: OllamaEmbeddingAdapter, url: str) -> OllamaHost:
         return next(host for host in client.hosts if host.url == url)
 
+
+
+class SeveralHostsTests(HostsTestCase):
     def test_the_address_is_one_or_several_separated_by_commas(self) -> None:
         self.assertEqual(ollama_urls("http://rtx:11434/, http://builder:11434 ,http://rtx:11434"), [FAST, SLOW])
         self.assertEqual(ollama_urls("http://builder:11434"), [SLOW])
@@ -291,6 +294,81 @@ class ModelListTests(unittest.TestCase):
         report = embedding_report(RagEmbeddingConfig.model_validate({"provider": "local", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384}))
         self.assertEqual(report, {"provider": "local", "model": "BAAI/bge-small-en-v1.5", "dimensions": 384})
 
+
+
+class QuestionHostsTests(HostsTestCase):
+    """Questions on hosts of their own (RQ-0070).
+
+    BS010 embeds the documents, BS011 the questions; a question still finds
+    BS010 when BS011 is away, the first listed that answers taking it.
+    """
+
+    INGEST, ASK = "http://bs010:11434", "http://bs011:11434"
+
+    def asked(self, lab: Lab, host: str) -> list[list[str]]:
+        """What a host was sent, a question without its instruction."""
+        return [[text.rsplit("Query: ", 1)[-1] for text in sent] for sent in lab.sent_to(host)]
+
+    def two(self, lab: Lab, **extra: object) -> OllamaEmbeddingAdapter:
+        return self.adapter(lab, self.INGEST, queryBaseUrl=f"{self.ASK},{self.INGEST}", **extra)
+
+    def test_documents_go_to_their_hosts_and_questions_to_the_first_question_host(self) -> None:
+        lab = Lab(self.INGEST, self.ASK)
+        client = self.two(lab)
+        self.assertEqual(numbers(client.embed_documents(texts(20))), list(range(20)))
+        self.assertEqual(numbers([client.embed_query("t7")]), [7])
+        self.assertEqual(lab.sent_to(self.INGEST), [texts(20)])
+        self.assertEqual(self.asked(lab, self.ASK), [["t7"]])
+
+    def test_the_first_question_host_wins_even_when_the_other_is_faster(self) -> None:
+        lab = Lab(self.INGEST, self.ASK)
+        client = self.two(lab)
+        self.host(client, self.INGEST).rate = 9000.0
+        next(host for host in client.query_hosts if host.url == self.ASK).rate = 100.0
+        client.embed_query("t3")
+        self.assertEqual(self.asked(lab, self.ASK), [["t3"]])
+        self.assertEqual(lab.sent_to(self.INGEST), [])
+
+    def test_a_question_host_that_is_away_hands_the_question_to_the_next(self) -> None:
+        lab = Lab(self.INGEST, self.ASK)
+        lab.down.add(self.ASK)
+        client = self.two(lab)
+        self.assertEqual(numbers([client.embed_query("t5")]), [5])
+        self.assertEqual(self.asked(lab, self.INGEST), [["t5"]])
+        self.assertIn("Ollama at http://bs011:11434 is away", self.printed.getvalue())
+        # Back: the next question goes to it again once its pause is over.
+        lab.down.clear()
+        next(host for host in client.query_hosts if host.url == self.ASK).away_until = 0.0
+        client.embed_query("t6")
+        self.assertEqual(self.asked(lab, self.ASK), [["t6"]])
+
+    def test_a_question_host_with_another_model_is_refused_though_documents_have_one_host(self) -> None:
+        lab = Lab(self.INGEST, self.ASK)
+        lab.digests[self.ASK] = OTHER_DIGEST
+        client = self.two(lab)
+        client.embed_documents(texts(3))  # sets the digest from bs010
+        self.assertEqual(numbers([client.embed_query("t9")]), [9])
+        self.assertEqual(lab.sent_to(self.ASK), [])
+        self.assertIn("Ollama at http://bs011:11434 refused: it has qwen3-embedding:8b 0f0f0f0f0f0f", self.printed.getvalue())
+
+    def test_without_question_hosts_a_question_shares_the_document_hosts(self) -> None:
+        lab = Lab(self.INGEST, self.ASK)
+        client = self.adapter(lab, self.INGEST, self.ASK, queryBaseUrl="")
+        self.assertIsNone(client.query_hosts)
+        client.embed_query("t1")
+        self.assertEqual(self.asked(lab, self.INGEST), [["t1"]], "the first listed, as before")
+
+    def test_the_report_says_what_each_host_is_used_for(self) -> None:
+        lab = Lab(self.INGEST, self.ASK, THIRD)
+        config = RagEmbeddingConfig.model_validate({
+            "provider": "ollama", "model": MODEL, "dimensions": 2000,
+            "baseUrl": f"{self.INGEST},{THIRD}", "queryBaseUrl": f"{self.ASK},{self.INGEST}",
+        })
+        with patch("aifactory_rag.embeddings.httpx.get", lambda url, timeout: lab.get(url)):
+            hosts = embedding_report(config)["hosts"]
+        self.assertEqual([(host["address"], host["use"]) for host in hosts], [
+            ("bs010:11434", "both"), ("rtx2:11434", "documents"), ("bs011:11434", "questions"),
+        ])
 
 if __name__ == "__main__":
     unittest.main()

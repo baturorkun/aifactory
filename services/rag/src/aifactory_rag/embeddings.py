@@ -265,8 +265,12 @@ def ollama_hosts_report(config: RagEmbeddingConfig, timeout_seconds: float = 2.0
     For the web page's model list: `ready`, `away`, `no model` or `other model`
     per host, judged like the adapter does (the first listed host that answers
     sets the digest). It only reports; the adapter keeps its own view.
+    With hosts of their own for questions (RQ-0070) each host also says what
+    it is used for: `documents`, `questions` or `both`.
     """
-    urls = ollama_urls(config.base_url)
+    documents = ollama_urls(config.base_url)
+    questions = ollama_urls(config.query_base_url) if (config.query_base_url or "").strip() else []
+    urls = list(dict.fromkeys(documents + questions))
     name = config.model if ":" in config.model else f"{config.model}:latest"
 
     def ask(url: str) -> str | None:
@@ -284,7 +288,10 @@ def ollama_hosts_report(config: RagEmbeddingConfig, timeout_seconds: float = 2.0
     report = []
     for url, digest in zip(urls, digests):
         state = "away" if digest is None else "no model" if not digest else "ready" if digest == wanted else "other model"
-        report.append({"address": url.split("://", 1)[-1], "state": state, "digest": (digest or "")[:12]})
+        entry = {"address": url.split("://", 1)[-1], "state": state, "digest": (digest or "")[:12]}
+        if questions:
+            entry["use"] = "both" if url in documents and url in questions else "documents" if url in documents else "questions"
+        report.append(entry)
     return report
 
 
@@ -317,6 +324,14 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
         self.model = config.model
         self.dimensions = config.dimensions
         self.hosts = [ollama_host(url, config.model) for url in ollama_urls(config.base_url)]
+        # Questions on hosts of their own, the first listed that answers
+        # (RQ-0070); a host in both lists is one and the same OllamaHost.
+        self.query_hosts = (
+            [ollama_host(url, config.model) for url in ollama_urls(config.query_base_url)]
+            if (config.query_base_url or "").strip() else None
+        )
+        # Every host either list names: with more than one, each shows its model's digest.
+        self.all_hosts = list({id(host): host for host in self.hosts + (self.query_hosts or [])}.values())
         self.instruction = query_instruction_for(config)
         self.max_retries = config.max_retries
         self.retry_base_seconds = config.retry_base_seconds
@@ -329,6 +344,8 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
 
     def embed_query(self, text: str) -> list[float]:
         prompt = f"Instruct: {self.instruction}\nQuery: {text}" if self.instruction else text
+        if self.query_hosts:
+            return self._embed([prompt], self.query_hosts, in_order=True)[0]
         return self._embed([prompt])[0]
 
     def _embed_isolating(self, texts: list[str]) -> list[list[float]]:
@@ -350,12 +367,13 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
             middle = len(texts) // 2
             return self._embed_isolating(texts[:middle]) + self._embed_isolating(texts[middle:])
 
-    def _embed(self, texts: list[str]) -> list[list[float]]:
-        names = ", ".join(host.url for host in self.hosts)
+    def _embed(self, texts: list[str], hosts: list[OllamaHost] | None = None, in_order: bool = False) -> list[list[float]]:
+        hosts = hosts or self.hosts
+        names = ", ".join(host.url for host in hosts)
         attempt = 0
         while True:
             try:
-                return self._embed_shared(texts)
+                return self._embed_shared(texts, hosts, in_order)
             except _OllamaHostsAway as exc:
                 if attempt >= self.max_retries:
                     raise RuntimeError(f"Ollama at {names} is not reachable: {exc}") from None
@@ -364,22 +382,27 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
                 time.sleep(delay)
                 attempt += 1
 
-    def _embed_shared(self, texts: list[str]) -> list[list[float]]:
-        """One pass over the hosts: every text is embedded, or no host is left."""
+    def _embed_shared(self, texts: list[str], listed: list[OllamaHost], in_order: bool = False) -> list[list[float]]:
+        """One pass over the hosts: every text is embedded, or no host is left.
+
+        `in_order`: all texts to the first ready host in the list, the next
+        one when it fails (questions on hosts of their own, RQ-0070); else
+        shared out by speed.
+        """
         vectors: list[list[float] | None] = [None] * len(texts)
         pending = list(range(len(texts)))
         failed: set[str] = set()
         # When every host is in its pause there is nothing to step over to: all
         # of them are tried again, which is the single-host retry of RQ-0033.
-        hosts = self._ready_hosts() or self._ready_hosts(ignore_pause=True)
+        hosts = self._ready_hosts(listed) or self._ready_hosts(listed, ignore_pause=True)
         while pending:
             if not hosts:
-                raise _OllamaHostsAway("; ".join(dict.fromkeys(host.why for host in self.hosts if host.why)) or "no host")
-            parts = [(host, pending[start:end]) for host, start, end in share_out(len(pending), hosts)]
+                raise _OllamaHostsAway("; ".join(dict.fromkeys(host.why for host in listed if host.why)) or "no host")
+            parts = [(hosts[0], pending)] if in_order else [(host, pending[start:end]) for host, start, end in share_out(len(pending), hosts)]
             pending = []
             for host, indices, outcome in self._send(parts, texts):
                 if isinstance(outcome, Exception):
-                    if not self._host_failed(outcome):
+                    if not self._host_failed(outcome, listed):
                         raise outcome
                     self._away(host, outcome)
                     failed.add(host.url)
@@ -388,7 +411,7 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
                 for index, vector in zip(indices, outcome):
                     vectors[index] = vector
             pending.sort()
-            hosts = [host for host in self._ready_hosts() if host.url not in failed] if pending else []
+            hosts = [host for host in self._ready_hosts(listed) if host.url not in failed] if pending else []
         return vectors  # type: ignore[return-value]
 
     def _send(self, parts: list[tuple[OllamaHost, list[int]]], texts: list[str]) -> list[tuple[OllamaHost, list[int], Any]]:
@@ -419,13 +442,13 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
         host.away_until, host.why = 0.0, None
         return [fit_dimensions([float(value) for value in vector], self.dimensions) for vector in embeddings]
 
-    def _host_failed(self, error: Exception) -> bool:
+    def _host_failed(self, error: Exception, listed: list[OllamaHost]) -> bool:
         """Whether an error means the host is away, not that the texts are wrong.
 
         A server error (the model does not fit the GPU any more) counts only
         when another host is listed to take the texts.
         """
-        return isinstance(error, _CONNECTION_ERRORS) or (isinstance(error, _OllamaServerError) and len(self.hosts) > 1)
+        return isinstance(error, _CONNECTION_ERRORS) or (isinstance(error, _OllamaServerError) and len(listed) > 1)
 
     def _away(self, host: OllamaHost, error: Exception) -> None:
         why = error.__class__.__name__ if isinstance(error, _CONNECTION_ERRORS) else str(error)
@@ -436,14 +459,14 @@ class OllamaEmbeddingAdapter(EmbeddingAdapter):
         host.why = why
         host.digest = None  # checked again when it is tried again
         # With one host the retry loop reports it; with several each change is said once.
-        if len(self.hosts) > 1 and host.said != message:
+        if len(self.all_hosts) > 1 and host.said != message:
             print(f"{message}; tried again every {self.host_retry_seconds:.0f}s", flush=True)
         host.said = message
 
-    def _ready_hosts(self, ignore_pause: bool = False) -> list[OllamaHost]:
+    def _ready_hosts(self, listed: list[OllamaHost] | None = None, ignore_pause: bool = False) -> list[OllamaHost]:
         now = time.monotonic()
-        ready = [host for host in self.hosts if ignore_pause or host.away_until <= now]
-        if len(self.hosts) == 1:
+        ready = [host for host in (listed or self.hosts) if ignore_pause or host.away_until <= now]
+        if len(self.all_hosts) == 1:
             return ready
         # Vectors of two models must never share an index: with several hosts
         # each one shows the digest of the model before it gets a text. The
