@@ -1121,6 +1121,19 @@ test('prune removes the CI copies of gone branches, orphaned Vitis workspaces an
     entry('.v/cccc3333', 200);                                  // no owner, over a week
     entry('.v/dddd4444', 30, join(base, 'other-b-factory-rq-0002'));
     entry('.v/eeee5555', 30);                                   // no owner, a day old
+    // IP cache entries (RQ-0080), judged by their files' last write or read.
+    const cached = (path: string, days: number, readDaysAgo = days) => {
+      mkdirSync(join(base, '.ipc', path), { recursive: true });
+      for (const name of ['stats.txt', 'ip.dcp']) {
+        writeFileSync(join(base, '.ipc', path, name), 'x');
+        utimesSync(join(base, '.ipc', path, name), old(readDaysAgo * 24), old(days * 24));
+      }
+      utimesSync(join(base, '.ipc', path), old(days * 24), old(days * 24));
+    };
+    cached('0/9/093202f91eb5376e', 45);                         // unused for 45 days
+    cached('0/9/0911111111111111', 45, 2);                      // written 45 days ago, read two days ago
+    cached('1/a/1a22222222222222', 3);                          // used this week
+    cached('d/e/de33333333333333', 31);                         // alone in its folders
     const settings = { basePath: base, projectName: 'embedded1-b-prune' };
     const script = host.hostPruneScript({ settings, project: 'embedded1', keep: ['factory-rq-0004', 'main'] });
     assert.match(script, /^# aifactory: prune$/m);
@@ -1131,13 +1144,16 @@ test('prune removes the CI copies of gone branches, orphaned Vitis workspaces an
     const step = host.parseStep(String(run.stdout));
     const removed = step.log.split(/\r?\n/).map((line) => line.trim().replace(/\\/g, '/')).filter(Boolean).sort();
     assert.deepEqual(removed, [
-      '.embedded1-b-main-sync-77', '.embedded1-batur-job-1-2', '.v/aaaa1111', '.v/cccc3333',
-      'embedded1-b-factory-rq-0009', 'embedded1-embedded_build-factory-rq-0002',
+      '.embedded1-b-main-sync-77', '.embedded1-batur-job-1-2', '.ipc/0/9/093202f91eb5376e', '.ipc/d/e/de33333333333333',
+      '.v/aaaa1111', '.v/cccc3333', 'embedded1-b-factory-rq-0009', 'embedded1-embedded_build-factory-rq-0002',
     ]);
-    assert.equal(step.REMOVED, '6');
+    assert.equal(step.REMOVED, '8');
+    assert.ok(!existsSync(join(base, '.ipc/d')), 'the folders an entry leaves empty go');
+    assert.ok(existsSync(join(base, '.ipc/0/9')), 'a folder with an entry left stays');
     for (const path of removed) assert.ok(!existsSync(join(base, path)), `${path} is gone`);
     for (const path of ['embedded1-b-main', 'embedded1-b-factory-rq-0004', 'embedded1-s-factory-rq-0010', 'embedded1-kavci',
-      'other-b-factory-rq-0001', '.embedded1-batur-job-3-4', '.v/bbbb2222', '.v/dddd4444', '.v/eeee5555']) {
+      'other-b-factory-rq-0001', '.embedded1-batur-job-3-4', '.v/bbbb2222', '.v/dddd4444', '.v/eeee5555',
+      '.ipc/0/9/0911111111111111', '.ipc/1/a/1a22222222222222']) {
       assert.ok(existsSync(join(base, path)), `${path} stays`);
     }
   } finally {
