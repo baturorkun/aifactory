@@ -135,6 +135,34 @@
         "rootPath": "${RAG_SOURCE_8_PATH:-}",
         "envPrefix": "RAG_SOURCE_8",
         "excludeAdditions": "${RAG_SOURCE_8_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_9_ID:-source-9}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_9_PATH:-}",
+        "envPrefix": "RAG_SOURCE_9",
+        "excludeAdditions": "${RAG_SOURCE_9_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_10_ID:-source-10}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_10_PATH:-}",
+        "envPrefix": "RAG_SOURCE_10",
+        "excludeAdditions": "${RAG_SOURCE_10_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_11_ID:-source-11}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_11_PATH:-}",
+        "envPrefix": "RAG_SOURCE_11",
+        "excludeAdditions": "${RAG_SOURCE_11_EXCLUDE_ADDITIONS:-[]}"
+      },
+      {
+        "id": "${RAG_SOURCE_12_ID:-source-12}",
+        "type": "filesystem",
+        "rootPath": "${RAG_SOURCE_12_PATH:-}",
+        "envPrefix": "RAG_SOURCE_12",
+        "excludeAdditions": "${RAG_SOURCE_12_EXCLUDE_ADDITIONS:-[]}"
       }
     ],
     "git": {
