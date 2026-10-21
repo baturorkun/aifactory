@@ -1535,3 +1535,167 @@ test('build reuse keeps a passed build under its inputs and takes it for the sam
     project.done();
   }
 });
+
+// RQ-0082: a stage's designs at once, each with its lines under its name; one
+// failing does not stop the others, and the stage then fails naming it.
+test('the designs of a stage run at once, VIVADO_PARALLEL of them, each line under its design', async () => {
+  const project = scaffold();
+  const tools = mkdtempSync(join(tmpdir(), 'fake-vivado-'));
+  try {
+    const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as {
+      parallelDesigns: (env: Record<string, string>, settings: { remote: boolean }) => number;
+    };
+    assert.equal(flow.parallelDesigns({}, { remote: true }), 3);
+    assert.equal(flow.parallelDesigns({}, { remote: false }), 1);
+    assert.equal(flow.parallelDesigns({ VIVADO_PARALLEL: '2' }, { remote: false }), 2);
+    assert.throws(() => flow.parallelDesigns({ VIVADO_PARALLEL: '0' }, { remote: true }), /VIVADO_PARALLEL must be 1 to 16, not "0"/);
+    assert.match(project.read('.env.example'), /^VIVADO_PARALLEL=$/m);
+
+    const trace = join(tools, 'trace');
+    const vivado = (failing: string) => {
+      const path = join(tools, `vivado-${failing || 'ok'}`);
+      writeFileSync(path, [
+        '#!/bin/sh',
+        'while [ $# -gt 0 ]; do [ "$1" = "-tclargs" ] && break; shift; done',
+        'design=$2',
+        `echo "start $design" >> '${trace}'`,
+        'echo "synth of $design"',
+        'sleep 1',
+        `echo "end $design" >> '${trace}'`,
+        `[ "$design" = "${failing}" ] && { echo "ERROR: $design broke" >&2; exit 4; }`,
+        'exit 0',
+        '',
+      ].join('\n'), { mode: 0o755 });
+      return path;
+    };
+    writeFileSync(join(project.root, '.env'), `VIVADO_BIN=${vivado('')}\nVIVADO_PARALLEL=2\n`);
+    let result = await flowAsync(project.root, 'synth');
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.match(result.stdout, /▸ synth: hello_ps, led_counter at once \(2 at a time\)/);
+    assert.match(result.stdout, /^\[hello_ps\] synth of hello_ps$/m);
+    assert.match(result.stdout, /^\[led_counter\] synth of led_counter$/m);
+    const order = readFileSync(trace, 'utf8').trim().split('\n');
+    assert.deepEqual(order.slice(0, 2).map((line) => line.split(' ')[0]), ['start', 'start'], `both started before either ended: ${order.join(', ')}`);
+
+    // One fails: the other still ends, and the stage names the one that failed.
+    rmSync(trace, { force: true });
+    writeFileSync(join(project.root, '.env'), `VIVADO_BIN=${vivado('led_counter')}\nVIVADO_PARALLEL=2\n`);
+    result = await flowAsync(project.root, 'synth');
+    assert.equal(result.status, 4, result.stderr + result.stdout);
+    assert.match(result.stderr, /^\[led_counter\] ERROR: led_counter broke$/m);
+    assert.match(result.stderr, /SYNTH FAILED for led_counter; see their lines above/);
+    assert.match(readFileSync(trace, 'utf8'), /end hello_ps/);
+
+    // VIVADO_PARALLEL=1, or one design: one after the other, unlabelled, as before.
+    rmSync(trace, { force: true });
+    writeFileSync(join(project.root, '.env'), `VIVADO_BIN=${vivado('')}\nVIVADO_PARALLEL=1\n`);
+    result = await flowAsync(project.root, 'synth');
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.doesNotMatch(result.stdout, /at once|^\[/m);
+    assert.deepEqual(readFileSync(trace, 'utf8').trim().split('\n'), ['start hello_ps', 'end hello_ps', 'start led_counter', 'end led_counter']);
+  } finally {
+    project.done();
+    rmSync(tools, { recursive: true, force: true });
+  }
+});
+
+test('a host copy synced once takes commands without the sources: the scripts skip the archive, or the command', async () => {
+  const project = scaffold();
+  try {
+    const host = await hostModule(project.root);
+    const writer = (host as unknown as { lineWriter: (label: string, stream: { write: (text: string) => void }) => { write: (chunk: string) => void; end: () => void } }).lineWriter;
+    const written: string[] = [];
+    const out = writer('hello_ps', { write: (text) => written.push(text) });
+    out.write('one\ntw');
+    out.write('o\nthree');
+    out.end();
+    assert.deepEqual(written, ['[hello_ps] one\n', '[hello_ps] two\n', '[hello_ps] three\n']);
+    // The start step makes its job directory: no diff step before it then.
+    const settings = host.hostSettings({ VIVADO_ACCESS: 'bot', VIVADO_BOT_AGENT: 'builder', VIVADO_HOST_TYPE: 'windows', VIVADO_REMOTE_BASE_PATH: 'C:\\ab', VIVADO_REMOTE_PROJECT_NAME: 'fw-ada', VIVADO_BIN: 'C:\\Xilinx\\vivado.bat' });
+    assert.match(host.botStartScript({ settings, jobDirectory: 'C:\\ab\\.fw-ada-job-1', command: ['vivado.bat'] }), /New-Item -ItemType Directory -Force -Path \$Job/);
+    const source = project.read('scripts/vivado-host.mjs');
+    assert.match(source, /\$Sync = \$\{archiveName \? '\$true' : '\$false'\}/);
+    assert.match(source, /if \(-not \$Run\) \{ Write-Output "Sources synced on/);
+  } finally {
+    project.done();
+  }
+});
+
+test('designs at once over the bot: the sources once, then a job of its own for each design', async () => {
+  const project = scaffold();
+  const results = mkdtempSync(join(tmpdir(), 'builder-bot-at-once-'));
+  try {
+    for (const design of ['hello_ps', 'led_counter']) {
+      mkdirSync(join(results, `out/${design}/artifacts`), { recursive: true });
+      writeFileSync(join(results, `out/${design}/artifacts/sim.log`), `${design} from the builder\n`);
+    }
+    const tar = spawnSync('tar', ['-czf', join(results, 'results.tar.gz'), '-C', results, 'out'], { stdio: 'pipe' });
+    assert.equal(tar.status, 0, String(tar.stderr));
+    const bot = fakeBuilderBot(join(results, 'results.tar.gz'), 0);
+    const port = await bot.listen();
+    try {
+      writeFileSync(join(project.root, '.env'), ['VIVADO_ACCESS=bot', 'VIVADO_BOT_AGENT=builder', 'VIVADO_HOST_TYPE=windows', 'VIVADO_REMOTE_BASE_PATH=C:\\ab',
+        'VIVADO_REMOTE_PROJECT_NAME=fw-ada', 'VIVADO_BIN=C:\\Xilinx\\2025.2\\Vivado\\bin\\vivado.bat', `BOT_API_URL=http://127.0.0.1:${port}`,
+        'BOT_API_TOKEN=bot-token', 'BOT_API_AGENT=ada', ''].join('\n'));
+      const result = await flowAsync(project.root, 'sim');
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.match(result.stdout, /▸ sim: hello_ps, led_counter at once \(2 at a time\) on builder/);
+      const count = (step: string) => bot.seen.steps.filter((name) => name === step).length;
+      assert.deepEqual([count('diff'), count('sync'), count('start'), count('collect'), count('clean')], [1, 1, 2, 2, 3], `steps: ${bot.seen.steps.join(', ')}`);
+      assert.deepEqual(bot.seen.steps.slice(0, 4), ['diff', 'sync', 'poll', 'clean'], 'the sources first, alone');
+      assert.match(result.stdout, /^\[hello_ps\] xsim finished$/m);
+      assert.match(result.stdout, /^\[led_counter\] xsim finished$/m);
+      assert.equal(project.read('out/led_counter/artifacts/sim.log'), 'led_counter from the builder\n');
+    } finally {
+      bot.server.closeAllConnections();
+      bot.server.close();
+    }
+  } finally {
+    project.done();
+    rmSync(results, { recursive: true, force: true });
+  }
+});
+
+// The SSH way's scripts (CI's way to the builder), run: the copy synced with no
+// command, then a command with no archive (RQ-0082).
+test('the SSH host scripts sync without a command and run without an archive', async (t) => {
+  const project = scaffold();
+  const work = mkdtempSync(join(tmpdir(), 'ssh-scripts-'));
+  try {
+    const host = await import(pathToFileURL(join(project.root, 'scripts/vivado-host.mjs')).href) as {
+      windowsScript: (settings: unknown, archiveName: string | null, entries: string[], command: string[] | null, directories: string[]) => string;
+      linuxScript: (settings: unknown, archiveName: string | null, entries: string[], command: string[] | null, directories: string[]) => string;
+    };
+    const settings = { basePath: join(work, 'base'), projectName: 'fw-b-main' };
+    // Linux: an archive of designs/ in $HOME, synced alone, then a command alone.
+    mkdirSync(join(work, 'src/designs/a'), { recursive: true });
+    writeFileSync(join(work, 'src/designs/a/project.tcl'), 'set TOP a\n');
+    assert.equal(spawnSync('tar', ['-czf', join(work, 'src.tar.gz'), '-C', join(work, 'src'), 'designs']).status, 0);
+    const bash = (script: string) => spawnSync('bash', ['-c', script], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: work } });
+    let ran = bash(host.linuxScript(settings, 'src.tar.gz', ['designs'], null, ['out/a']));
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.match(ran.stdout, /Sources synced on .* in .*fw-b-main/);
+    assert.ok(existsSync(join(work, 'base/fw-b-main/designs/a/project.tcl')) && existsSync(join(work, 'base/fw-b-main/out/a')));
+    ran = bash(host.linuxScript(settings, null, [], ['sh', '-c', 'cat designs/a/project.tcl; exit 3'], []));
+    assert.equal(ran.status, 3);
+    assert.match(ran.stdout, /Running on .*\nset TOP a/);
+    if (spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { stdio: 'pipe' }).status !== 0) {
+      t.diagnostic('pwsh is not installed: the Windows script is not run');
+      return;
+    }
+    // Windows (pwsh here): parsed with an archive; run with none, and with no command.
+    const pwsh = (script: string) => spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: work } });
+    const parsed = spawnSync('pwsh', ['-NoProfile', '-Command', '$null = [scriptblock]::Create([Console]::In.ReadToEnd()); "parsed"'], { input: host.windowsScript(settings, 'src.tar.gz', ['designs'], ['vivado.bat'], ['out/a']), encoding: 'utf8' });
+    assert.match(parsed.stdout, /parsed/, parsed.stderr);
+    ran = pwsh(host.windowsScript(settings, null, [], null, ['out/b']));
+    assert.equal(ran.status, 0, ran.stderr + ran.stdout);
+    assert.match(ran.stdout, /Sources synced on/);
+    assert.ok(existsSync(join(work, 'base/fw-b-main/out/b')));
+    ran = pwsh(host.windowsScript(settings, null, [], ['pwsh', '-NoProfile', '-Command', 'Get-Content designs/a/project.tcl; exit 5'], []));
+    assert.equal(ran.status, 5, ran.stderr + ran.stdout);
+    assert.match(ran.stdout, /Running on .*\n.*set TOP a/);
+  } finally {
+    project.done();
+    rmSync(work, { recursive: true, force: true });
+  }
+});

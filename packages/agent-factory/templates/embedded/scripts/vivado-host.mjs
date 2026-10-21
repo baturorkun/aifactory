@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -47,6 +47,33 @@ export class CommandError extends Error {
     this.exitCode = exitCode;
   }
 }
+
+// A design's output when several designs run at once (RQ-0082): every line
+// under its name, so a log can be read design by design. No label: as is.
+export function lineWriter(label, stream = process.stdout) {
+  let rest = '';
+  return {
+    write(chunk) {
+      if (!label) {
+        stream.write(chunk);
+        return;
+      }
+      const lines = (rest + String(chunk)).split('\n');
+      rest = lines.pop();
+      for (const line of lines) stream.write(`[${label}] ${line}\n`);
+    },
+    end() {
+      if (label && rest) stream.write(`[${label}] ${rest}\n`);
+      rest = '';
+    },
+  };
+}
+const say = (label, text) => console.log(label ? String(text).split('\n').map((line) => `[${label}] ${line}`).join('\n') : text);
+
+// A job's own number: the process and a clock that never repeats a value, so
+// designs started in the same millisecond do not share a job directory.
+let lastStamp = 0;
+const stamp = () => (lastStamp = Math.max(Date.now(), lastStamp + 1));
 
 // The project's .env configures this machine; an already-exported value wins.
 export function loadEnvFile(env = { ...process.env }) {
@@ -360,6 +387,7 @@ export function botStartScript({ settings, jobDirectory, command }) {
 # aifactory: start
 $ProjectPath = Decode '${base64Json(projectPathOnHost(settings))}'
 $Job = Decode '${base64Json(jobDirectory)}'
+New-Item -ItemType Directory -Force -Path $Job | Out-Null
 [IO.File]::WriteAllText((Join-Path $Job 'run.ps1'), [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${base64Text(botRunnerScript({ settings, jobDirectory, command }))}')))
 Set-Content -Path (Join-Path $Job 'log') -Value "Running on $env:COMPUTERNAME in $ProjectPath" -Encoding utf8
 $Process = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Job 'run.ps1')) -WindowStyle Hidden -PassThru
@@ -624,9 +652,11 @@ async function backgroundStep(settings, jobDirectory, name, script, description,
   }
 }
 
-async function runThroughBot(settings, command, { pulls, directories, description }) {
+// sync false: the copy is current (synced once before designs that run at
+// once, RQ-0082); command null: only the sync.
+async function runThroughBot(settings, command, { pulls, directories, description, sync = true, label }) {
   const temporary = mkdtempSync(join(tmpdir(), 'vivado-sync-'));
-  const jobId = `${process.pid}-${Date.now()}`;
+  const jobId = `${process.pid}-${stamp()}`;
   const jobDirectory = `${settings.basePath.replace(/[\\/]+$/, '')}\\.${settings.projectName}-job-${jobId}`;
   const archiveName = `${settings.projectName}-${jobId}-src.tar.gz`;
   let created = false;
@@ -648,7 +678,9 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
   let failure;
+  const out = lineWriter(label);
   try {
+    if (sync) {
     // The sources: their list to the builder, back the files its copy lacks,
     // only those through the store, in parts (RQ-0062).
     const files = sourceManifest();
@@ -679,6 +711,9 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
     const entries = includedTopLevelEntries();
     const synced = await backgroundStep(settings, jobDirectory, 'sync', botSyncScript({ settings, jobDirectory, partUrls, entries, directories }), `${description} sources`);
     if (Number(synced.REMOVED) > 0) console.log(`Sources: ${synced.REMOVED} ${Number(synced.REMOVED) === 1 ? 'file' : 'files'} no longer here removed on ${settings.host}`);
+    }
+    if (!command) return;
+    created = true;
     await botStep(settings, botStartScript({ settings, jobDirectory, command }), `${description} start`);
     started = true;
 
@@ -699,7 +734,7 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
         continue;
       }
       // The bot trims the step's stdout, so the chunk's last line break is put back.
-      if (step.log) process.stdout.write(step.log.endsWith('\n') ? step.log : `${step.log}\n`);
+      if (step.log) out.write(step.log.endsWith('\n') ? step.log : `${step.log}\n`);
       offset = Number(step.OFFSET) || offset;
       if (step.STATUS === 'DONE') break;
       await new Promise((resolve) => setTimeout(resolve, 10_000));
@@ -719,7 +754,7 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
       const joined = join(temporary, 'results.tar.gz');
       writeFileSync(joined, '');
       for (const [index, path] of parts.entries()) {
-        if (parts.length > 1) console.log(`Results: part ${index + 1} of ${parts.length}`);
+        if (parts.length > 1) say(label, `Results: part ${index + 1} of ${parts.length}`);
         const name = parts.length > 1 ? `${resultsName}.part${String(index).padStart(3, '0')}` : resultsName;
         let upload = await botJob(settings.botEnv, settings.botAgent, 'upload-file', [path, name], { wait: 60, stage: 'BUILD' });
         upload = await botJobWait(settings.botEnv, upload, { deadlineMs: Date.now() + 300_000, pause: 2000, stage: 'BUILD' });
@@ -737,11 +772,12 @@ async function runThroughBot(settings, command, { pulls, directories, descriptio
       // tells a compressed one from the file itself; GNU tar's -z would refuse it.
       const extracted = spawnSync('tar', ['-xf', join(temporary, 'results.tar.gz'), '-C', PROJECT_ROOT], { stdio: 'pipe' });
       if (extracted.status !== 0) throw new CommandError(`Could not unpack the results of ${description}: ${String(extracted.stderr).trim()}`, 2);
-      for (const pull of pulls) if (existsSync(resolve(PROJECT_ROOT, pull))) console.log(`Brought back ${pull}`);
+      for (const pull of pulls) if (existsSync(resolve(PROJECT_ROOT, pull))) say(label, `Brought back ${pull}`);
     } else if (!failure && pulls.length > 0) {
       throw new CommandError(`Could not bring back ${pulls.join(', ')}: nothing of it on ${settings.host}.`, 2);
     }
   } finally {
+    out.end();
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
     // The job directory goes once the command has ended (or was stopped);
@@ -764,6 +800,35 @@ function run(program, args, description, options = {}) {
 // scp's options. To a Windows host the SCP protocol (-O): with SFTP, the
 // default since OpenSSH 9, a Debian 12 client (the CI image) got every file
 // over 200 KiB back from Windows OpenSSH cut at exactly 204 800 bytes.
+// run, without holding this process: designs that run at once each have
+// one (RQ-0082); with a label their output is piped and named.
+function runAsync(program, args, description, { label, ...options } = {}) {
+  return new Promise((done, fail) => {
+    const child = spawn(program, args, { ...options, stdio: label ? ['ignore', 'pipe', 'pipe'] : 'inherit' });
+    const out = lineWriter(label, process.stdout);
+    const err = lineWriter(label, process.stderr);
+    child.stdout?.on('data', (chunk) => out.write(chunk));
+    child.stderr?.on('data', (chunk) => err.write(chunk));
+    child.on('error', (error) => fail(new CommandError(`${description} could not start: ${error.message}`)));
+    child.on('close', (status) => {
+      out.end();
+      err.end();
+      if (status === 0) done();
+      else fail(new CommandError(`${description} failed with exit code ${status ?? 'unknown'}.`, status ?? 2));
+    });
+  });
+}
+
+function captureAsync(program, args) {
+  return new Promise((done) => {
+    const child = spawn(program, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', (error) => done({ status: null, stderr: error.message }));
+    child.on('close', (status) => done({ status, stderr }));
+  });
+}
+
 export function scpOptions(settings) {
   return [...(settings.hostType === 'windows' ? ['-O'] : []), ...sshOptions(settings, '-P')];
 }
@@ -853,20 +918,26 @@ export function powershellCommand(script) {
     '-EncodedCommand', Buffer.from(bootstrap, 'utf16le').toString('base64')];
 }
 
-function windowsScript(settings, archiveName, entries, command, directories) {
+// No archive: the copy is current (synced once before designs that run at
+// once, RQ-0082); no command: only the sync.
+export function windowsScript(settings, archiveName, entries, command, directories) {
   return `$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 function Decode($Text) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Text)) | ConvertFrom-Json }
 $BasePath = Decode '${base64Json(settings.basePath)}'
 $ProjectName = Decode '${base64Json(settings.projectName)}'
 $Entries = [string[]](Decode '${base64Json(entries)}')
-$CommandArgs = [string[]](Decode '${base64Json(command)}')
+$CommandArgs = [string[]](Decode '${base64Json(command ?? [])}')
 $Directories = [string[]](Decode '${base64Json(directories)}')
-$ArchivePath = Join-Path $HOME '${archiveName}'
+$Sync = ${archiveName ? '$true' : '$false'}
+$Run = ${command ? '$true' : '$false'}
+$ArchivePath = if ($Sync) { Join-Path $HOME '${archiveName ?? ''}' } else { $null }
 $ProjectPath = Join-Path $BasePath $ProjectName
 $StagePath = Join-Path $BasePath ".$ProjectName-sync-$PID"
 try {
-  New-Item -ItemType Directory -Force -Path $ProjectPath, $StagePath | Out-Null
+  New-Item -ItemType Directory -Force -Path $ProjectPath | Out-Null
+  if ($Sync) {
+  New-Item -ItemType Directory -Force -Path $StagePath | Out-Null
   & tar.exe -xzf $ArchivePath -C $StagePath
   if ($LASTEXITCODE -ne 0) { throw "tar.exe failed with exit code $LASTEXITCODE" }
   foreach ($Entry in $Entries) {
@@ -875,78 +946,91 @@ try {
     if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Recurse -Force }
     Move-Item -LiteralPath (Join-Path $StagePath $Entry) -Destination $Target
   }
+  }
   foreach ($Directory in $Directories) { New-Item -ItemType Directory -Force -Path (Join-Path $ProjectPath $Directory) | Out-Null }
+  if (-not $Run) { Write-Output "Sources synced on $env:COMPUTERNAME in $ProjectPath"; exit 0 }
   Set-Location -LiteralPath $ProjectPath
   Write-Output "Running on $env:COMPUTERNAME in $ProjectPath"
   & $CommandArgs[0] @($CommandArgs | Select-Object -Skip 1)
   exit $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })
 }
 finally {
-  Remove-Item -LiteralPath $ArchivePath -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $StagePath -Recurse -Force -ErrorAction SilentlyContinue
+  if ($Sync) {
+    Remove-Item -LiteralPath $ArchivePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $StagePath -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }`;
 }
 
 const shellQuote = (text) => `'${String(text).replace(/'/g, `'\\''`)}'`;
 
-function linuxScript(settings, archiveName, entries, command, directories) {
+export function linuxScript(settings, archiveName, entries, command, directories) {
   const project = `${settings.basePath}/${settings.projectName}`;
   const stage = `${settings.basePath}/.${settings.projectName}-sync-$$`;
   return [
     'set -e',
     `project=${shellQuote(project)}`,
-    `stage="${stage}"`,
-    'trap \'rm -rf "$stage" "$HOME/' + archiveName + '"\' EXIT',
-    'mkdir -p "$project" "$stage"',
-    `tar -xzf "$HOME/${archiveName}" -C "$stage"`,
-    ...entries.map((entry) => `rm -rf "$project"/${shellQuote(entry)} && mv "$stage"/${shellQuote(entry)} "$project"/`),
+    'mkdir -p "$project"',
+    ...(archiveName
+      ? [
+          `stage="${stage}"`,
+          'trap \'rm -rf "$stage" "$HOME/' + archiveName + '"\' EXIT',
+          'mkdir -p "$stage"',
+          `tar -xzf "$HOME/${archiveName}" -C "$stage"`,
+          ...entries.map((entry) => `rm -rf "$project"/${shellQuote(entry)} && mv "$stage"/${shellQuote(entry)} "$project"/`),
+        ]
+      : []),
     ...directories.map((directory) => `mkdir -p "$project"/${shellQuote(directory)}`),
-    'cd "$project"',
-    'echo "Running on $(hostname) in $project"',
-    command.map(shellQuote).join(' '),
+    ...(command
+      ? ['cd "$project"', 'echo "Running on $(hostname) in $project"', command.map(shellQuote).join(' ')]
+      : ['echo "Sources synced on $(hostname) in $project"']),
   ].join('\n');
 }
 
 // Runs `command` (program and arguments, relative to the project root) here
 // or on the Vivado host, then brings each of `pulls` (project-relative files
 // or directories) back into the local project. `directories` are made before
-// the command runs.
-export async function runOnHost(settings, command, { pulls = [], directories = [], description = 'Vivado command' } = {}) {
+// the command runs. Designs that run at once (RQ-0082) sync the copy once
+// with no command, then each runs with `sync: false` and its `label`.
+export async function runOnHost(settings, command, { pulls = [], directories = [], description = 'Vivado command', sync = true, label } = {}) {
   if (settings.access === 'bot') {
-    await runThroughBot(settings, command, { pulls, directories, description });
+    await runThroughBot(settings, command, { pulls, directories, description, sync, label });
     return;
   }
   if (!settings.remote) {
     for (const directory of directories) mkdirSync(resolve(PROJECT_ROOT, directory), { recursive: true });
+    if (!command) return;
     // A .bat or .cmd on Windows only starts through the shell.
     const shell = process.platform === 'win32' && /\.(bat|cmd)$/i.test(command[0]);
-    run(command[0], command.slice(1), description, { cwd: PROJECT_ROOT, shell });
+    await runAsync(command[0], command.slice(1), description, { cwd: PROJECT_ROOT, shell, label });
     return;
   }
 
   const target = `${settings.user}@${settings.host}`;
   const temporary = mkdtempSync(join(tmpdir(), 'vivado-sync-'));
-  const archiveName = `.vivado-sync-${process.pid}-${Date.now()}.tar.gz`;
+  const archiveName = sync ? `.vivado-sync-${process.pid}-${stamp()}.tar.gz` : null;
   let failure;
   try {
-    createArchive(join(temporary, archiveName));
-    run('scp', [...scpOptions(settings), join(temporary, archiveName), `${target}:${archiveName}`], 'Source upload');
-    const entries = includedTopLevelEntries();
+    if (archiveName) {
+      createArchive(join(temporary, archiveName));
+      run('scp', [...scpOptions(settings), join(temporary, archiveName), `${target}:${archiveName}`], 'Source upload');
+    }
+    const entries = archiveName ? includedTopLevelEntries() : [];
     const remoteCommand = settings.hostType === 'windows'
       ? powershellCommand(windowsScript(settings, archiveName, entries, command, directories))
       : ['bash', '-c', shellQuote(linuxScript(settings, archiveName, entries, command, directories))];
     try {
-      run('ssh', [...sshOptions(settings, '-p'), target, ...remoteCommand], `${description} on ${settings.host}`);
+      await runAsync('ssh', [...sshOptions(settings, '-p'), target, ...remoteCommand], `${description} on ${settings.host}`, { label });
     } catch (error) {
       failure = error;
     }
     const remoteRoot = `${settings.basePath.replace(/\\/g, '/')}/${settings.projectName}`;
-    for (const pull of pulls) {
+    for (const pull of command ? pulls : []) {
       const local = resolve(PROJECT_ROOT, pull);
       mkdirSync(dirname(local), { recursive: true });
       rmSync(local, { recursive: true, force: true });
-      const result = spawnSync('scp', [...scpOptions(settings), '-r', `${target}:${remoteRoot}/${pull}`, local], { stdio: 'pipe' });
-      if (result.status === 0) console.log(`Brought back ${pull}`);
+      const result = await captureAsync('scp', [...scpOptions(settings), '-r', `${target}:${remoteRoot}/${pull}`, local]);
+      if (result.status === 0) say(label, `Brought back ${pull}`);
       else if (!failure) throw new CommandError(`Could not bring back ${pull}: ${String(result.stderr).trim()}`);
     }
   } finally {

@@ -35,8 +35,9 @@ Without a design every design under designs/ is taken; --mode narrows them to
 one Vivado mode. --jobs sets how many Vivado runs go at once
 (VIVADO_JOBS in .env, else 4); --threads how many threads one run uses in
 synthesis and implementation (VIVADO_THREADS in .env, else 8; Vivado's own
-default is 2 on Windows). Vivado and Vitis run where .env says: VIVADO_REMOTE_HOST
-empty runs them here.
+default is 2 on Windows). VIVADO_PARALLEL in .env sets how many designs one
+stage runs at once (else 3 on a remote host, 1 here). Vivado and Vitis run
+where .env says: VIVADO_REMOTE_HOST empty runs them here.
 
 --requirement-phases (CI): on a requirement branch (factory/RQ-n), a stage
 whose phase the requirement does not name (its "phases:" line) is passed over
@@ -239,7 +240,8 @@ export function ipCachePath(settings) {
   return 'out/ip_cache';
 }
 
-async function vivadoStage(settings, design, stage, options) {
+// host: { sync: false, label } when designs run at once (RQ-0082).
+async function vivadoStage(settings, design, stage, options, host = {}) {
   const vivado = requireTool(settings, 'vivado', 'VIVADO_BIN');
   const sha = gitSha();
   const command = [vivado, '-mode', 'batch', '-nojournal', '-notrace',
@@ -252,6 +254,7 @@ async function vivadoStage(settings, design, stage, options) {
       directories: [`out/${design}`],
       pulls: stage === 'clean' ? [] : [`out/${design}/artifacts`, `out/${design}/vivado-${stage}.log`],
       description: `Vivado ${stage} of ${design}`,
+      ...host,
     });
   } finally {
     recordHost(design, settings);
@@ -304,7 +307,7 @@ export function checkVitisPath(settings, design, layout = vitisLayout(PROJECT_RO
   throw new CommandError(`SW FAILED: on the Windows host the Vitis BSP would write paths of about ${length} characters (budget ${WINDOWS_PATH_BUDGET}, the limit is 259 and Vitis' gcc cannot pass it). Shorten one of the parts you choose:\n${table}${better}`, 1);
 }
 
-async function softwareStage(settings, design) {
+async function softwareStage(settings, design, host = {}) {
   checkVitisPath(settings, design);
   const vitis = requireTool(settings, 'vitis', 'VITIS_BIN');
   console.log(`\n▸ ${design.name}: sw (Vitis on ${buildHost(settings)})`);
@@ -313,6 +316,7 @@ async function softwareStage(settings, design) {
       directories: [`out/${design.name}`],
       pulls: [`out/${design.name}/artifacts`],
       description: `Vitis build of ${design.name}`,
+      ...host,
     });
   } finally {
     recordHost(design.name, settings);
@@ -413,6 +417,47 @@ export function vivadoThreads(options, env) {
   return threads;
 }
 
+// How many designs a stage runs at once on the build host (RQ-0082):
+// VIVADO_PARALLEL, else 3 on a remote host (the lab builder has 16 cores) and
+// 1 here, where Vivado shares the machine with its user.
+export function parallelDesigns(env, settings) {
+  const text = (env.VIVADO_PARALLEL ?? '').trim();
+  if (!text) return settings.remote ? 3 : 1;
+  const count = Number(text);
+  if (!Number.isInteger(count) || count < 1 || count > 16) throw new CommandError(`VIVADO_PARALLEL must be 1 to 16, not "${text}".`);
+  return count;
+}
+
+const AT_ONCE_STAGES = new Set(['sim', 'synth', 'impl', 'bit', 'xsa', 'build', 'sw']);
+
+// The designs of one stage at once (RQ-0082): the copy on the host synced
+// once, then each design's Vivado or Vitis with its own job and its lines
+// under its name. Every design runs to its end; the stage fails after them,
+// naming each that failed.
+async function designsAtOnce(settings, designs, stage, options, width) {
+  console.log(`\n▸ ${stage}: ${designs.map((design) => design.name).join(', ')} at once (${Math.min(width, designs.length)} at a time) on ${buildHost(settings)}`);
+  await runOnHost(settings, null, { description: 'Sources', directories: designs.map((design) => `out/${design.name}`) });
+  const failures = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < designs.length) {
+      const design = designs[next++];
+      const host = { sync: false, label: design.name };
+      try {
+        if (stage === 'sw') await softwareStage(settings, design, host);
+        else await vivadoStage(settings, design.name, stage, options, host);
+      } catch (error) {
+        failures.push({ design, error });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(width, designs.length) }, worker));
+  if (failures.length === 0) return;
+  for (const { design, error } of failures) console.error(`[${design.name}] ${error instanceof Error ? error.message : String(error)}`);
+  const first = failures[0].error;
+  throw new CommandError(`${stage.toUpperCase()} FAILED for ${failures.map(({ design }) => design.name).join(', ')}; see their lines above.`, first instanceof CommandError ? first.exitCode : 2);
+}
+
 export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   const options = parseArguments(argv[0] === '--' ? argv.slice(1) : argv);
   if (!options.help) {
@@ -471,6 +516,20 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
     if (!existsSync(path)) throw new CommandError(`No boards/${design.BOARD}.yaml for ${design.name}.`);
     return readFileSync(path, 'utf8');
   };
+  if (AT_ONCE_STAGES.has(options.stage)) {
+    const settings = vivado();
+    const width = parallelDesigns(env, settings);
+    const runs = (design) => (options.stage === 'sw' ? Boolean(design.VITIS) : options.stage !== 'xsa' || design.MODE === 'project');
+    const runnable = selected.filter(runs);
+    if (width > 1 && runnable.length > 1) {
+      for (const design of selected.filter((design) => !runs(design))) {
+        console.log(`\n▸ ${design.name}: ${options.stage === 'sw' ? 'no software (VITIS is not set)' : 'no XSA in non-project mode'}`);
+      }
+      await designsAtOnce(settings, runnable, options.stage, options, width);
+      return;
+    }
+  }
+
   for (const design of selected) {
     const settings = options.stage === 'twin' || options.stage === 'board' ? undefined : vivado();
     switch (options.stage) {
