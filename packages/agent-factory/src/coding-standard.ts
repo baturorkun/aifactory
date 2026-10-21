@@ -1,12 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { loadStandard, renderIndex, selectRules, type Standard } from './standards/import';
 
 // A project's coding standard (RQ-0052): which standard, which of its groups
-// and how strictly, chosen at `factory new --standard <id> --groups a,b`.
-// coding-standard/ in the project holds the choice (standard.json), the
-// chosen rules (rules.json, index.md) and the waivers the gate honours
-// (waivers.yaml). The full rule text comes from the RAG source
+// and how strictly, chosen at `factory new --standard <id> --groups a,b` or
+// `factory standard use`. The choice is `codingStandard` in the project's
+// factory.config.json, with its other settings (RQ-0071); coding-standard/
+// holds what is made from it, the chosen rules (rules.json, index.md), and
+// the project's waivers (waivers.yaml), so the gate and CI read the rule set
+// from the commit itself. The full rule text comes from the RAG source
 // coding-standards, filtered to the chosen groups.
 
 export const PROFILES = ['default', 'dal-a'] as const;
@@ -21,6 +23,18 @@ export type CodingStandard = {
 };
 
 export const CODING_STANDARD_DIRECTORY = 'coding-standard';
+
+// The choice of a project that follows no standard yet (RQ-0071).
+export const EMPTY_CODING_STANDARD = { id: '', version: '', groups: [] as string[], profile: 'default' as Profile };
+
+type Choice = { id?: string; version?: string; groups?: string[]; profile?: Profile };
+export const inForce = (choice: Choice | undefined): boolean => Boolean(choice?.id) && (choice?.groups?.length ?? 0) > 0;
+
+// factory.config.json's codingStandard, as written (empty when none).
+export function configuredChoice(projectRoot: string): Choice | undefined {
+  const path = resolve(projectRoot, 'factory.config.json');
+  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { codingStandard?: Choice }).codingStandard : undefined;
+}
 export const CODING_STANDARDS_SOURCE = 'coding-standards';
 
 export type ChosenStandard = { standard: Standard; groups: string[]; profile: Profile };
@@ -32,7 +46,12 @@ export function chooseStandard(options: { standard?: string; groups?: string[]; 
     return undefined;
   }
   const standard = loadStandard(options.standard, options.standardsPath);
-  const groups = options.groups && options.groups.length > 0 ? options.groups : Object.keys(standard.groups);
+  // Nothing is in force until it is named (RQ-0071): a project starts with
+  // no standard, and taking one names its groups.
+  if (!options.groups || options.groups.length === 0) {
+    throw new Error(`--groups names the groups of ${standard.id} in force: ${Object.keys(standard.groups).join(', ')} (comma-separated).`);
+  }
+  const groups = options.groups;
   selectRules(standard, groups); // refuses an unknown group
   const profile = (options.profile ?? 'default') as Profile;
   if (!PROFILES.includes(profile)) throw new Error(`Profile "${options.profile}": one of ${PROFILES.join(', ')}.`);
@@ -57,22 +76,33 @@ export function codingStandardRecord(chosen: ChosenStandard): CodingStandard {
   };
 }
 
+// The choice as factory.config.json keeps it (no rule count: that is the rules').
+export function codingStandardChoice(chosen: ChosenStandard): { id: string; version: string; groups: string[]; profile: Profile } {
+  return { id: chosen.standard.id, version: chosen.standard.version, groups: chosen.groups, profile: chosen.profile };
+}
+
 export function writeCodingStandard(projectRoot: string, chosen: ChosenStandard): CodingStandard {
   const rules = selectRules(chosen.standard, chosen.groups);
   const directory = resolve(projectRoot, CODING_STANDARD_DIRECTORY);
   mkdirSync(directory, { recursive: true });
   const record = codingStandardRecord(chosen);
-  writeFileSync(join(directory, 'standard.json'), JSON.stringify(record, null, 2) + '\n', 'utf8');
+  // The choice lived here before RQ-0071; it is factory.config.json's now.
+  rmSync(join(directory, 'standard.json'), { force: true });
   writeFileSync(join(directory, 'rules.json'), JSON.stringify({ ...chosen.standard, groups: Object.fromEntries(chosen.groups.map((name) => [name, chosen.standard.groups[name]])), rules }, null, 2) + '\n', 'utf8');
   writeFileSync(join(directory, 'index.md'), renderIndex(chosen.standard, rules, chosen.groups), 'utf8');
   if (!existsSync(join(directory, 'waivers.yaml'))) writeFileSync(join(directory, 'waivers.yaml'), WAIVERS, 'utf8');
   return record;
 }
 
+// The project's choice from factory.config.json (RQ-0071), or from
+// coding-standard/standard.json in a project that chose before it.
 export function readCodingStandard(projectRoot: string): CodingStandard | undefined {
-  const path = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'standard.json');
-  if (!existsSync(path)) return undefined;
-  return JSON.parse(readFileSync(path, 'utf8')) as CodingStandard;
+  const rulesPath = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'rules.json');
+  const count = existsSync(rulesPath) ? ((JSON.parse(readFileSync(rulesPath, 'utf8')) as { rules?: unknown[] }).rules ?? []).length : 0;
+  const choice = configuredChoice(projectRoot);
+  if (choice) return inForce(choice) ? { id: choice.id ?? '', version: choice.version ?? '', groups: choice.groups ?? [], profile: choice.profile ?? 'default', rules: count } : undefined;
+  const legacy = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'standard.json');
+  return existsSync(legacy) ? (JSON.parse(readFileSync(legacy, 'utf8')) as CodingStandard) : undefined;
 }
 
 // The rule files of the groups the project did not choose, left out of its

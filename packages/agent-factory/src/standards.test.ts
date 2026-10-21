@@ -131,6 +131,9 @@ test('import writes rules.json, a rules.md per group and the index, the same twi
     assert.doesNotMatch(index, /A-001/);
     assert.ok(existsSync(join(projectRoot, 'coding-standard', 'waivers.yaml')));
     const config = JSON.parse(readFileSync(join(projectRoot, 'factory.config.json'), 'utf8'));
+    // The choice with the project's other settings (RQ-0071); coding-standard/ has what is made from it.
+    assert.deepEqual(config.codingStandard, { id: 'std', version: 'Rev.AA', groups: ['misra', 'bytecraft'], profile: 'default' });
+    assert.ok(!existsSync(join(projectRoot, 'coding-standard', 'standard.json')));
     assert.deepEqual(config.rag.grounding.excludePaths, ['requirements/**', 'handoffs/**', 'runs/**', 'std/do178c.rules.md', 'std/arm-m3.rules.md']);
     assert.ok(config.targetProject.allowedPaths.includes('coding-standard'));
     assert.match(readFileSync(join(projectRoot, '.env'), 'utf8'), /^RAG_SOURCE_IDS=coding-standards$/m);
@@ -141,9 +144,11 @@ test('import writes rules.json, a rules.md per group and the index, the same twi
     assert.throws(() => createTargetProject('fw2', { dir: root, template: 'c', groups: ['misra'], standardsPath: standards }), /add --standard/);
     assert.throws(() => createTargetProject('fw3', { dir: root, template: 'c', standard: 'std', groups: ['cert'], standardsPath: standards }), /no group cert/);
     assert.throws(() => createTargetProject('fw4', { dir: root, template: 'python', standard: 'std', standardsPath: standards }), /--standard applies to --template c or embedded/);
-    assert.throws(() => createTargetProject('fw5', { dir: root, template: 'c', standard: 'std', profile: 'strict', standardsPath: standards }), /Profile "strict"/);
-    const dalA = createTargetProject('fw6', { dir: root, template: 'c', standard: 'std', profile: 'dal-a', standardsPath: standards });
-    assert.equal(readCodingStandard(dalA.projectRoot)?.rules, 4, 'all groups when none is named');
+    assert.throws(() => createTargetProject('fw5', { dir: root, template: 'c', standard: 'std', groups: ['misra'], profile: 'strict', standardsPath: standards }), /Profile "strict"/);
+    // Nothing is in force until named (RQ-0071): no implicit "all groups".
+    assert.throws(() => createTargetProject('fw7', { dir: root, template: 'c', standard: 'std', standardsPath: standards }), /--groups names the groups of std in force: misra, do178c, bytecraft, arm-m3/);
+    const dalA = createTargetProject('fw6', { dir: root, template: 'c', standard: 'std', groups: ['misra', 'do178c', 'bytecraft', 'arm-m3'], profile: 'dal-a', standardsPath: standards });
+    assert.equal(readCodingStandard(dalA.projectRoot)?.rules, 4);
     assert.match(readFileSync(join(dalA.projectRoot, 'AGENTS.md'), 'utf8'), /under profile dal-a every rule is mandatory/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -159,6 +164,11 @@ test('a project made without a standard takes one with standard use, and a secon
     importStandard({ document, id: 'std', version: 'Rev.AA', groups: [{ name: 'misra', ranges: 'C-001..C-002' }, { name: 'bytecraft', ranges: 'C-003' }, { name: 'arm-m3', ranges: 'A-*' }], outDir: join(standards, 'std') });
     const { projectRoot } = createTargetProject('fw', { dir: root, template: 'embedded', standardsPath: standards });
     assert.equal(readCodingStandard(projectRoot), undefined);
+    // RQ-0071: the place is there, empty: nothing in force, no coding-standard/ yet.
+    const configPath = join(projectRoot, 'factory.config.json');
+    assert.deepEqual(JSON.parse(readFileSync(configPath, 'utf8')).codingStandard, { id: '', version: '', groups: [], profile: 'default' });
+    assert.ok(!existsSync(join(projectRoot, 'coding-standard')));
+    assert.throws(() => useCodingStandard(projectRoot, { standardsPath: standards }), /No standard named: give one .* or write codingStandard\.id and \.groups in factory\.config\.json/);
     writeFileSync(join(projectRoot, '.env'), 'RAG_SOURCE_IDS=fileserver\n');
 
     const record = useCodingStandard(projectRoot, { standard: 'std', groups: ['misra'], standardsPath: standards });
@@ -175,6 +185,12 @@ test('a project made without a standard takes one with standard use, and a secon
     assert.equal(again.match(/^## Coding Standard$/gm)?.length, 1, 'the section is replaced, not repeated');
     assert.match(again, /groups misra, bytecraft, profile dal-a \(3 rules\)/);
     assert.equal(readCodingStandard(projectRoot)?.rules, 3);
+
+    // The choice written in the config by hand, then standard use with no arguments applies it.
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: { ...config.codingStandard, groups: ['bytecraft'], profile: 'default' } }));
+    assert.deepEqual(useCodingStandard(projectRoot, { standardsPath: standards }), { id: 'std', version: 'Rev.AA', groups: ['bytecraft'], profile: 'default', rules: 1 });
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(projectRoot, 'coding-standard', 'rules.json'), 'utf8')).groups), ['bytecraft']);
     assert.throws(() => useCodingStandard(join(root, 'nowhere'), { standard: 'std', standardsPath: standards }), /ENOENT|no such file/i);
   } finally {
     rmSync(root, { recursive: true, force: true });

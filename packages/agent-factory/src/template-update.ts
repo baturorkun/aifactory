@@ -82,10 +82,14 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
       defaults.embeddedPhases = freshDefaults.embeddedPhases;
       merged.push('requirementDefaults.embeddedPhases');
     }
+    // The coding standard's place, empty, for a project that has none
+    // (RQ-0071); a project's own choice is never touched.
+    const codingStandard = config.codingStandard ?? freshConfig.codingStandard;
+    if (config.codingStandard === undefined && freshConfig.codingStandard !== undefined) merged.push('codingStandard');
     if (merged.length > 0) {
       changes.push({ kind: 'merge', path: 'factory.config.json', detail: merged.join(', ') });
       if (options.write) {
-        const next = { ...config, targetProject: { ...target, commands, allowedPaths: [...paths], commandTimeoutMs: timeout }, requirementDefaults: defaults };
+        const next = { ...config, targetProject: { ...target, commands, allowedPaths: [...paths], commandTimeoutMs: timeout }, requirementDefaults: defaults, ...(codingStandard !== undefined ? { codingStandard } : {}) };
         writeFileSync(join(projectRoot, 'factory.config.json'), JSON.stringify(next, null, 2) + '\n');
       }
     }
