@@ -44,6 +44,23 @@ class ConfigLoadingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "UNSET_RAG_TEST_VAR"):
                 load_factory_config(path)
 
+    def test_the_root_config_has_twelve_source_slots_and_an_unset_one_is_left_out(self) -> None:
+        # RQ-0072: slots 1-8 were all taken (DO-254 is slot 9); a slot with no
+        # path, repository, group or DOORS module is dropped when loaded.
+        root = Path(__file__).resolve().parents[3] / "factory.config.json"
+        slots = json.loads(root.read_text(encoding="utf-8"))["rag"]["sources"]
+        self.assertEqual([slot["envPrefix"] for slot in slots], [f"RAG_SOURCE_{n}" for n in range(1, 13)])
+        for n, slot in enumerate(slots, start=1):
+            self.assertEqual(slot["rootPath"], f"${{RAG_SOURCE_{n}_PATH:-}}")
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_config(directory, {"rag": {"sources": [
+                {"id": "${T_ID_9:-source-9}", "rootPath": "${T_PATH_9:-}"},
+                {"id": "${T_ID_10:-source-10}", "rootPath": "${T_PATH_10:-}"},
+            ]}})
+            with patch.dict(os.environ, {"T_ID_9": "do254", "T_PATH_9": "/srv/do254"}):
+                config = load_factory_config(path)
+            self.assertEqual([(source.id, source.root_path) for source in config.rag.sources], [("do254", "/srv/do254")])
+
     def test_source_exclude_additions_accepts_json_array_from_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_config(
