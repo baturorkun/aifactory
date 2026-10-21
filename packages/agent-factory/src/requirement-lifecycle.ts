@@ -35,6 +35,16 @@ import type {
 } from './repository-platform/types';
 import { readManifest } from './orchestrator/manifest';
 
+// The commits that only keep requirement records (the draft reservation, the
+// repository links, a cancellation) run no CI. GitLab keeps a [skip ci] commit
+// as a skipped pipeline; a project whose .gitlab-ci.yml drops these commits by
+// this workflow rule (RQ-0081) needs no marker, and no record is left.
+export const BOOKKEEPING_COMMITS = 'reserve draft|link repository metadata|cancel';
+export function skipCiMarker(root: string): string {
+  const ci = join(root, '.gitlab-ci.yml');
+  return existsSync(ci) && readFileSync(ci, 'utf8').includes(`: (${BOOKKEEPING_COMMITS})/`) ? '' : ' [skip ci]';
+}
+
 const REQUIREMENT_ID_PATTERN = /^RQ-(\d+)$/i;
 const REQUIREMENT_FILE_PATTERN = /^(RQ-(\d+))(?:[-.].*)?\.(?:md|markdown)$/i;
 
@@ -573,7 +583,7 @@ export async function createDraftRequirement(
     git(root, [
       'commit',
       '-m',
-      `requirement(${requirementId}): reserve draft [skip ci]`,
+      `requirement(${requirementId}): reserve draft${skipCiMarker(root)}`,
     ]);
     const push = spawnSync(
       'git',
@@ -925,7 +935,7 @@ export async function cancelRequirement(
       'utf8',
     );
     git(root, ['add', requirementFile]);
-    git(root, ['commit', '-m', `requirement(${id}): cancel [skip ci]`]);
+    git(root, ['commit', '-m', `requirement(${id}): cancel${skipCiMarker(root)}`]);
     git(root, ['push', remote, `HEAD:${baseBranch}`]);
     pushed = true;
     requirement = parseRequirement(id, requirementsDir);
@@ -1176,7 +1186,7 @@ function updateAndPushLinkMetadata(
   if (updated === current) return;
   writeFileSync(requirementPath, updated, 'utf8');
   git(root, ['add', requirementFile]);
-  git(root, ['commit', '-m', `requirement: link repository metadata [skip ci]`]);
+  git(root, ['commit', '-m', `requirement: link repository metadata${skipCiMarker(root)}`]);
   git(root, ['push', config.requirementBranches.remote, `HEAD:${branch}`]);
 }
 

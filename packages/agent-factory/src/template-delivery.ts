@@ -108,7 +108,9 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
   if (open.length > 0) throw new TemplateDeliveryError(`A template update is already open on ${open.join(', ')}: merge or close its merge request first.`);
 
   const commit = git(options.aifactoryRoot, ['rev-parse', '--short=7', 'HEAD']);
-  const subject = git(options.aifactoryRoot, ['log', '-1', '--format=%s']);
+  // Quoted into the project's commit: a CI marker in it ("reserve draft
+  // [skip ci]") would skip the merge request's own pipeline (RQ-0081).
+  const subject = git(options.aifactoryRoot, ['log', '-1', '--format=%s']).replace(/\s*\[(?:skip ci|ci skip|no ci|skip actions|actions skip)\]/gi, '');
   const branch = `template/aifactory-${commit}`;
   git(projectRoot, ['checkout', '--quiet', '-b', branch]);
   try {

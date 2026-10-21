@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createTargetProject } from './scaffold';
+import { skipCiMarker } from './requirement-lifecycle';
 
 test('project creation adds the Superpowers policy conditionally and preserves existing guidelines', () => {
   const parent = mkdtempSync(join(tmpdir(), 'aifactory-superpowers-'));
@@ -194,6 +195,13 @@ test('new projects enable the draft requirement branch workflow', () => {
     const templateRule = "- if: '$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH =~ /^template\\//'\n      when: never\n";
     assert.ok(ci.includes(templateRule));
     assert.ok(ci.indexOf(templateRule) < ci.indexOf('- when: always'));
+    // Requirement bookkeeping commits make no pipeline, not even a skipped
+    // one, so requirement new leaves [skip ci] out here (RQ-0081).
+    const bookkeeping = "- if: '$CI_COMMIT_MESSAGE =~ /^requirement(\\(RQ-[0-9]+\\))?: (reserve draft|link repository metadata|cancel)/'\n      when: never\n";
+    assert.ok(ci.includes(bookkeeping));
+    assert.ok(ci.indexOf(bookkeeping) < ci.indexOf('- when: always'));
+    assert.equal(skipCiMarker(result.projectRoot), '');
+    assert.equal(skipCiMarker(join(result.projectRoot, 'src')), ' [skip ci]', 'no such rule: the marker stays');
     assert.match(ci, /git -C \.\.\/aifactory fetch origin main/);
     assert.match(ci, /git -C \.\.\/aifactory switch --detach FETCH_HEAD/);
     assert.match(ci, /- factory\.config\.json/);
