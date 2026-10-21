@@ -301,6 +301,10 @@ class RagEmbeddingConfig(BaseModel):
     api_key: str | None = Field(default=None, alias="apiKey")
     # Ollama: one address, or several separated by commas (RQ-0035).
     base_url: str | None = Field(default=None, alias="baseUrl")
+    # Ollama: the hosts that embed questions, in order of preference, the
+    # first that answers taking the question (RQ-0070). Empty: the questions
+    # share the hosts of baseUrl, as the documents do.
+    query_base_url: str | None = Field(default=None, alias="queryBaseUrl")
     # How long an Ollama host that did not answer is left out before it is tried again.
     host_retry_seconds: float = Field(default=60.0, ge=0, alias="hostRetrySeconds")
     cache_dir: str | None = Field(default=None, alias="cacheDir")

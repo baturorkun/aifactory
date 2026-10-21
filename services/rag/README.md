@@ -551,6 +551,22 @@ preferred one first:
   digest, or without the model, is refused. Pull the same tag on every host and
   compare `ollama list`: two quantisations of one model do not share an index.
 
+Questions can have hosts of their own (RQ-0070), so an ingest never slows an
+answer down:
+
+```dotenv
+RAG_EMBEDDING_BASE_URL=http://192.168.1.57:11434
+RAG_EMBEDDING_QUERY_BASE_URL=http://192.168.1.111:11434,http://192.168.1.57:11434
+```
+
+`RAG_EMBEDDING_QUERY_BASE_URL` is a list in order: a question goes to the first
+host that answers, the next when it is away (the same 60 s pause), whatever
+their speed. Keep a document host last in it, so that one host away never
+stops the questions. Empty, the questions share `RAG_EMBEDDING_BASE_URL` as
+above. A host in both lists is one host to the service (its speed, its pause);
+the model digest is checked on every host either list names. The web page's
+model list says what each host is for: ingest, questions, or both.
+
 Going away, coming back and a refusal are each printed once in the ingest log.
 Every host must serve the model with a context long enough for a chunk; a
 smaller GPU can run a shorter context (`OLLAMA_CONTEXT_LENGTH`) than the others.
