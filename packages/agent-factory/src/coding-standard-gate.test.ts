@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -267,6 +267,48 @@ test('the embedded sw stage rewrites the Vitis compile database to the project f
     assert.equal(entries[0].directory, projectRoot);
     assert.equal(entries[0].file, 'designs/hello_ps/sw/src/main.c');
     assert.deepEqual(entries[0].arguments, ['cc', '-DSDT', '-mcpu=cortex-a9', '-mfpu=vfpv3', '-mfloat-abi=hard', '-Wall', '-Wextra', '-U__clang__', '-Idesigns/hello_ps/sw/src', '-Iout/hello_ps/artifacts/sw/bsp-include', '-c', 'designs/hello_ps/sw/src/main.c']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// RQ-0085: a report-only standard on a machine without cppcheck (a
+// developer's, which is for code) is not run there and fails nothing; CI, and
+// an enforced standard, still stop on it.
+test('without cppcheck a report-only standard is not run here; CI and an enforced standard still stop', () => {
+  const root = temp();
+  try {
+    const standards = standardsDir(root);
+    const { projectRoot } = createTargetProject('fw', { dir: root, template: 'c', standard: 'std', groups: ALL_GROUPS, standardsPath: standards });
+    mkdirSync(join(projectRoot, 'build'), { recursive: true });
+    writeFileSync(join(projectRoot, 'build', 'compile_commands.json'), JSON.stringify([
+      { directory: projectRoot, file: join(projectRoot, 'src', 'main.c'), arguments: ['cc', '-c', 'src/main.c'] },
+    ]));
+    // A PATH with node alone: no cppcheck, wherever this machine keeps one.
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'node'));
+    const run = (env: Record<string, string> = {}) => spawnSync(process.execPath, ['scripts/coding-standard.mjs'], {
+      cwd: projectRoot, encoding: 'utf8', env: { PATH: bin, ...env },
+    });
+    const configPath = join(projectRoot, 'factory.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+
+    let result = run();
+    assert.equal(result.status, 2, 'enforced: stops');
+    assert.match(result.stderr, /cppcheck is not installed .*CI's coding_standard job installs it/);
+
+    writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: { ...config.codingStandard, enforce: false } }));
+    result = run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /CODING STANDARD: not run here — cppcheck is not installed on this machine; the standard is report only/);
+    const report = JSON.parse(readFileSync(join(projectRoot, 'out', 'coding-standard', 'report.json'), 'utf8'));
+    assert.equal(report.status, 'not-run');
+    assert.match(readFileSync(join(projectRoot, 'out', 'coding-standard', 'report.md'), 'utf8'), /\*\*NOT RUN HERE\*\*/);
+
+    result = run({ CI: 'true' });
+    assert.equal(result.status, 2, 'in CI the report-only check still needs cppcheck');
+    assert.match(result.stderr, /cppcheck is not installed/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -161,10 +161,12 @@ export function parseCppcheckXml(xml) {
   return { version, findings };
 }
 
+const cppcheckProbe = () => spawnSync('cppcheck', ['--version'], { encoding: 'utf8' });
+
 function runCppcheck(root, databases, platform) {
-  const probe = spawnSync('cppcheck', ['--version'], { encoding: 'utf8' });
+  const probe = cppcheckProbe();
   if (probe.error || probe.status !== 0) {
-    throw new CheckError('cppcheck is not installed (needed for the MISRA rules): apt-get install cppcheck, brew install cppcheck.', 2);
+    throw new CheckError('cppcheck is not installed (needed for the MISRA rules): apt-get install cppcheck, brew install cppcheck; CI\'s coding_standard job installs it.', 2);
   }
   const all = [];
   let version = probe.stdout.trim();
@@ -472,13 +474,26 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
   }
   const platform = options.platform ?? (databases.some((database) => database.startsWith('out/')) ? 'unix32' : undefined);
   console.log(`\n▸ coding standard: ${standard.id} ${standard.version}, groups ${standard.groups.join(', ')}, profile ${standard.profile} (${rules.length} rules)`);
+  const outDir = join(root, options.out);
+  // Report only, no cppcheck on this machine (RQ-0085): a developer's machine
+  // is for code, and a standard that only reports fails nothing; CI's
+  // coding_standard job installs cppcheck and reports. In CI, or when the
+  // standard is enforced, a missing cppcheck still stops the check.
+  const probe = cppcheckProbe();
+  if ((probe.error || probe.status !== 0) && standard.enforce === false && !process.env.CI) {
+    mkdirSync(outDir, { recursive: true });
+    const reason = 'cppcheck is not installed on this machine; the standard is report only (enforce is false in factory.config.json), so CI\'s coding_standard job reports it';
+    writeFileSync(join(outDir, 'report.json'), JSON.stringify({ standard, status: 'not-run', reason }, null, 2) + '\n');
+    writeFileSync(join(outDir, 'report.md'), `# Coding standard: ${standard.id} ${standard.version}\n\n**NOT RUN HERE** — ${reason}.\n`);
+    console.log(`CODING STANDARD: not run here — ${reason} (${options.out}/report.md)`);
+    return 0;
+  }
   const cppcheck = runCppcheck(root, databases, platform);
   const sources = projectSources(root, databases);
   const result = evaluate({ rules, profile: standard.profile, cppcheck, sources, root, waivers });
   // Report only (RQ-0074): the violations are reported, the check does not fail.
   if (standard.enforce === false && result.status === 'failed') result.status = 'reported';
 
-  const outDir = join(root, options.out);
   mkdirSync(outDir, { recursive: true });
   const report = { standard, cppcheck: { version: cppcheck.version, databases, platform: platform ?? 'native' }, sources, ...result };
   writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
