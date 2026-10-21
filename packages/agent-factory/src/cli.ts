@@ -947,7 +947,7 @@ program
   .option('--host-type <os>', 'OS the simulator and build run on: windows, linux')
   .option('--board <unit>', 'Embedded: the lab unit (lab/inventory.json) whose settings fill .env, e.g. zedboard')
   .option('--standard <id>', 'c, embedded: the coding standard the project follows (factory standard list)')
-  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (default: all of them)')
+  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (required: factory standard list shows them)')
   .option('--profile <name>', `How strictly the standard is enforced: ${PROFILES.join(', ')} (default: default)`)
   .option('--dir <path>', 'Parent directory for the new project', '..')
   .option('--force', 'Allow writing into an existing directory', false)
@@ -1018,11 +1018,11 @@ standard
   });
 
 standard
-  .command('use <id>')
-  .description('From a c or embedded project: follow this standard (its groups, how strictly), as factory new --standard does')
-  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (default: all of them)')
+  .command('use [id]')
+  .description('From a c or embedded project: follow this standard (its groups, how strictly), as factory new --standard does; with no id and no --groups, the choice written in factory.config.json')
+  .option('--groups <list>', 'The standard\'s groups in force, comma-separated (required: factory standard list shows them)')
   .option('--profile <name>', `How strictly: ${PROFILES.join(', ')} (default: default)`)
-  .action((id: string, opts: { groups?: string; profile?: string }) => {
+  .action((id: string | undefined, opts: { groups?: string; profile?: string }) => {
     try {
       const config = loadConfig();
       const root = resolve(config.targetProject.root ?? '.');

@@ -426,8 +426,14 @@ in the project's `factory.config.json` (`id`, `version`, `groups`,
 in the file, not in `.env`; RQ-0071) and writes what is made from it into
 `coding-standard/` (`rules.json` and `index.md`: the rules in force, so the
 gate and CI read the rule set from the commit itself; `waivers.yaml`: the
-deviations, with the fields 5001-K-CSTD asks for). Running `standard use`
-again changes the groups and remakes the rules; the waivers stay. It adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
+deviations, with the fields 5001-K-CSTD asks for). A c or embedded project
+made without a standard has the field empty (`"id": ""`, `"groups": []`):
+nothing is in force, and the place to choose is in sight; `--groups` must be
+given, nothing is turned on by default. The choice can also be written into
+the field by hand and applied with `factory standard use` (no arguments).
+Running `standard use` again changes the groups and remakes the rules; the
+waivers stay. The gate refuses rules made for another choice than the
+config's (a hand edit not applied). It adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
 other groups' rule files out of its retrieval, and gives AGENTS.md the
 rules of the game: write to the rules, record a violation you cannot avoid
 in `waivers.yaml`, never silence a finding. Profile `dal-a` makes every rule

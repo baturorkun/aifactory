@@ -23,6 +23,18 @@ export type CodingStandard = {
 };
 
 export const CODING_STANDARD_DIRECTORY = 'coding-standard';
+
+// The choice of a project that follows no standard yet (RQ-0071).
+export const EMPTY_CODING_STANDARD = { id: '', version: '', groups: [] as string[], profile: 'default' as Profile };
+
+type Choice = { id?: string; version?: string; groups?: string[]; profile?: Profile };
+export const inForce = (choice: Choice | undefined): boolean => Boolean(choice?.id) && (choice?.groups?.length ?? 0) > 0;
+
+// factory.config.json's codingStandard, as written (empty when none).
+export function configuredChoice(projectRoot: string): Choice | undefined {
+  const path = resolve(projectRoot, 'factory.config.json');
+  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { codingStandard?: Choice }).codingStandard : undefined;
+}
 export const CODING_STANDARDS_SOURCE = 'coding-standards';
 
 export type ChosenStandard = { standard: Standard; groups: string[]; profile: Profile };
@@ -34,7 +46,12 @@ export function chooseStandard(options: { standard?: string; groups?: string[]; 
     return undefined;
   }
   const standard = loadStandard(options.standard, options.standardsPath);
-  const groups = options.groups && options.groups.length > 0 ? options.groups : Object.keys(standard.groups);
+  // Nothing is in force until it is named (RQ-0071): a project starts with
+  // no standard, and taking one names its groups.
+  if (!options.groups || options.groups.length === 0) {
+    throw new Error(`--groups names the groups of ${standard.id} in force: ${Object.keys(standard.groups).join(', ')} (comma-separated).`);
+  }
+  const groups = options.groups;
   selectRules(standard, groups); // refuses an unknown group
   const profile = (options.profile ?? 'default') as Profile;
   if (!PROFILES.includes(profile)) throw new Error(`Profile "${options.profile}": one of ${PROFILES.join(', ')}.`);
@@ -82,9 +99,8 @@ export function writeCodingStandard(projectRoot: string, chosen: ChosenStandard)
 export function readCodingStandard(projectRoot: string): CodingStandard | undefined {
   const rulesPath = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'rules.json');
   const count = existsSync(rulesPath) ? ((JSON.parse(readFileSync(rulesPath, 'utf8')) as { rules?: unknown[] }).rules ?? []).length : 0;
-  const configPath = resolve(projectRoot, 'factory.config.json');
-  const choice = existsSync(configPath) ? (JSON.parse(readFileSync(configPath, 'utf8')) as { codingStandard?: Omit<CodingStandard, 'rules'> }).codingStandard : undefined;
-  if (choice) return { ...choice, profile: choice.profile ?? 'default', rules: count };
+  const choice = configuredChoice(projectRoot);
+  if (choice) return inForce(choice) ? { id: choice.id ?? '', version: choice.version ?? '', groups: choice.groups ?? [], profile: choice.profile ?? 'default', rules: count } : undefined;
   const legacy = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'standard.json');
   return existsSync(legacy) ? (JSON.parse(readFileSync(legacy, 'utf8')) as CodingStandard) : undefined;
 }

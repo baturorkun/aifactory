@@ -371,10 +371,12 @@ const RequirementDefaultsSchema = z.object({
 // A c or embedded project's coding standard (RQ-0052, in this file since
 // RQ-0071): which standard and revision, which of its groups, how strictly.
 // coding-standard/ holds the rules made from it and the project's waivers.
+// A new project has it empty (no id, no groups): nothing in force, and the
+// place to choose is in sight.
 const CodingStandardChoiceSchema = z.object({
-  id: z.string().min(1),
-  version: z.string().min(1),
-  groups: z.array(z.string().min(1)).min(1),
+  id: z.string().default(''),
+  version: z.string().default(''),
+  groups: z.array(z.string().min(1)).default([]),
   profile: z.enum(['default', 'dal-a']).default('default'),
 });
 

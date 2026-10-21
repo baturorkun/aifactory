@@ -438,13 +438,24 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
   // that chose before it has coding-standard/standard.json.
   const configPath = join(root, 'factory.config.json');
   const legacyPath = join(root, STANDARD_DIR, 'standard.json');
-  const chosen = existsSync(configPath) ? readJson(configPath).codingStandard : undefined;
-  if (!chosen && !existsSync(legacyPath)) {
-    console.log('coding-standard: this project follows no coding standard (no codingStandard in factory.config.json); nothing to check.');
+  const written = existsSync(configPath) ? readJson(configPath).codingStandard : undefined;
+  const chosen = written?.id && written?.groups?.length > 0 ? written : undefined;
+  if (!chosen && (written || !existsSync(legacyPath))) {
+    console.log('coding-standard: this project follows no coding standard (codingStandard in factory.config.json names none); nothing to check.');
     return 0;
   }
   const standard = chosen ? { profile: 'default', ...chosen } : readJson(legacyPath);
-  const rules = readJson(join(root, STANDARD_DIR, 'rules.json')).rules;
+  const rulesPath = join(root, STANDARD_DIR, 'rules.json');
+  if (!existsSync(rulesPath)) throw new CheckError(`coding-standard/rules.json is missing for ${standard.id}: run pnpm factory -- standard use.`, 2);
+  const ruleSet = readJson(rulesPath);
+  // The rules must be the ones made from this choice: a hand edit of the
+  // config without standard use would check against another rule set.
+  const madeFor = [ruleSet.id, ruleSet.version, Object.keys(ruleSet.groups ?? {}).sort().join(',')].join(' ');
+  const wanted = [standard.id, standard.version, [...standard.groups].sort().join(',')].join(' ');
+  if (madeFor !== wanted) {
+    throw new CheckError(`coding-standard/rules.json was made for ${madeFor}, factory.config.json chooses ${wanted}: run pnpm factory -- standard use.`, 2);
+  }
+  const rules = ruleSet.rules;
   const waiversPath = join(root, STANDARD_DIR, 'waivers.yaml');
   const waivers = existsSync(waiversPath) ? parseWaivers(readFileSync(waiversPath, 'utf8')) : { required_fields: null, waivers: [] };
   const databases = options.compileCommands.length > 0 ? options.compileCommands : findCompileDatabases(root);

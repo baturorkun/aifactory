@@ -50,6 +50,9 @@ const DOCUMENT = `<w:document xmlns:w="w"><w:body>` +
   rule('C-128', 'Readability', 'Tabs shall not be used.', 'Bytecraft.') +
   `</w:body></w:document>`;
 
+// The test standard's groups, all named: nothing is in force unless named (RQ-0071).
+const ALL_GROUPS = ['misra', 'bytecraft'];
+
 function standardsDir(root: string): string {
   const document = join(root, 'STD.docx');
   writeFileSync(document, zip('word/document.xml', DOCUMENT));
@@ -89,7 +92,7 @@ test('a C project with a standard gets the gate command, the script and the CI j
   const root = temp();
   try {
     const standards = standardsDir(root);
-    const { projectRoot } = createTargetProject('fw', { dir: root, template: 'c', standard: 'std', standardsPath: standards });
+    const { projectRoot } = createTargetProject('fw', { dir: root, template: 'c', standard: 'std', groups: ALL_GROUPS, standardsPath: standards });
     const config = JSON.parse(readFileSync(join(projectRoot, 'factory.config.json'), 'utf8'));
     assert.equal(config.targetProject.commands.codingStandard, 'pnpm standard');
     assert.equal(JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8')).scripts.standard, 'node scripts/coding-standard.mjs');
@@ -105,7 +108,7 @@ test('a C project with a standard gets the gate command, the script and the CI j
     assert.equal(plainConfig.targetProject.commands.codingStandard, undefined, 'no standard, no gate command');
     assert.match(readFileSync(join(plain.projectRoot, '.gitlab-ci.yml'), 'utf8'), /coding_standard:/, 'the job is there, gated by exists');
 
-    const embedded = createTargetProject('fpga', { dir: root, template: 'embedded', standard: 'std', standardsPath: standards });
+    const embedded = createTargetProject('fpga', { dir: root, template: 'embedded', standard: 'std', groups: ALL_GROUPS, standardsPath: standards });
     const embeddedCi = readFileSync(join(embedded.projectRoot, '.gitlab-ci.yml'), 'utf8');
     assert.match(embeddedCi, /stages:\n(?:.*\n)*? {2}- build\n {2}- standard\n {2}- twin/);
     assert.match(embeddedCi, /\ncoding_standard:\n {2}stage: standard\n {2}image: "\$AIFACTORY_RUNNER_IMAGE"/);
@@ -177,8 +180,13 @@ test('the check reports the violations by rule, honours waivers, and refuses an 
 
     // A finding for a MISRA rule not in force is left out: only the bytecraft group.
     writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: { ...config.codingStandard, groups: ['bytecraft'] } }));
+    // The config changed by hand, the rules not made again: refused, not checked against the old set (RQ-0071).
+    run = runStandard(projectRoot);
+    assert.equal(run.status, 2);
+    assert.match(run.stderr + run.stdout, /rules\.json was made for std Rev\.AA bytecraft,misra, factory\.config\.json chooses std Rev\.AA bytecraft: run pnpm factory -- standard use/);
+    // As standard use makes them: the bytecraft group's rules only.
     const rules = JSON.parse(readFileSync(join(projectRoot, 'coding-standard', 'rules.json'), 'utf8'));
-    writeFileSync(join(projectRoot, 'coding-standard', 'rules.json'), JSON.stringify({ ...rules, rules: rules.rules.filter((r: { groups: string[] }) => r.groups.includes('bytecraft')) }));
+    writeFileSync(join(projectRoot, 'coding-standard', 'rules.json'), JSON.stringify({ ...rules, groups: { bytecraft: rules.groups.bytecraft }, rules: rules.rules.filter((r: { groups: string[] }) => r.groups.includes('bytecraft')) }));
     run = runStandard(projectRoot);
     const narrowed = JSON.parse(readFileSync(join(projectRoot, 'out', 'coding-standard', 'report.json'), 'utf8'));
     assert.deepEqual(narrowed.findings.map((f: { rule: string }) => f.rule).sort(), ['C-123', 'C-128']);

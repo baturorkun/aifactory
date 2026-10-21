@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
 import { embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
-import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, chooseStandard, codingStandardChoice, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
+import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, EMPTY_CODING_STANDARD, chooseStandard, codingStandardChoice, configuredChoice, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
 
@@ -3339,6 +3339,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   writeFileSync(resolve(projectRoot, 'templates/.gitkeep'), '', 'utf8');
 
   if (chosenStandard) applyCodingStandard(projectRoot, chosenStandard);
+  else if (!options.simulator && (isCTemplate(options.template) || options.template === 'embedded')) writeEmptyCodingStandard(projectRoot);
 
   return options.simulator
     ? { projectName, projectRoot, simulator: options.simulator as Simulator }
@@ -3389,15 +3390,36 @@ function applyCodingStandard(projectRoot: string, chosen: ChosenStandard): void 
   writeFileSync(envPath, next, 'utf8');
 }
 
+// A c or embedded project without a standard still has the field, empty, so
+// where to choose one is in sight (RQ-0071).
+export function writeEmptyCodingStandard(projectRoot: string): void {
+  const configPath = resolve(projectRoot, 'factory.config.json');
+  if (!existsSync(configPath)) return;
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+  if (config.codingStandard !== undefined) return;
+  writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: EMPTY_CODING_STANDARD }, null, 2) + '\n', 'utf8');
+}
+
 // A project made before it had a standard, or changing its groups, takes one
 // with `factory standard use <id> --groups …` from its root (RQ-0052): the
 // same files and settings as `factory new --standard`, and the AGENTS.md
 // section added or replaced.
-export function useCodingStandard(projectRoot: string, options: { standard: string; groups?: string[]; profile?: string; standardsPath?: string }): CodingStandard {
+// With no id and no groups given, the choice written in factory.config.json
+// is the one applied: edit the field, then `factory standard use` (RQ-0071).
+export function useCodingStandard(projectRoot: string, options: { standard?: string; groups?: string[]; profile?: string; standardsPath?: string }): CodingStandard {
   const config = JSON.parse(readFileSync(resolve(projectRoot, 'factory.config.json'), 'utf8')) as { targetProject?: { profile?: string } };
   const profile = config.targetProject?.profile;
   if (profile !== 'c' && profile !== 'embedded') throw new Error(`A coding standard applies to a c or embedded project; this one is "${profile ?? 'unknown'}".`);
-  const chosen = chooseStandard(options);
+  const written = configuredChoice(projectRoot);
+  const standard = options.standard || written?.id || undefined;
+  if (!standard) throw new Error('No standard named: give one (factory standard use cstd --groups …) or write codingStandard.id and .groups in factory.config.json.');
+  const fromConfig = !options.standard || options.standard === written?.id;
+  const chosen = chooseStandard({
+    ...options,
+    standard,
+    groups: options.groups && options.groups.length > 0 ? options.groups : fromConfig ? written?.groups : undefined,
+    profile: options.profile ?? (fromConfig ? written?.profile : undefined),
+  });
   if (!chosen) throw new Error('--standard <id> names the standard.');
   applyCodingStandard(projectRoot, chosen);
   const record = codingStandardRecord(chosen);

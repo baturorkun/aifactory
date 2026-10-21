@@ -34,6 +34,16 @@ same for every developer and for CI, so it belongs in the committed config.
 - The gate script (`scripts/coding-standard.mjs`) and `readCodingStandard`
   (requirement drafts, handoffs) read the choice from the config, and from a
   `standard.json` in a project that chose before this.
+- A c or embedded project made without a standard has the field, empty
+  (`id` "", `groups` []): nothing in force, the place to choose in sight
+  (Batur: "olsun da boş olsun, yerini bilelim"). `template update` adds it
+  to a project that lacks it and never touches a project's own choice.
+- Nothing is in force unless named: `--groups` is required (no implicit "all
+  groups").
+- `factory standard use` with no arguments applies the choice written in the
+  config by hand.
+- The gate refuses rules made for another choice than the config's (a hand
+  edit not applied with `standard use`), naming both.
 - The generated CI runs `coding_standard` when `coding-standard/rules.json`
   exists.
 - README and the user guide say where the choice is and why not in `.env`.
@@ -46,3 +56,6 @@ same for every developer and for CI, so it belongs in the committed config.
   enforces (dal-a refuses an unreviewed waiver; a group out of force drops
   its findings).
 - The CI job's rule names `coding-standard/rules.json`.
+- A project without a standard has the empty field; template update adds it;
+  `--groups` missing is refused; `standard use` with no arguments applies the
+  config; the gate refuses rules made for other groups.
