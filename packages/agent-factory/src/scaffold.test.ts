@@ -189,6 +189,11 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /ai_factory_requirement_branch:/);
     assert.match(ci, /factory-checkpoint\\\//);
     assert.match(ci, /when: never/);
+    // A template update's push pipeline is dropped before `when: always`;
+    // its merge request pipeline runs (RQ-0077).
+    const templateRule = "- if: '$CI_PIPELINE_SOURCE == \"push\" && $CI_COMMIT_BRANCH =~ /^template\\//'\n      when: never\n";
+    assert.ok(ci.includes(templateRule));
+    assert.ok(ci.indexOf(templateRule) < ci.indexOf('- when: always'));
     assert.match(ci, /git -C \.\.\/aifactory fetch origin main/);
     assert.match(ci, /git -C \.\.\/aifactory switch --detach FETCH_HEAD/);
     assert.match(ci, /- factory\.config\.json/);
