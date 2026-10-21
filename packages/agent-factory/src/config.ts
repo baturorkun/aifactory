@@ -368,6 +368,16 @@ const RequirementDefaultsSchema = z.object({
   embeddedPhases: z.array(EmbeddedPhaseSchema).optional(),
 });
 
+// A c or embedded project's coding standard (RQ-0052, in this file since
+// RQ-0071): which standard and revision, which of its groups, how strictly.
+// coding-standard/ holds the rules made from it and the project's waivers.
+const CodingStandardChoiceSchema = z.object({
+  id: z.string().min(1),
+  version: z.string().min(1),
+  groups: z.array(z.string().min(1)).min(1),
+  profile: z.enum(['default', 'dal-a']).default('default'),
+});
+
 export const FactoryConfigSchema = z.object({
   model: ModelConfigSchema,
   pipeline: PipelineConfigSchema.default({}),
@@ -379,6 +389,7 @@ export const FactoryConfigSchema = z.object({
   requirementDefaults: RequirementDefaultsSchema.default({}),
   repositoryPlatforms: RepositoryPlatformsSchema.default({}),
   rag: RagConfigSchema.default({}),
+  codingStandard: CodingStandardChoiceSchema.optional(),
 });
 
 export type FactoryConfig = z.infer<typeof FactoryConfigSchema>;

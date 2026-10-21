@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
 import { embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
-import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, chooseStandard, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
+import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, chooseStandard, codingStandardChoice, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
 
@@ -111,9 +111,9 @@ function cBuildJobs(projectName: string): string[] {
 
 // The coding standard check (RQ-0053), after the build that leaves the compile
 // database, only in a project that follows a standard (coding-standard/
-// standard.json exists); cppcheck comes from apt. The report is an artifact.
+// rules.json exists, made from factory.config.json's codingStandard); cppcheck comes from apt. The report is an artifact.
 function codingStandardJob(projectName: string, embedded: boolean): string[] {
-  const exists = ['      exists:', '        - coding-standard/standard.json'];
+  const exists = ['      exists:', '        - coding-standard/rules.json'];
   return [
     '',
     'coding_standard:',
@@ -3357,7 +3357,10 @@ function applyCodingStandard(projectRoot: string, chosen: ChosenStandard): void 
   const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
     targetProject: { allowedPaths?: string[]; commands?: Record<string, string> };
     rag?: { grounding?: Record<string, unknown> };
+    codingStandard?: ReturnType<typeof codingStandardChoice>;
   };
+  // The choice itself, with the project's other settings (RQ-0071).
+  config.codingStandard = codingStandardChoice(chosen);
   config.targetProject.allowedPaths = [...new Set([...(config.targetProject.allowedPaths ?? []), CODING_STANDARD_DIRECTORY])];
   // The gate (RQ-0053): the check runs after the build with the other gates.
   config.targetProject.commands = { ...(config.targetProject.commands ?? {}), codingStandard: 'pnpm standard' };

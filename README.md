@@ -419,10 +419,15 @@ names a rule and gets that rule. The deployed aifactory's `standards/` is the
 `coding-standards` source (slot 8; its `rules.json` is left out, `RAG_SOURCE_8_EXCLUDE_ADDITIONS`).
 
 `factory new <name> --template c|embedded --standard cstd --groups
-misra,bytecraft [--profile default|dal-a]` writes `coding-standard/`
-(`standard.json`: the choice; `rules.json` and `index.md`: the rules in
-force; `waivers.yaml`: the deviations, with the fields 5001-K-CSTD asks
-for), adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
+misra,bytecraft [--profile default|dal-a]`, or `factory standard use cstd
+--groups …` in an existing project, records the choice as `codingStandard`
+in the project's `factory.config.json` (`id`, `version`, `groups`,
+`profile`: the project's rule, the same for every developer and for CI, so
+in the file, not in `.env`; RQ-0071) and writes what is made from it into
+`coding-standard/` (`rules.json` and `index.md`: the rules in force, so the
+gate and CI read the rule set from the commit itself; `waivers.yaml`: the
+deviations, with the fields 5001-K-CSTD asks for). Running `standard use`
+again changes the groups and remakes the rules; the waivers stay. It adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
 other groups' rule files out of its retrieval, and gives AGENTS.md the
 rules of the game: write to the rules, record a violation you cannot avoid
 in `waivers.yaml`, never silence a finding. Profile `dal-a` makes every rule
@@ -441,7 +446,7 @@ are listed as manual review. A finding is fixed or waived in
 `coding-standard/waivers.yaml` with its reason (profile `dal-a`: reviewer and
 date too); inline suppressions are ignored. The report is
 `out/coding-standard/report.md` and `report.json`; in CI the `coding_standard`
-job runs after the build in a project that has `coding-standard/standard.json`.
+job runs after the build in a project that has `coding-standard/rules.json`.
 
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a

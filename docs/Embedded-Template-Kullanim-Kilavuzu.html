@@ -40,7 +40,7 @@
 <header>
   <h1>Embedded Template Kullanım Kılavuzu</h1>
   <p class="lead">aifactory ile FPGA + firmware projelerinde günlük çalışma akışı: requirement, fazlar, Vivado/Vitis build, twin, board ve CI.</p>
-  <p class="meta">aifactory v0.69 (RQ-0044…RQ-0069) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
+  <p class="meta">aifactory v0.71 (RQ-0044…RQ-0071) · Vivado/Vitis 2025.2 · ZedBoard referans kartı · 20 Ekim 2026</p>
 </header>
 
 <h2>1. Template ne yapar</h2>
@@ -146,7 +146,7 @@ check aşaması 1.2'ye girmez; twin <code>TWIN_ACCESS=bot</code> ile lab'ın Doc
 <tr><td><code>do178c</code></td><td>9</td><td>DO-178C'nin koddan istedikleri (ölü/erişilemeyen kod, kullanılmayan tanım yok)</td></tr>
 <tr><td><code>arm-m3</code></td><td>17</td><td>Cortex-M3 assembly kuralları</td></tr>
 </table>
-<p>Projede <code>coding-standard/standard.json</code> seçimi, <code>index.md</code> yürürlükteki kural listesini, <code>waivers.yaml</code> gerekçeli sapmaları tutar. Kuralın tam metni RAG'dedir (<code>coding-standards</code> kaynağı; "C-045 ne diyor" diye sorulur). Her requirement taslağına "Coding Standard" bölümü, her handoff paketine kural listesi girer. Kodu kurallara karşı otomatik kontrol eden <code>codingStandard</code> gate'i (<code>pnpm standard</code>, RQ-0053) build'den sonra koşar: MISRA kurallarını cppcheck, biçim kurallarını kendi lexical kontrolleri yakalar, kalanı raporda “manuel review” olarak listelenir; ihlal ya düzeltilir ya <code>waivers.yaml</code>'a gerekçesiyle yazılır. Rapor <code>out/coding-standard/report.md</code>.</p>
+<p>Seçim (standart, sürüm, gruplar, profil) projenin <code>factory.config.json</code>'ında <code>codingStandard</code> alanında durur; geliştiriciye göre değişmediği için <code>.env</code>'de değil, git'tedir. Grupları değiştirmek için <code>pnpm factory -- standard use cstd --groups …</code> yeniden çalıştırılır. <code>coding-standard/</code> klasöründe seçimden üretilen <code>rules.json</code> ve <code>index.md</code> (yürürlükteki kurallar; gate ve CI bunları okur) ile <code>waivers.yaml</code> (gerekçeli sapmalar) durur. Kuralın tam metni RAG'dedir (<code>coding-standards</code> kaynağı; "C-045 ne diyor" diye sorulur). Her requirement taslağına "Coding Standard" bölümü, her handoff paketine kural listesi girer. Kodu kurallara karşı otomatik kontrol eden <code>codingStandard</code> gate'i (<code>pnpm standard</code>, RQ-0053) build'den sonra koşar: MISRA kurallarını cppcheck, biçim kurallarını kendi lexical kontrolleri yakalar, kalanı raporda “manuel review” olarak listelenir; ihlal ya düzeltilir ya <code>waivers.yaml</code>'a gerekçesiyle yazılır. Rapor <code>out/coding-standard/report.md</code>.</p>
 
 <h2 class="pb">10. Bilinen durumlar</h2>
 <ul>
@@ -172,7 +172,7 @@ pnpm factory -- template update --dry-run        # sadece neyin değişeceğini 
 pnpm flow prune                                  # builder'daki artıkları elle temizler (CI zaten yapar)
 pnpm factory -- standard use cstd --groups misra,bytecraft</code></pre>
 
-<footer>Hazırlayan: Batur Orkun, Bytecraft · 20 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0069 durumu</footer>
+<footer>Hazırlayan: Batur Orkun, Bytecraft · 20 Ekim 2026 · aifactory embedded template, RQ-0044…RQ-0071 durumu</footer>
 </main>
 </body>
 </html>

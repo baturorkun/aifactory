@@ -131,6 +131,9 @@ test('import writes rules.json, a rules.md per group and the index, the same twi
     assert.doesNotMatch(index, /A-001/);
     assert.ok(existsSync(join(projectRoot, 'coding-standard', 'waivers.yaml')));
     const config = JSON.parse(readFileSync(join(projectRoot, 'factory.config.json'), 'utf8'));
+    // The choice with the project's other settings (RQ-0071); coding-standard/ has what is made from it.
+    assert.deepEqual(config.codingStandard, { id: 'std', version: 'Rev.AA', groups: ['misra', 'bytecraft'], profile: 'default' });
+    assert.ok(!existsSync(join(projectRoot, 'coding-standard', 'standard.json')));
     assert.deepEqual(config.rag.grounding.excludePaths, ['requirements/**', 'handoffs/**', 'runs/**', 'std/do178c.rules.md', 'std/arm-m3.rules.md']);
     assert.ok(config.targetProject.allowedPaths.includes('coding-standard'));
     assert.match(readFileSync(join(projectRoot, '.env'), 'utf8'), /^RAG_SOURCE_IDS=coding-standards$/m);

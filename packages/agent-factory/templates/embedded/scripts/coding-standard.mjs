@@ -434,12 +434,16 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
     console.log('node scripts/coding-standard.mjs [--compile-commands <path>]... [--platform unix32|native] [--out <dir>]');
     return 0;
   }
-  const standardPath = join(root, STANDARD_DIR, 'standard.json');
-  if (!existsSync(standardPath)) {
-    console.log('coding-standard: this project follows no coding standard (no coding-standard/standard.json); nothing to check.');
+  // The choice is codingStandard in factory.config.json (RQ-0071); a project
+  // that chose before it has coding-standard/standard.json.
+  const configPath = join(root, 'factory.config.json');
+  const legacyPath = join(root, STANDARD_DIR, 'standard.json');
+  const chosen = existsSync(configPath) ? readJson(configPath).codingStandard : undefined;
+  if (!chosen && !existsSync(legacyPath)) {
+    console.log('coding-standard: this project follows no coding standard (no codingStandard in factory.config.json); nothing to check.');
     return 0;
   }
-  const standard = readJson(standardPath);
+  const standard = chosen ? { profile: 'default', ...chosen } : readJson(legacyPath);
   const rules = readJson(join(root, STANDARD_DIR, 'rules.json')).rules;
   const waiversPath = join(root, STANDARD_DIR, 'waivers.yaml');
   const waivers = existsSync(waiversPath) ? parseWaivers(readFileSync(waiversPath, 'utf8')) : { required_fields: null, waivers: [] };

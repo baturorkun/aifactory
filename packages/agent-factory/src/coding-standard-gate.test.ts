@@ -97,7 +97,7 @@ test('a C project with a standard gets the gate command, the script and the CI j
     const ci = readFileSync(join(projectRoot, '.gitlab-ci.yml'), 'utf8');
     assert.match(ci, /\ncoding_standard:\n {2}stage: test\n {2}image: "\$C_BUILD_IMAGE"/);
     assert.match(ci, /- job: c_build\n {6}artifacts: true/);
-    assert.match(ci, /exists:\n {8}- coding-standard\/standard\.json/);
+    assert.match(ci, /exists:\n {8}- coding-standard\/rules\.json/);
     assert.match(ci, /apt-get install -y --no-install-recommends cppcheck/);
 
     const plain = createTargetProject('plain', { dir: root, template: 'c', standardsPath: standards });
@@ -166,14 +166,17 @@ test('the check reports the violations by rule, honours waivers, and refuses an 
     assert.match(run.stdout, /CODING STANDARD: passed — 0 violation\(s\), 4 waived/);
 
     // Under dal-a the unreviewed waiver W-2 is refused.
-    const standardJson = JSON.parse(readFileSync(join(projectRoot, 'coding-standard', 'standard.json'), 'utf8'));
-    writeFileSync(join(projectRoot, 'coding-standard', 'standard.json'), JSON.stringify({ ...standardJson, profile: 'dal-a' }));
+    // The choice is factory.config.json's codingStandard (RQ-0071).
+    const configPath = join(projectRoot, 'factory.config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    assert.ok(!existsSync(join(projectRoot, 'coding-standard', 'standard.json')), 'no standard.json any more');
+    writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: { ...config.codingStandard, profile: 'dal-a' } }));
     run = runStandard(projectRoot);
     assert.equal(run.status, 1);
     assert.match(run.stdout, /waiver W-2: missing reviewer, review_date, validity/);
 
     // A finding for a MISRA rule not in force is left out: only the bytecraft group.
-    writeFileSync(join(projectRoot, 'coding-standard', 'standard.json'), JSON.stringify({ ...standardJson, groups: ['bytecraft'] }));
+    writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: { ...config.codingStandard, groups: ['bytecraft'] } }));
     const rules = JSON.parse(readFileSync(join(projectRoot, 'coding-standard', 'rules.json'), 'utf8'));
     writeFileSync(join(projectRoot, 'coding-standard', 'rules.json'), JSON.stringify({ ...rules, rules: rules.rules.filter((r: { groups: string[] }) => r.groups.includes('bytecraft')) }));
     run = runStandard(projectRoot);
