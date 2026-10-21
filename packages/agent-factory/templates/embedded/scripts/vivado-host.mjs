@@ -531,6 +531,23 @@ foreach ($Item in @(Get-ChildItem -LiteralPath $Workspaces -Directory -Force -Er
     if ($Mine -and -not (Test-Path -LiteralPath $Root)) { Remove-Old $Item 2 }
   } else { Remove-Old $Item 168 }
 }
+# The IP cache every copy shares (RQ-0080): an entry (.ipc/x/y/<cache-id>)
+# no Vivado used for 30 days goes, by the latest write or read of its files
+# (Vivado rewrites stats.txt on a hit); a folder it leaves empty goes too.
+$Cache = Join-Path $Base '.ipc'
+foreach ($Entry in @(Get-ChildItem -LiteralPath $Cache -Directory -Force -Recurse -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[0-9a-f]{16}$' })) {
+  $Used = $Entry.LastWriteTime
+  foreach ($File in @(Get-ChildItem -LiteralPath $Entry.FullName -File -Force -ErrorAction SilentlyContinue)) {
+    if ($File.LastWriteTime -gt $Used) { $Used = $File.LastWriteTime }
+    if ($File.LastAccessTime -gt $Used) { $Used = $File.LastAccessTime }
+  }
+  if (($Now - $Used).TotalDays -lt 30) { continue }
+  Remove-Item -LiteralPath $Entry.FullName -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not (Test-Path -LiteralPath $Entry.FullName)) { $Removed.Add($Entry.FullName.Substring($Base.Length + 1)) }
+}
+foreach ($Folder in @(Get-ChildItem -LiteralPath $Cache -Directory -Force -Recurse -Depth 1 -ErrorAction SilentlyContinue | Sort-Object { $_.FullName.Length } -Descending)) {
+  if (@(Get-ChildItem -LiteralPath $Folder.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) { Remove-Item -LiteralPath $Folder.FullName -Force -ErrorAction SilentlyContinue }
+}
 Write-Output "STATUS=OK"
 Write-Output "REMOVED=$($Removed.Count)"
 Write-Output "LOG:"
