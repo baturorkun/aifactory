@@ -1,0 +1,39 @@
+{
+  "runId": "20261021112830-RQ-0071",
+  "requirementId": "RQ-0071",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261021112830-RQ-0071/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-21T11:28:30.213Z",
+  "updatedAt": "2026-10-21T11:29:53.463Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-21T11:28:41.238Z",
+      "finishedAt": "2026-10-21T11:29:53.463Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.html",
+    "docs/Embedded-Template-Kullanim-Kilavuzu.pdf",
+    "packages/agent-factory/src/coding-standard-gate.test.ts",
+    "packages/agent-factory/src/coding-standard.ts",
+    "packages/agent-factory/src/config.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/standards.test.ts",
+    "packages/agent-factory/templates/embedded/scripts/coding-standard.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
