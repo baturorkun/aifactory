@@ -57,6 +57,14 @@ export function requirementPhases(env, root = PROJECT_ROOT) {
   if (!line) return undefined;
   return { requirement: match[1], phases: line[1].split(',').map((phase) => phase.trim()).filter(Boolean) };
 }
+
+// Why --requirement-phases passes this stage over, or undefined when it runs.
+export function stagePassedOver(stage, env, root = PROJECT_ROOT) {
+  const named = requirementPhases(env, root);
+  const phase = STAGE_PHASE[stage];
+  if (!named || !phase || phase === 'spec' || named.phases.includes(phase)) return undefined;
+  return `${stage}: not run, ${named.requirement} goes through ${named.phases.join(', ')} (no ${phase}).`;
+}
 const STAGES = new Set([...VIVADO_STAGES, 'check', 'sw', 'twin', 'board', 'all', 'prune']);
 
 // GitLab's CI_COMMIT_REF_SLUG of a ref: what a CI copy on the host is named by.
@@ -330,11 +338,11 @@ export function rewriteCompileDatabase(entries, designName, projectRoot) {
   return rewritten;
 }
 
-function writeCompileDatabase(designName) {
-  const sw = join(PROJECT_ROOT, 'out', designName, 'artifacts', 'sw');
+export function writeCompileDatabase(designName, root = PROJECT_ROOT) {
+  const sw = join(root, 'out', designName, 'artifacts', 'sw');
   const vitis = join(sw, 'compile_commands.vitis.json');
   if (!existsSync(vitis)) return;
-  const entries = rewriteCompileDatabase(JSON.parse(readFileSync(vitis, 'utf8')), designName, PROJECT_ROOT);
+  const entries = rewriteCompileDatabase(JSON.parse(readFileSync(vitis, 'utf8')), designName, root);
   writeFileSync(join(sw, 'compile_commands.json'), JSON.stringify(entries, null, 2) + '\n');
   console.log(`SW: out/${designName}/artifacts/sw/compile_commands.json (${entries.length} file(s)) for the coding standard check`);
 }
@@ -383,10 +391,9 @@ export async function main(argv = process.argv.slice(2), env = loadEnvFile()) {
   }
 
   if (options.fromRequirement) {
-    const named = requirementPhases(env);
-    const phase = STAGE_PHASE[options.stage];
-    if (named && phase && phase !== 'spec' && !named.phases.includes(phase)) {
-      console.log(`${options.stage}: not run, ${named.requirement} goes through ${named.phases.join(', ')} (no ${phase}).`);
+    const passedOver = stagePassedOver(options.stage, env);
+    if (passedOver) {
+      console.log(passedOver);
       return;
     }
   }
