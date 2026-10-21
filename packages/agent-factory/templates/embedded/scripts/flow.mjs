@@ -228,12 +228,24 @@ function recordHost(design, settings) {
   writeFileSync(path, JSON.stringify(summary, null, 2) + '\n');
 }
 
+// Where Vivado keeps the IP it synthesized out of context (RQ-0080): on a
+// build host one cache beside the copies, under its base path, so a new
+// branch's copy takes its IP from another's; here, under out/.
+export function ipCachePath(settings) {
+  if (settings.remote && settings.basePath) {
+    const separator = settings.hostType === 'windows' ? '\\' : '/';
+    return `${settings.basePath.replace(/[\\/]+$/, '')}${separator}.ipc`;
+  }
+  return 'out/ip_cache';
+}
+
 async function vivadoStage(settings, design, stage, options) {
   const vivado = requireTool(settings, 'vivado', 'VIVADO_BIN');
   const sha = gitSha();
   const command = [vivado, '-mode', 'batch', '-nojournal', '-notrace',
     '-log', `out/${design}/vivado-${stage}.log`, '-source', 'flow.tcl',
-    '-tclargs', design, stage, '--jobs', String(options.jobs), '--threads', String(options.threads), ...(sha ? ['--git-sha', sha] : [])];
+    '-tclargs', design, stage, '--jobs', String(options.jobs), '--threads', String(options.threads),
+    '--ip-cache', ipCachePath(settings), ...(sha ? ['--git-sha', sha] : [])];
   console.log(`\n▸ ${design}: ${stage} (Vivado on ${buildHost(settings)})`);
   try {
     await runOnHost(settings, command, {

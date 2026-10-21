@@ -26,11 +26,11 @@ proc flow::main {root argv} {
     source [file join $ROOT common gates.tcl]
 
     if {[llength $argv] < 2} {
-        error "usage: vivado -mode batch -source flow.tcl -tclargs <design> <stage> \[--expect-version v\] \[--git-sha sha\] \[--jobs n\] \[--threads n\]\n  stages: $::flow::STAGES"
+        error "usage: vivado -mode batch -source flow.tcl -tclargs <design> <stage> \[--expect-version v\] \[--git-sha sha\] \[--jobs n\] \[--threads n\] \[--ip-cache dir\]\n  stages: $::flow::STAGES"
     }
     set design [lindex $argv 0]
     set stage [lindex $argv 1]
-    set opts [dict create --expect-version "" --git-sha "" --jobs 4 --threads ""]
+    set opts [dict create --expect-version "" --git-sha "" --jobs 4 --threads "" --ip-cache ""]
     foreach {key value} [lrange $argv 2 end] {
         if {![dict exists $opts $key]} { error "unknown option $key" }
         dict set opts $key $value
@@ -455,6 +455,17 @@ proc flow::project_open {} {
         if {[llength [get_files -quiet $xdc]] == 0} { add_files -fileset constrs_1 -norecurse $xdc }
     }
 
+    # The IP synthesized out of context is kept in one cache for every copy
+    # on the build host (RQ-0080): a new branch's copy takes it from there
+    # instead of synthesizing the block design's IP again.
+    set cache [dict get $::flow::opts --ip-cache]
+    if {$cache ne ""} {
+        if {[file pathtype $cache] ne "absolute"} { set cache [file join $ROOT $cache] }
+        file mkdir $cache
+        config_ip_cache -use_cache_location [file normalize $cache]
+        puts "PROJECT: IP cache [file normalize $cache]"
+    }
+
     if {[cfg BD] ne ""} {
         if {[llength [get_files -quiet -all *.bd]] == 0} {
             # The block design script only builds a design in the open project.
@@ -474,6 +485,12 @@ proc flow::project_open {} {
     set_property top [cfg TOP] [current_fileset]
     update_compile_order -fileset sources_1
     thread_hooks
+    # Implementation may start from this copy's last routed result, when
+    # Vivado finds that worth it (RQ-0080); synthesis already does.
+    set impl [get_runs -quiet impl_1]
+    if {$impl ne "" && [lsearch -exact [list_property $impl] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
+        set_property AUTO_INCREMENTAL_CHECKPOINT 1 $impl
+    }
 }
 
 # A project-mode run is a Vivado process of its own and does not take this

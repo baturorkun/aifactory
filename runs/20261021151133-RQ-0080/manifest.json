@@ -1,0 +1,36 @@
+{
+  "runId": "20261021151133-RQ-0080",
+  "requirementId": "RQ-0080",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261021151133-RQ-0080/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-21T15:11:33.201Z",
+  "updatedAt": "2026-10-21T15:13:29.602Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-21T15:12:09.126Z",
+      "finishedAt": "2026-10-21T15:13:22.207Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/templates/embedded/common/flow_lib.tcl",
+    "packages/agent-factory/templates/embedded/flow.tcl",
+    "packages/agent-factory/templates/embedded/scripts/flow.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-21T15:13:29.602Z",
+  "approvedBy": "Batur Orkun"
+}
