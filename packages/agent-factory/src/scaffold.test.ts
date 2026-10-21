@@ -202,6 +202,23 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.ok(ci.indexOf(bookkeeping) < ci.indexOf('- when: always'));
     assert.equal(skipCiMarker(result.projectRoot), '');
     assert.equal(skipCiMarker(join(result.projectRoot, 'src')), ' [skip ci]', 'no such rule: the marker stays');
+    // CI installs a project without a lockfile and leaves none, and its pnpm
+    // home and store in the project are ignored: the requirement decision then
+    // finds nothing uncommitted that CI made (RQ-0084).
+    assert.match(ci, /else pnpm install --no-lockfile; fi/);
+    assert.doesNotMatch(ci, /--no-frozen-lockfile/);
+    const ignored = readFileSync(join(result.projectRoot, '.gitignore'), 'utf8');
+    assert.match(ignored, /^\.pnpm\/$/m);
+    assert.match(ignored, /^\.pnpm-store\/$/m);
+    const repo = (...args: string[]) => spawnSync('git', args, { cwd: result.projectRoot, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+    if (repo('rev-parse', '--git-dir').status !== 0) repo('init', '-q');
+    repo('add', '-A');
+    repo('commit', '-q', '-m', 'start');
+    mkdirSync(join(result.projectRoot, '.pnpm', 'bin'), { recursive: true });
+    mkdirSync(join(result.projectRoot, '.pnpm-store', 'v3'), { recursive: true });
+    writeFileSync(join(result.projectRoot, '.pnpm', 'bin', 'pnpm'), 'x');
+    writeFileSync(join(result.projectRoot, '.pnpm-store', 'v3', 'index'), 'x');
+    assert.equal(repo('status', '--porcelain').stdout, '', 'what CI leaves in .pnpm/ and .pnpm-store/ is not a change');
     assert.match(ci, /git -C \.\.\/aifactory fetch origin main/);
     assert.match(ci, /git -C \.\.\/aifactory switch --detach FETCH_HEAD/);
     assert.match(ci, /- factory\.config\.json/);
