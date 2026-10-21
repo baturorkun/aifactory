@@ -254,3 +254,20 @@ test('the check and the launcher start Node, never a .cmd, so they run on Window
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /Usage: factory/);
 });
+
+// RQ-0081: aifactory's last subject is quoted into the project's commit; a
+// [skip ci] in it skipped the merge request's own pipeline (embedded1 !12).
+test('template update quotes aifactory\'s last subject without a CI skip marker', async () => {
+  const { aifactory, project, done } = setup();
+  try {
+    git(aifactory.root, 'commit', '-q', '--allow-empty', '-m', 'requirement(RQ-0078): reserve draft [skip ci]');
+    const { adapter, calls } = fakePlatform();
+    const result = await deliverTemplateUpdate(project.root, { aifactoryRoot: aifactory.root, adapter });
+    const message = git(project.root, 'log', '-1', '--format=%B', `origin/${result.branch}`);
+    assert.match(message, /: requirement\(RQ-0078\): reserve draft\n/);
+    assert.doesNotMatch(message, /skip ci/i);
+    assert.doesNotMatch(calls.draft?.description ?? '', /skip ci/i);
+  } finally {
+    done();
+  }
+});
