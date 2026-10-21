@@ -1,0 +1,36 @@
+{
+  "runId": "20261021084725-RQ-0070",
+  "requirementId": "RQ-0070",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261021084725-RQ-0070/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-21T08:47:25.458Z",
+  "updatedAt": "2026-10-21T08:48:43.436Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-21T08:47:31.157Z",
+      "finishedAt": "2026-10-21T08:48:43.436Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "factory.config.json",
+    "services/rag-web/public/app.js",
+    "services/rag/README.md",
+    "services/rag/src/aifactory_rag/config.py",
+    "services/rag/src/aifactory_rag/embeddings.py",
+    "services/rag/tests/test_embedding_hosts.py"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
