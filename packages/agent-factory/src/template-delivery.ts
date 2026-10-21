@@ -63,10 +63,23 @@ export function updateAifactory(root: string, log: (line: string) => void = () =
   const lockMoved = git(root, ['diff', '--name-only', before, after, '--', 'pnpm-lock.yaml']) !== '';
   if (lockMoved) {
     log('aifactory: the lockfile moved, pnpm install');
-    const installed = spawnSync('pnpm', ['install', '--frozen-lockfile'], { cwd: root, stdio: 'inherit' });
+    // pnpm is a .cmd on Windows: started through the shell there (RQ-0073).
+    const installed = spawnSync('pnpm', ['install', '--frozen-lockfile'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+    if (installed.error) throw new TemplateDeliveryError(`pnpm install in aifactory could not start: ${installed.error.message}`);
     if (installed.status !== 0) throw new TemplateDeliveryError(`pnpm install in aifactory failed with exit code ${installed.status ?? 'unknown'}.`);
   }
   return true;
+}
+
+// The project's design check with the new files, run by this Node: what
+// `pnpm check` runs, without pnpm, which is a .cmd on Windows (RQ-0073). A
+// check that could not start says so, not that it failed.
+export function runProjectCheck(root: string): void {
+  const flow = join(root, 'scripts', 'flow.mjs');
+  if (!existsSync(flow)) throw new TemplateDeliveryError(`The project has no scripts/flow.mjs to check with; nothing was pushed.`);
+  const checked = spawnSync(process.execPath, [flow, 'check'], { cwd: root, stdio: 'inherit' });
+  if (checked.error) throw new TemplateDeliveryError(`The design check could not start (${checked.error.message}); nothing was pushed.`);
+  if (checked.status !== 0) throw new TemplateDeliveryError(`The design check fails with the new template (exit code ${checked.status ?? 'unknown'}); nothing was pushed.`);
 }
 
 export interface TemplateDelivery {

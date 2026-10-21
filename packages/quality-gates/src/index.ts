@@ -293,13 +293,40 @@ function targetTestCheck(
 
 // The messages deliberately do not contain the text their pattern matches,
 // so this file does not flag itself when it is part of a change set.
-const SECURITY_PATTERNS: Array<{ re: RegExp; message: string }> = [
-  { re: /\beval\s*\(/, message: 'eval usage detected' },
-  { re: /new\s+Function\s*\(/, message: 'new Function usage detected' },
-  { re: /require\(['"]child_process['"]\)/, message: 'child_process import — verify intent' },
-  { re: /query\s*\(\s*`[^`]*\$\{/, message: 'potential SQL injection (template literal in query)' },
-  { re: /process\.env\.[A-Z_]+=/, message: 'env variable assignment detected' },
+const SECURITY_PATTERNS: Array<{ id: string; re: RegExp; message: string }> = [
+  { id: 'eval', re: /\beval\s*\(/, message: 'eval usage detected' },
+  { id: 'new-function', re: /new\s+Function\s*\(/, message: 'new Function usage detected' },
+  { id: 'child-process', re: /require\(['"]child_process['"]\)/, message: 'child_process import — verify intent' },
+  { id: 'sql-template', re: /query\s*\(\s*`[^`]*\$\{/, message: 'potential SQL injection (template literal in query)' },
+  { id: 'env-assignment', re: /process\.env\.[A-Z_]+=/, message: 'env variable assignment detected' },
 ];
+
+// A file may say a finding is intended (RQ-0073): a comment line of its own
+// `security-reviewed: <id> — <reason>`, the id one of SECURITY_PATTERNS'.
+// Such a finding does not fail the gate but stays in its report, with the
+// reason, so the decision is recorded where it is read. A marker without a
+// reason, or naming another id, reviews nothing.
+export function scanSecurity(content: string, rel: string): { issues: string[]; reviewed: string[] } {
+  const reasons = new Map<string, string>();
+  // A comment line of its own (// # *), not text inside a string.
+  for (const match of content.matchAll(/^\s*(?:\/\/|#|\*|\/\*)\s*security-reviewed:\s*([a-z-]+)\s*(?:—|--|-|:)\s*(\S.*?)\s*(?:\*\/)?$/gm)) {
+    reasons.set(match[1], match[2].trim());
+  }
+  const issues: string[] = [];
+  const reviewed: string[] = [];
+  for (const { id, re, message } of SECURITY_PATTERNS) {
+    if (!re.test(content)) continue;
+    const reason = reasons.get(id);
+    if (reason) reviewed.push(`${rel}: ${message} (reviewed: ${reason})`);
+    else issues.push(`${rel}: ${message}`);
+  }
+  return { issues, reviewed };
+}
+
+function securityOutput(scanned: string, issues: string[], reviewed: string[]): string {
+  if (issues.length > 0) return [...issues, ...reviewed].join('\n');
+  return reviewed.length > 0 ? [`${scanned} — no issues; reviewed:`, ...reviewed].join('\n') : `${scanned} — no issues`;
+}
 
 function securityCheck(runDir: string): GateReport {
   const start = Date.now();
@@ -311,30 +338,24 @@ function securityCheck(runDir: string): GateReport {
   }
 
   const issues: string[] = [];
+  const reviewed: string[] = [];
 
   for (const file of files) {
-    const content = readFileSync(file, 'utf8');
-    const rel = file.replace(runDir + '/', '');
-    for (const { re, message } of SECURITY_PATTERNS) {
-      if (re.test(content)) {
-        issues.push(`${rel}: ${message}`);
-      }
-    }
+    const found = scanSecurity(readFileSync(file, 'utf8'), file.replace(runDir + '/', ''));
+    issues.push(...found.issues);
+    reviewed.push(...found.reviewed);
   }
 
   // Persist report
   writeFileSync(
     join(runDir, 'gates', 'security-report.json'),
-    JSON.stringify({ scannedFiles: files.length, issues }, null, 2),
+    JSON.stringify({ scannedFiles: files.length, issues, reviewed }, null, 2),
   );
 
   return {
     gate: 'security',
     status: issues.length === 0 ? 'passed' : 'failed',
-    output:
-      issues.length === 0
-        ? `${files.length} file(s) scanned — no issues`
-        : issues.join('\n'),
+    output: securityOutput(`${files.length} file(s) scanned`, issues, reviewed),
     durationMs: Date.now() - start,
   };
 }
@@ -350,25 +371,19 @@ function targetSecurityCheck(targetRoot: string, artifactPaths: string[] = []): 
   }
 
   const issues: string[] = [];
+  const reviewed: string[] = [];
 
   for (const file of files) {
     if (!existsSync(file)) continue;
-    const content = readFileSync(file, 'utf8');
-    const rel = normalizeRelativePath(relative(targetRoot, file));
-    for (const { re, message } of SECURITY_PATTERNS) {
-      if (re.test(content)) {
-        issues.push(`${rel}: ${message}`);
-      }
-    }
+    const found = scanSecurity(readFileSync(file, 'utf8'), normalizeRelativePath(relative(targetRoot, file)));
+    issues.push(...found.issues);
+    reviewed.push(...found.reviewed);
   }
 
   return {
     gate: 'security',
     status: issues.length === 0 ? 'passed' : 'failed',
-    output:
-      issues.length === 0
-        ? `${files.length} applied file(s) scanned — no issues`
-        : issues.join('\n'),
+    output: securityOutput(`${files.length} applied file(s) scanned`, issues, reviewed),
     durationMs: Date.now() - start,
   };
 }

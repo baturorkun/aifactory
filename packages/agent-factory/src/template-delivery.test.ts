@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createTargetProject } from './scaffold';
-import { bringMainUpToDate, deliverTemplateUpdate, TemplateDeliveryError, updateAifactory } from './template-delivery';
+import { bringMainUpToDate, deliverTemplateUpdate, runProjectCheck, TemplateDeliveryError, updateAifactory } from './template-delivery';
 import type { ChangeRequest, RepositoryPlatformAdapter } from './repository-platform/types';
 
 // RQ-0069: template update delivers the current template as a merge
@@ -199,4 +199,25 @@ test('aifactory brings itself up to date from a clean main, and says whether any
   } finally {
     done();
   }
+});
+
+test('the check and the launcher start Node, never a .cmd, so they run on Windows as here', () => {
+  // RQ-0073: on Kaan's Windows PC spawnSync('pnpm') could not start pnpm.cmd,
+  // and the update said the check failed.
+  const { project, done } = setup();
+  try {
+    runProjectCheck(project.root);
+    rmSync(join(project.root, 'boards/zedboard.yaml'));
+    assert.throws(() => runProjectCheck(project.root), /The design check fails with the new template \(exit code 1\); nothing was pushed/);
+    rmSync(join(project.root, 'scripts/flow.mjs'));
+    assert.throws(() => runProjectCheck(project.root), /no scripts\/flow\.mjs to check with/);
+  } finally {
+    done();
+  }
+  const launcher = readFileSync(join(__dirname, '..', 'bin', 'factory.js'), 'utf8');
+  assert.doesNotMatch(launcher, /'tsx\.cmd'|'\.bin'/, 'no .cmd, no .bin shim in the paths it starts');
+  assert.match(launcher, /spawnSync\(\s*process\.execPath,\s*\[tsxCli,/);
+  const help = spawnSync(process.execPath, [join(__dirname, '..', 'bin', 'factory.js'), '--help'], { encoding: 'utf8' });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /Usage: factory/);
 });
