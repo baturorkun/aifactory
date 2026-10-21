@@ -66,7 +66,7 @@ import {
 import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
 import { updateEmbeddedProject, type TemplateChange } from './template-update';
-import { deliverTemplateUpdate, updateAifactory } from './template-delivery';
+import { deliverTemplateUpdate, runProjectCheck, updateAifactory } from './template-delivery';
 import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
 import { labWideCiValues, loadLabInventory } from './lab-inventory';
 import { PROFILES, describeCodingStandard } from './coding-standard';
@@ -1101,10 +1101,7 @@ program
         aifactoryRoot,
         adapter: platformAdapterFor(root, resolved),
         log: (line) => console.log(chalk.dim(line)),
-        check: (project) => {
-          const checked = spawnSync('pnpm', ['-s', 'check'], { cwd: project, stdio: 'inherit' });
-          if (checked.status !== 0) throw new Error('pnpm check fails with the new template; nothing was pushed.');
-        },
+        check: runProjectCheck,
       });
       if (result.status === 'current') {
         console.log(chalk.green('✓ The project is on the current embedded template.'));
