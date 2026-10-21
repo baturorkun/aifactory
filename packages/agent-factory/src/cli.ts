@@ -949,9 +949,10 @@ program
   .option('--standard <id>', 'c, embedded: the coding standard the project follows (factory standard list)')
   .option('--groups <list>', 'The standard\'s groups in force, comma-separated (required: factory standard list shows them)')
   .option('--profile <name>', `How strictly the standard is enforced: ${PROFILES.join(', ')} (default: default)`)
+  .option('--report-only', 'The standard\'s violations are reported, not enforced (codingStandard.enforce false)', false)
   .option('--dir <path>', 'Parent directory for the new project', '..')
   .option('--force', 'Allow writing into an existing directory', false)
-  .action((projectName: string, opts: { template?: string; simulator?: string; hostType?: string; board?: string; standard?: string; groups?: string; profile?: string; dir: string; force: boolean }) => {
+  .action((projectName: string, opts: { template?: string; simulator?: string; hostType?: string; board?: string; standard?: string; groups?: string; profile?: string; reportOnly?: boolean; dir: string; force: boolean }) => {
     try {
       if (opts.template && opts.simulator) {
         throw new Error('--template (standard project) and --simulator (hardware-twin project) are mutually exclusive.');
@@ -967,6 +968,7 @@ program
         standard: opts.standard,
         groups: opts.groups?.split(',').map((name) => name.trim()).filter(Boolean),
         profile: opts.profile,
+        enforce: opts.reportOnly ? false : undefined,
         dir: opts.dir,
         force: opts.force,
       });
@@ -1022,11 +1024,15 @@ standard
   .description('From a c or embedded project: follow this standard (its groups, how strictly), as factory new --standard does; with no id and no --groups, the choice written in factory.config.json')
   .option('--groups <list>', 'The standard\'s groups in force, comma-separated (required: factory standard list shows them)')
   .option('--profile <name>', `How strictly: ${PROFILES.join(', ')} (default: default)`)
-  .action((id: string | undefined, opts: { groups?: string; profile?: string }) => {
+  .option('--report-only', 'Report the violations, do not fail on them (codingStandard.enforce false)')
+  .option('--enforce', 'Fail on the violations again (codingStandard.enforce true)')
+  .action((id: string | undefined, opts: { groups?: string; profile?: string; reportOnly?: boolean; enforce?: boolean }) => {
     try {
       const config = loadConfig();
       const root = resolve(config.targetProject.root ?? '.');
-      const record = useCodingStandard(root, { standard: id, groups: opts.groups?.split(',').map((name) => name.trim()).filter(Boolean), profile: opts.profile });
+      if (opts.reportOnly && opts.enforce) throw new Error('--report-only and --enforce say opposite things: give one.');
+      const enforce = opts.reportOnly ? false : opts.enforce ? true : undefined;
+      const record = useCodingStandard(root, { standard: id, groups: opts.groups?.split(',').map((name) => name.trim()).filter(Boolean), profile: opts.profile, enforce });
       console.log(chalk.green(`✓ ${describeCodingStandard(record)}: coding-standard/ written, AGENTS.md and .env updated.`));
       console.log(chalk.dim('  Commit them under a requirement; the groups and profile are now what the gate will enforce.'));
     } catch (err) {

@@ -135,7 +135,7 @@ test('template update brings a project made before the twin and board phases up 
     updateEmbeddedProject(projectRoot, { write: true });
     assert.ok(existsSync(join(projectRoot, 'scripts/twin.mjs')));
     assert.equal(JSON.parse(readFileSync(configPath, 'utf8')).targetProject.commands.boardTest, 'pnpm board');
-    assert.deepEqual(JSON.parse(readFileSync(configPath, 'utf8')).codingStandard, { id: '', version: '', groups: [], profile: 'default' }, 'the coding standard\'s place, empty');
+    assert.deepEqual(JSON.parse(readFileSync(configPath, 'utf8')).codingStandard, { id: '', version: '', groups: [], profile: 'default', enforce: true }, 'the coding standard\'s place, empty');
     const configMerge = listed.find((change) => change.path === 'factory.config.json');
     assert.match(configMerge?.kind === 'merge' ? configMerge.detail : '', /codingStandard/);
     assert.equal(readFileSync(join(projectRoot, 'designs/led_counter/src/counter.vhd'), 'utf8'), '-- the project\'s own counter\n');

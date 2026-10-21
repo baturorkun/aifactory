@@ -433,7 +433,12 @@ given, nothing is turned on by default. The choice can also be written into
 the field by hand and applied with `factory standard use` (no arguments).
 Running `standard use` again changes the groups and remakes the rules; the
 waivers stay. The gate refuses rules made for another choice than the
-config's (a hand edit not applied). It adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
+config's (a hand edit not applied). `"enforce": false` (`standard use …
+--report-only`, back with `--enforce`; RQ-0074) makes the standard report
+only: the check runs and reports every violation, marked "REPORTED (not
+enforced)", and neither the gate nor CI fails on them, for a project that
+takes a standard before its code keeps it; AGENTS.md still tells the agent
+to write new and changed code to the rules. It adds `coding-standards` to the project's `RAG_SOURCE_IDS`, leaves the
 other groups' rule files out of its retrieval, and gives AGENTS.md the
 rules of the game: write to the rules, record a violation you cannot avoid
 in `waivers.yaml`, never silence a finding. Profile `dal-a` makes every rule

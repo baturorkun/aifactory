@@ -378,6 +378,9 @@ const CodingStandardChoiceSchema = z.object({
   version: z.string().default(''),
   groups: z.array(z.string().min(1)).default([]),
   profile: z.enum(['default', 'dal-a']).default('default'),
+  // false: the gate and CI report the violations and do not fail (RQ-0074),
+  // for a project that takes a standard before its code keeps it.
+  enforce: z.boolean().default(true),
 });
 
 export const FactoryConfigSchema = z.object({
