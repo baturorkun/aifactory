@@ -156,6 +156,39 @@ test('a project already on the template gets no branch and no merge request', as
   }
 });
 
+test('a project checked out with CRLF line endings (Windows core.autocrlf) is current, not changed', async () => {
+  // RQ-0075: on Kaan's PC the update saw three files as changed only by
+  // their line endings, wrote them, and found nothing to commit.
+  const { aifactory, project, done } = setup();
+  try {
+    git(project.root, 'checkout', '-q', 'HEAD~1', '--', 'scripts/flow.mjs');
+    git(project.root, 'commit', '-q', '-m', 'current template');
+    git(project.root, 'push', '-q', 'origin', 'main');
+    git(project.root, 'config', 'core.autocrlf', 'true');
+    for (const path of ['scripts/flow.mjs', 'scripts/vivado-host.mjs', '.gitlab-ci.yml']) rmSync(join(project.root, path));
+    git(project.root, 'checkout', '-q', '--', '.');
+    // Before the template's .gitattributes (RQ-0075) a checkout like this got CRLF.
+    rmSync(join(project.root, '.gitattributes'));
+    git(project.root, 'commit', '-q', '-am', 'a project from before .gitattributes');
+    git(project.root, 'push', '-q', 'origin', 'main');
+    for (const path of ['scripts/flow.mjs', 'scripts/vivado-host.mjs', '.gitlab-ci.yml']) rmSync(join(project.root, path));
+    git(project.root, 'checkout', '-q', '--', '.');
+    assert.match(readFileSync(join(project.root, 'scripts/flow.mjs'), 'utf8'), /\r\n/, 'checked out with CRLF');
+    const { adapter, calls } = fakePlatform();
+    const result = await deliverTemplateUpdate(project.root, { aifactoryRoot: aifactory.root, adapter });
+    assert.deepEqual(result.changes, [{ kind: 'add', path: '.gitattributes' }], 'the CRLF files are no change; .gitattributes comes');
+    assert.equal(calls.draft?.sourceBranch, result.branch);
+    assert.equal(git(project.root, 'branch', '--show-current'), 'main');
+    // With it, a checkout on that machine is LF.
+    git(project.root, 'merge', '-q', `origin/${result.branch}`);
+    for (const path of ['scripts/flow.mjs']) rmSync(join(project.root, path));
+    git(project.root, 'checkout', '-q', '--', '.');
+    assert.doesNotMatch(readFileSync(join(project.root, 'scripts/flow.mjs'), 'utf8'), /\r\n/, 'LF though core.autocrlf is true');
+  } finally {
+    done();
+  }
+});
+
 test('a failing check pushes nothing and leaves the project as it was', async () => {
   const { aifactory, project, done } = setup();
   try {

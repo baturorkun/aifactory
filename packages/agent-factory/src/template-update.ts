@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join, relative, resolve } from 'path';
+import { readCodingStandard, withCodingStandardSection } from './coding-standard';
 import { createTargetProject } from './scaffold';
 
 // Brings an embedded project made from an older template up to this
@@ -29,7 +30,12 @@ function walk(root: string, directory = root, found: string[] = []): string[] {
   return found;
 }
 
-const same = (a: string, b: string) => existsSync(a) && existsSync(b) && readFileSync(a).equals(readFileSync(b));
+// Text is compared with its line endings normalised: Git on Windows
+// (core.autocrlf) checks out with CRLF what the repository and the template
+// keep with LF, and that is no change (RQ-0075). A file with a NUL byte is
+// binary and compared byte for byte.
+const normalised = (data: Buffer) => (data.includes(0) ? data : Buffer.from(data.toString('utf8').replace(/\r\n/g, '\n'), 'utf8'));
+const same = (a: string, b: string) => existsSync(a) && existsSync(b) && normalised(readFileSync(a)).equals(normalised(readFileSync(b)));
 
 type JsonObject = Record<string, unknown>;
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as JsonObject;
@@ -42,6 +48,10 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
   const scratch = mkdtempSync(join(tmpdir(), 'aifactory-template-'));
   try {
     const fresh = createTargetProject(basename(projectRoot), { dir: scratch, template: 'embedded', labInventoryPath: join(scratch, 'none.json') }).projectRoot;
+    // The template's AGENTS.md with this project's Coding Standard section,
+    // as standard use writes it, so the update keeps it (RQ-0075).
+    const freshAgents = join(fresh, 'AGENTS.md');
+    writeFileSync(freshAgents, withCodingStandardSection(readFileSync(freshAgents, 'utf8'), readCodingStandard(projectRoot)), 'utf8');
     const templateFiles = walk(join(options.templateRoot ?? resolve(__dirname, '../templates/embedded')));
     const changes: TemplateChange[] = [];
     const copy = (path: string) => {

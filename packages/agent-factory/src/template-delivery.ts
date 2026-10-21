@@ -115,6 +115,12 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
     updateEmbeddedProject(projectRoot, { write: true });
     options.check?.(projectRoot);
     git(projectRoot, ['add', '-A']);
+    // Written, but Git sees no change (a difference only Git normalises
+    // away): the project is current, nothing is pushed (RQ-0075).
+    if (spawnSync('git', ['diff', '--cached', '--quiet'], { cwd: projectRoot }).status === 0) {
+      log('no change once written; the project is on the current template');
+      return { status: 'current', changes: [] };
+    }
     const list = changes.map((change) => `- ${change.kind} ${change.path}${change.kind === 'merge' ? ` (${change.detail})` : ''}`).join('\n');
     git(projectRoot, ['commit', '--quiet', '-m', `chore(template): the aifactory embedded template at ${commit}\n\naifactory ${commit}: ${subject}\n\n${list}`]);
     git(projectRoot, ['push', '--quiet', '-u', 'origin', branch]);

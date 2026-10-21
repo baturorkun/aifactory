@@ -120,6 +120,14 @@ export function describeCodingStandard(record: CodingStandard): string {
   return `${record.id} ${record.version}, groups ${record.groups.join(', ')}, profile ${record.profile} (${record.rules} rules)${record.enforce === false ? ', report only' : ''}`;
 }
 
+// AGENTS.md with the project's Coding Standard section, always the last one
+// (RQ-0075): factory new, standard use and template update give the same file,
+// so an update does not see a section moved as a change. No record: none.
+export function withCodingStandardSection(agents: string, record: CodingStandard | undefined): string {
+  const without = agents.replace(/^## Coding Standard\n[\s\S]*?(?=^## |(?![\s\S]))/m, '');
+  return record ? without.replace(/\n*$/, '\n\n') + codingStandardGuidelines(record).join('\n') : without;
+}
+
 // The AGENTS.md section of a project with a coding standard.
 export function codingStandardGuidelines(record: CodingStandard): string[] {
   return [
