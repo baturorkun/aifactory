@@ -1,0 +1,35 @@
+{
+  "runId": "20261021150406-RQ-0079",
+  "requirementId": "RQ-0079",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261021150406-RQ-0079/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-21T15:04:06.834Z",
+  "updatedAt": "2026-10-21T15:05:23.424Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-21T15:04:10.898Z",
+      "finishedAt": "2026-10-21T15:05:23.423Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/templates/embedded/common/flow_lib.tcl",
+    "packages/agent-factory/templates/embedded/flow.tcl",
+    "packages/agent-factory/templates/embedded/scripts/flow.mjs"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
