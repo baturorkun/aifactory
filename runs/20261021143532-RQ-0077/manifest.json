@@ -1,0 +1,32 @@
+{
+  "runId": "20261021143532-RQ-0077",
+  "requirementId": "RQ-0077",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261021143532-RQ-0077/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-21T14:35:32.618Z",
+  "updatedAt": "2026-10-21T14:38:44.663Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-21T14:37:31.003Z",
+      "finishedAt": "2026-10-21T14:38:44.662Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
