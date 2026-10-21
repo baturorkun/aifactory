@@ -20,14 +20,16 @@ export type CodingStandard = {
   groups: string[];
   profile: Profile;
   rules: number;
+  // false: violations are reported, not enforced (RQ-0074).
+  enforce: boolean;
 };
 
 export const CODING_STANDARD_DIRECTORY = 'coding-standard';
 
 // The choice of a project that follows no standard yet (RQ-0071).
-export const EMPTY_CODING_STANDARD = { id: '', version: '', groups: [] as string[], profile: 'default' as Profile };
+export const EMPTY_CODING_STANDARD = { id: '', version: '', groups: [] as string[], profile: 'default' as Profile, enforce: true };
 
-type Choice = { id?: string; version?: string; groups?: string[]; profile?: Profile };
+type Choice = { id?: string; version?: string; groups?: string[]; profile?: Profile; enforce?: boolean };
 export const inForce = (choice: Choice | undefined): boolean => Boolean(choice?.id) && (choice?.groups?.length ?? 0) > 0;
 
 // factory.config.json's codingStandard, as written (empty when none).
@@ -37,9 +39,9 @@ export function configuredChoice(projectRoot: string): Choice | undefined {
 }
 export const CODING_STANDARDS_SOURCE = 'coding-standards';
 
-export type ChosenStandard = { standard: Standard; groups: string[]; profile: Profile };
+export type ChosenStandard = { standard: Standard; groups: string[]; profile: Profile; enforce: boolean };
 
-export function chooseStandard(options: { standard?: string; groups?: string[]; profile?: string; standardsPath?: string }): ChosenStandard | undefined {
+export function chooseStandard(options: { standard?: string; groups?: string[]; profile?: string; enforce?: boolean; standardsPath?: string }): ChosenStandard | undefined {
   if (!options.standard) {
     if (options.groups && options.groups.length > 0) throw new Error('--groups chooses groups of a standard: add --standard <id>.');
     if (options.profile) throw new Error('--profile applies to a coding standard: add --standard <id>.');
@@ -55,7 +57,7 @@ export function chooseStandard(options: { standard?: string; groups?: string[]; 
   selectRules(standard, groups); // refuses an unknown group
   const profile = (options.profile ?? 'default') as Profile;
   if (!PROFILES.includes(profile)) throw new Error(`Profile "${options.profile}": one of ${PROFILES.join(', ')}.`);
-  return { standard, groups, profile };
+  return { standard, groups, profile, enforce: options.enforce ?? true };
 }
 
 const WAIVERS = `# Deviations from the coding standard (RQ-0052). A finding the gate reports
@@ -73,12 +75,13 @@ export function codingStandardRecord(chosen: ChosenStandard): CodingStandard {
     groups: chosen.groups,
     profile: chosen.profile,
     rules: selectRules(chosen.standard, chosen.groups).length,
+    enforce: chosen.enforce,
   };
 }
 
 // The choice as factory.config.json keeps it (no rule count: that is the rules').
-export function codingStandardChoice(chosen: ChosenStandard): { id: string; version: string; groups: string[]; profile: Profile } {
-  return { id: chosen.standard.id, version: chosen.standard.version, groups: chosen.groups, profile: chosen.profile };
+export function codingStandardChoice(chosen: ChosenStandard): { id: string; version: string; groups: string[]; profile: Profile; enforce: boolean } {
+  return { id: chosen.standard.id, version: chosen.standard.version, groups: chosen.groups, profile: chosen.profile, enforce: chosen.enforce };
 }
 
 export function writeCodingStandard(projectRoot: string, chosen: ChosenStandard): CodingStandard {
@@ -100,9 +103,9 @@ export function readCodingStandard(projectRoot: string): CodingStandard | undefi
   const rulesPath = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'rules.json');
   const count = existsSync(rulesPath) ? ((JSON.parse(readFileSync(rulesPath, 'utf8')) as { rules?: unknown[] }).rules ?? []).length : 0;
   const choice = configuredChoice(projectRoot);
-  if (choice) return inForce(choice) ? { id: choice.id ?? '', version: choice.version ?? '', groups: choice.groups ?? [], profile: choice.profile ?? 'default', rules: count } : undefined;
+  if (choice) return inForce(choice) ? { id: choice.id ?? '', version: choice.version ?? '', groups: choice.groups ?? [], profile: choice.profile ?? 'default', rules: count, enforce: choice.enforce ?? true } : undefined;
   const legacy = resolve(projectRoot, CODING_STANDARD_DIRECTORY, 'standard.json');
-  return existsSync(legacy) ? (JSON.parse(readFileSync(legacy, 'utf8')) as CodingStandard) : undefined;
+  return existsSync(legacy) ? { enforce: true, ...(JSON.parse(readFileSync(legacy, 'utf8')) as Omit<CodingStandard, 'enforce'>) } : undefined;
 }
 
 // The rule files of the groups the project did not choose, left out of its
@@ -114,7 +117,7 @@ export function excludedRuleFiles(chosen: ChosenStandard): string[] {
 }
 
 export function describeCodingStandard(record: CodingStandard): string {
-  return `${record.id} ${record.version}, groups ${record.groups.join(', ')}, profile ${record.profile} (${record.rules} rules)`;
+  return `${record.id} ${record.version}, groups ${record.groups.join(', ')}, profile ${record.profile} (${record.rules} rules)${record.enforce === false ? ', report only' : ''}`;
 }
 
 // The AGENTS.md section of a project with a coding standard.
@@ -125,7 +128,7 @@ export function codingStandardGuidelines(record: CodingStandard): string[] {
     `- This project follows the coding standard ${describeCodingStandard(record)}. \`coding-standard/index.md\` lists every rule in force (id, class, groups, one line); the full text of a rule, with its rationale and example, is in the RAG source \`${CODING_STANDARDS_SOURCE}\` (ask for the rule by id, e.g. "C-045"). The other groups of the standard are not in force here and are left out of retrieval.`,
     '- Write to the rules from the first line. Before finishing a requirement, read `coding-standard/index.md` once and check the code against the rules its change touches.',
     `- A rule that cannot be kept is recorded in \`coding-standard/waivers.yaml\` with every field (rule_id, file, line, rationale, reviewer, review_date, waiver_id, validity)${record.profile === 'dal-a' ? '; under profile dal-a every rule is mandatory and a waiver needs its reviewer and review date before the gate accepts it' : ''}. Never silence a finding with a suppression comment or a tool flag.`,
-    '- `pnpm standard` (the `codingStandard` gate, run after the build) checks the code with cppcheck\'s MISRA addon and the lexical checks and writes `out/coding-standard/report.md`; a rule the index marks `manual review` is checked by a reviewer, not a tool. Run it before `handoff-finish`; an unwaived violation fails the gate.',
+    `- \`pnpm standard\` (the \`codingStandard\` gate, run after the build) checks the code with cppcheck's MISRA addon and the lexical checks and writes \`out/coding-standard/report.md\`; a rule the index marks \`manual review\` is checked by a reviewer, not a tool. Run it before \`handoff-finish\`; ${record.enforce === false ? 'for now the standard is report only (`enforce: false` in factory.config.json): violations are reported and do not fail the gate, but code you write or change keeps the rules all the same.' : 'an unwaived violation fails the gate.'}`,
     '- Changing the groups or the profile is a requirement of its own: it changes what the gate enforces.',
     '',
   ];

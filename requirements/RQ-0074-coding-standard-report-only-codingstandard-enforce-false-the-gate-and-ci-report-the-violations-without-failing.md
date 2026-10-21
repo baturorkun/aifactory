@@ -1,6 +1,6 @@
 ---
 id: RQ-0074
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -16,8 +16,29 @@ repositoryProvider: github
 ---
 # RQ-0074 - Coding standard: report only (codingStandard.enforce false), the gate and CI report the violations without failing
 
-<!-- Describe the requirement here. -->
+embedded1 took the coding standard cstd (misra, bytecraft) on 21 October
+2026; its first report has 90 violations, all in `hdmi_colorbar/sw/src/main.c`.
+Batur: merge the choice now, keeping the code to it is a separate matter. With
+the standard in force the `codingStandard` gate and the CI job fail on every
+violation, so the requirement could not be approved, its merge request not
+merged, and main would be red on every push.
+
+## What it does
+
+- `codingStandard.enforce` in `factory.config.json` (default `true`, shown in
+  the empty field too). `false` makes the standard report only: the check runs
+  as before and writes its report, the status is `reported` (report.md:
+  "REPORTED (not enforced: enforce is false in factory.config.json)"), and
+  the gate and CI pass. Waiver problems and every violation stay listed.
+- `factory new … --report-only`, `factory standard use … --report-only`, and
+  `--enforce` to turn it back; `standard use` from the config keeps the flag.
+- AGENTS.md says so when it is report only, and that new and changed code
+  keeps the rules all the same; the requirement draft's standard line says
+  "report only".
 
 ## Acceptance Criteria
 
-<!-- Add one acceptance criterion per bullet. -->
+- With `enforce: false` the check exits 0 with the same violations, status
+  `reported`; with `true` it fails as before.
+- `standard use --report-only` writes `enforce: false`, a use from the config
+  keeps it, `--enforce` sets it back; AGENTS.md says report only.

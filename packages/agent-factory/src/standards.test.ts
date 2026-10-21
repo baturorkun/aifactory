@@ -125,14 +125,14 @@ test('import writes rules.json, a rules.md per group and the index, the same twi
 
     // A C project with two of the four groups.
     const { projectRoot } = createTargetProject('fw', { dir: root, template: 'c', standard: 'std', groups: ['misra', 'bytecraft'], standardsPath: standards });
-    assert.deepEqual(readCodingStandard(projectRoot), { id: 'std', version: 'Rev.AA', groups: ['misra', 'bytecraft'], profile: 'default', rules: 3 });
+    assert.deepEqual(readCodingStandard(projectRoot), { id: 'std', version: 'Rev.AA', groups: ['misra', 'bytecraft'], profile: 'default', rules: 3, enforce: true });
     const index = readFileSync(join(projectRoot, 'coding-standard', 'index.md'), 'utf8');
     assert.match(index, /groups misra, bytecraft, 3 rules/);
     assert.doesNotMatch(index, /A-001/);
     assert.ok(existsSync(join(projectRoot, 'coding-standard', 'waivers.yaml')));
     const config = JSON.parse(readFileSync(join(projectRoot, 'factory.config.json'), 'utf8'));
     // The choice with the project's other settings (RQ-0071); coding-standard/ has what is made from it.
-    assert.deepEqual(config.codingStandard, { id: 'std', version: 'Rev.AA', groups: ['misra', 'bytecraft'], profile: 'default' });
+    assert.deepEqual(config.codingStandard, { id: 'std', version: 'Rev.AA', groups: ['misra', 'bytecraft'], profile: 'default', enforce: true });
     assert.ok(!existsSync(join(projectRoot, 'coding-standard', 'standard.json')));
     assert.deepEqual(config.rag.grounding.excludePaths, ['requirements/**', 'handoffs/**', 'runs/**', 'std/do178c.rules.md', 'std/arm-m3.rules.md']);
     assert.ok(config.targetProject.allowedPaths.includes('coding-standard'));
@@ -166,13 +166,13 @@ test('a project made without a standard takes one with standard use, and a secon
     assert.equal(readCodingStandard(projectRoot), undefined);
     // RQ-0071: the place is there, empty: nothing in force, no coding-standard/ yet.
     const configPath = join(projectRoot, 'factory.config.json');
-    assert.deepEqual(JSON.parse(readFileSync(configPath, 'utf8')).codingStandard, { id: '', version: '', groups: [], profile: 'default' });
+    assert.deepEqual(JSON.parse(readFileSync(configPath, 'utf8')).codingStandard, { id: '', version: '', groups: [], profile: 'default', enforce: true });
     assert.ok(!existsSync(join(projectRoot, 'coding-standard')));
     assert.throws(() => useCodingStandard(projectRoot, { standardsPath: standards }), /No standard named: give one .* or write codingStandard\.id and \.groups in factory\.config\.json/);
     writeFileSync(join(projectRoot, '.env'), 'RAG_SOURCE_IDS=fileserver\n');
 
     const record = useCodingStandard(projectRoot, { standard: 'std', groups: ['misra'], standardsPath: standards });
-    assert.deepEqual(record, { id: 'std', version: 'Rev.AA', groups: ['misra'], profile: 'default', rules: 2 });
+    assert.deepEqual(record, { id: 'std', version: 'Rev.AA', groups: ['misra'], profile: 'default', rules: 2, enforce: true });
     assert.match(readFileSync(join(projectRoot, '.env'), 'utf8'), /^RAG_SOURCE_IDS=fileserver,coding-standards$/m);
     const agents = readFileSync(join(projectRoot, 'AGENTS.md'), 'utf8');
     assert.equal(agents.match(/^## Coding Standard$/gm)?.length, 1);
@@ -189,8 +189,14 @@ test('a project made without a standard takes one with standard use, and a secon
     // The choice written in the config by hand, then standard use with no arguments applies it.
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: { ...config.codingStandard, groups: ['bytecraft'], profile: 'default' } }));
-    assert.deepEqual(useCodingStandard(projectRoot, { standardsPath: standards }), { id: 'std', version: 'Rev.AA', groups: ['bytecraft'], profile: 'default', rules: 1 });
+    assert.deepEqual(useCodingStandard(projectRoot, { standardsPath: standards }), { id: 'std', version: 'Rev.AA', groups: ['bytecraft'], profile: 'default', rules: 1, enforce: true });
     assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(projectRoot, 'coding-standard', 'rules.json'), 'utf8')).groups), ['bytecraft']);
+    // Report only (RQ-0074): recorded in the config, kept by a use from the config, said in AGENTS.md.
+    assert.equal(useCodingStandard(projectRoot, { enforce: false, standardsPath: standards }).enforce, false);
+    assert.equal(JSON.parse(readFileSync(configPath, 'utf8')).codingStandard.enforce, false);
+    assert.equal(useCodingStandard(projectRoot, { standardsPath: standards }).enforce, false, 'a use from the config keeps it');
+    assert.match(readFileSync(join(projectRoot, 'AGENTS.md'), 'utf8'), /report only \(`enforce: false` in factory\.config\.json\): violations are reported and do not fail the gate, but code you write or change keeps the rules/);
+    assert.equal(useCodingStandard(projectRoot, { enforce: true, standardsPath: standards }).enforce, true);
     assert.throws(() => useCodingStandard(join(root, 'nowhere'), { standard: 'std', standardsPath: standards }), /ENOENT|no such file/i);
   } finally {
     rmSync(root, { recursive: true, force: true });

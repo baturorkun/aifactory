@@ -26,8 +26,10 @@ export type NewProjectOptions = {
   labInventoryPath?: string;
   /** c and embedded: the coding standard (standards/<id>) the project follows (RQ-0052). */
   standard?: string;
-  /** The standard's groups in force; all of them when omitted. */
+  /** The standard's groups in force; required with a standard (RQ-0071). */
   groups?: string[];
+  /** false: report the violations, do not fail on them (RQ-0074). */
+  enforce?: boolean;
   /** How strictly: default, or dal-a. */
   profile?: string;
   /** Where the imported standards are; the default is aifactory's standards/. */
@@ -3406,7 +3408,7 @@ export function writeEmptyCodingStandard(projectRoot: string): void {
 // section added or replaced.
 // With no id and no groups given, the choice written in factory.config.json
 // is the one applied: edit the field, then `factory standard use` (RQ-0071).
-export function useCodingStandard(projectRoot: string, options: { standard?: string; groups?: string[]; profile?: string; standardsPath?: string }): CodingStandard {
+export function useCodingStandard(projectRoot: string, options: { standard?: string; groups?: string[]; profile?: string; enforce?: boolean; standardsPath?: string }): CodingStandard {
   const config = JSON.parse(readFileSync(resolve(projectRoot, 'factory.config.json'), 'utf8')) as { targetProject?: { profile?: string } };
   const profile = config.targetProject?.profile;
   if (profile !== 'c' && profile !== 'embedded') throw new Error(`A coding standard applies to a c or embedded project; this one is "${profile ?? 'unknown'}".`);
@@ -3419,6 +3421,7 @@ export function useCodingStandard(projectRoot: string, options: { standard?: str
     standard,
     groups: options.groups && options.groups.length > 0 ? options.groups : fromConfig ? written?.groups : undefined,
     profile: options.profile ?? (fromConfig ? written?.profile : undefined),
+    enforce: options.enforce ?? (fromConfig ? written?.enforce : undefined),
   });
   if (!chosen) throw new Error('--standard <id> names the standard.');
   applyCodingStandard(projectRoot, chosen);

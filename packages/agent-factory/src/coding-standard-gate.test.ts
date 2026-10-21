@@ -168,6 +168,20 @@ test('the check reports the violations by rule, honours waivers, and refuses an 
     assert.equal(run.status, 0, run.stdout + run.stderr);
     assert.match(run.stdout, /CODING STANDARD: passed — 0 violation\(s\), 4 waived/);
 
+    // Report only (RQ-0074): the same violations reported, the check passes.
+    const reportConfigPath = join(projectRoot, 'factory.config.json');
+    const reportConfig = JSON.parse(readFileSync(reportConfigPath, 'utf8'));
+    writeFileSync(join(projectRoot, 'coding-standard', 'waivers.yaml'), 'schema: 1\nwaivers: []\n');
+    writeFileSync(reportConfigPath, JSON.stringify({ ...reportConfig, codingStandard: { ...reportConfig.codingStandard, enforce: false } }));
+    run = runStandard(projectRoot);
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, /CODING STANDARD: reported — 4 violation\(s\), 0 waived/);
+    assert.match(readFileSync(join(projectRoot, 'out', 'coding-standard', 'report.md'), 'utf8'), /\*\*REPORTED \(not enforced: enforce is false in factory\.config\.json\)\*\* — 4 violation\(s\)/);
+    writeFileSync(reportConfigPath, JSON.stringify(reportConfig));
+    writeFileSync(join(projectRoot, 'coding-standard', 'waivers.yaml'), [
+      'schema: 1', 'waivers:', ...waiver('C-084', 5, 'W-1', true), ...waiver('C-109', 5, 'W-2', false), ...waiver('C-123', 4, 'W-3', true), ...waiver('C-128', 4, 'W-4', true), '',
+    ].join('\n'));
+
     // Under dal-a the unreviewed waiver W-2 is refused.
     // The choice is factory.config.json's codingStandard (RQ-0071).
     const configPath = join(projectRoot, 'factory.config.json');

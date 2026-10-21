@@ -397,7 +397,7 @@ export function renderReport(standard, result, cppcheckVersion, databases) {
     '',
     `Groups ${standard.groups.join(', ')}, profile ${standard.profile}; ${result.counts.rules} rules in force. cppcheck ${cppcheckVersion} over ${databases.join(', ')}.`,
     '',
-    `**${result.status === 'passed' ? 'PASSED' : 'FAILED'}** — ${result.counts.violations} violation(s), ${result.counts.waived} waived, ${result.counts.byCppcheck} rules checked by cppcheck, ${result.counts.byLexical} by lexical checks, ${result.counts.manual} manual.`,
+    `**${result.status === 'passed' ? 'PASSED' : result.status === 'reported' ? 'REPORTED (not enforced: enforce is false in factory.config.json)' : 'FAILED'}** — ${result.counts.violations} violation(s), ${result.counts.waived} waived, ${result.counts.byCppcheck} rules checked by cppcheck, ${result.counts.byLexical} by lexical checks, ${result.counts.manual} manual.`,
     '',
   ];
   if (result.waiverProblems.length > 0) lines.push('## Waivers refused', '', ...result.waiverProblems.map((problem) => `- ${problem}`), '');
@@ -467,6 +467,8 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
   const cppcheck = runCppcheck(root, databases, platform);
   const sources = projectSources(root, databases);
   const result = evaluate({ rules, profile: standard.profile, cppcheck, sources, root, waivers });
+  // Report only (RQ-0074): the violations are reported, the check does not fail.
+  if (standard.enforce === false && result.status === 'failed') result.status = 'reported';
 
   const outDir = join(root, options.out);
   mkdirSync(outDir, { recursive: true });
@@ -479,7 +481,7 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
   }
   for (const problem of result.waiverProblems) console.log(`  waiver: ${problem}`);
   console.log(`CODING STANDARD: ${result.status} — ${result.counts.violations} violation(s), ${result.counts.waived} waived; ${result.counts.byCppcheck} rules by cppcheck ${cppcheck.version}, ${result.counts.byLexical} lexical, ${result.counts.manual} manual (${options.out}/report.md)`);
-  return result.status === 'passed' ? 0 : 1;
+  return result.status === 'failed' ? 1 : 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
