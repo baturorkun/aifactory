@@ -1,0 +1,35 @@
+{
+  "runId": "20261021151841-RQ-0081",
+  "requirementId": "RQ-0081",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261021151841-RQ-0081/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-21T15:18:41.806Z",
+  "updatedAt": "2026-10-21T15:19:58.756Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-21T15:18:45.193Z",
+      "finishedAt": "2026-10-21T15:19:58.756Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "packages/agent-factory/src/requirement-lifecycle.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/template-delivery.test.ts",
+    "packages/agent-factory/src/template-delivery.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
