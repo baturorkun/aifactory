@@ -42,7 +42,7 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
       'common/boards/README.md', 'ip/README.md', 'boards/zedboard.yaml', 'scripts/flow.mjs', 'scripts/vivado-host.mjs',
       'designs/led_counter/project.tcl', 'designs/led_counter/src/counter.vhd', 'designs/led_counter/tb/tb_counter.vhd',
       'designs/led_counter/constraints/zedboard.xdc', 'designs/hello_ps/project.tcl', 'designs/hello_ps/tcl/bd.tcl',
-      'designs/hello_ps/sw/src/main.c', 'designs/hello_ps/sw/create_vitis.py', 'scripts/vitis_sw.py',
+      'designs/hello_ps/sw/src/main.c', 'designs/hello_ps/sw/create_vitis.py', 'scripts/vitis_sw.py', '.gitattributes',
     ]) {
       assert.ok(existsSync(join(project.root, path)), `${path} is there`);
     }

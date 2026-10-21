@@ -382,7 +382,12 @@ runs `pnpm check`, pushes and opens the merge request, whose pipeline runs the
 stages, and leaves the project on main. A project already current gets none,
 and while one template update is open no second is opened. aifactory keeps no
 list of projects: the project the command runs in is the one updated.
-`--local` writes the changes into the worktree only. aifactory sits next to
+`--local` writes the changes into the worktree only. Text files are compared
+with their line endings normalised, and the template brings a `.gitattributes`
+(`* text=auto eol=lf`, `.bat`/`.cmd` CRLF) so every checkout is LF, Windows
+too (RQ-0075); a change Git sees as none once written is no merge request.
+A project's Coding Standard section of AGENTS.md is kept: it is always the
+last section, the same for `factory new`, `standard use` and the update. aifactory sits next to
 its projects, so an embedded project's `pnpm factory -- <command>` (the script
 `factory`, `node ../aifactory/packages/agent-factory/bin/factory.js`) reaches
 it on every machine. The scripts, the flow, the

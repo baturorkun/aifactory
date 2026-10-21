@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFi
 import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
 import { embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
-import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, EMPTY_CODING_STANDARD, chooseStandard, codingStandardChoice, configuredChoice, codingStandardGuidelines, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
+import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, EMPTY_CODING_STANDARD, chooseStandard, codingStandardChoice, configuredChoice, withCodingStandardSection, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
 
@@ -3157,7 +3157,6 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       '- Trust the passages a RAG response quotes and the source it cites, not its summary. Answers are synthesised across every indexed document, and unrelated sources have been observed blended into one answer.',
       '- Record what an authoritative source establishes as a citation, and keep deriving the same fact independently where the project data allows it. Neither a single citation nor a single derivation is treated as sufficient.',
       '',
-      ...(chosenStandard ? codingStandardGuidelines(codingStandardRecord(chosenStandard)) : []),
       ...(!options.simulator && isCTemplate(options.template)
         ? [
             '## Building and Testing (C11, CMake)',
@@ -3354,6 +3353,9 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
 // files left out of retrieval.
 function applyCodingStandard(projectRoot: string, chosen: ChosenStandard): void {
   writeCodingStandard(projectRoot, chosen);
+  const agentsPath = resolve(projectRoot, 'AGENTS.md');
+  const agents = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '# Agent Guidelines\n\n';
+  writeFileSync(agentsPath, withCodingStandardSection(agents, codingStandardRecord(chosen)), 'utf8');
   if (!existsSync(resolve(projectRoot, 'factory.config.json'))) return;
 
   const configPath = resolve(projectRoot, 'factory.config.json');
@@ -3425,12 +3427,5 @@ export function useCodingStandard(projectRoot: string, options: { standard?: str
   });
   if (!chosen) throw new Error('--standard <id> names the standard.');
   applyCodingStandard(projectRoot, chosen);
-  const record = codingStandardRecord(chosen);
-  const agentsPath = resolve(projectRoot, 'AGENTS.md');
-  const section = codingStandardGuidelines(record).join('\n');
-  const agents = existsSync(agentsPath) ? readFileSync(agentsPath, 'utf8') : '# Agent Guidelines\n\n';
-  const existing = /^## Coding Standard\n[\s\S]*?(?=^## |(?![\s\S]))/m;
-  const next = existing.test(agents) ? agents.replace(existing, section) : agents.replace(/\n*$/, '\n\n') + section;
-  writeFileSync(agentsPath, next, 'utf8');
-  return record;
+  return codingStandardRecord(chosen);
 }

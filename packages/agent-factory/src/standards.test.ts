@@ -9,6 +9,7 @@ import { deflateRawSync } from 'node:zlib';
 import test from 'node:test';
 import { readCodingStandard } from './coding-standard';
 import { createTargetProject, useCodingStandard } from './scaffold';
+import { updateEmbeddedProject } from './template-update';
 import { bodyItems, zipEntry } from './standards/docx';
 import { assignGroups, expandRanges, importStandard, loadStandard, parseRules, selectRules } from './standards/import';
 
@@ -197,6 +198,10 @@ test('a project made without a standard takes one with standard use, and a secon
     assert.equal(useCodingStandard(projectRoot, { standardsPath: standards }).enforce, false, 'a use from the config keeps it');
     assert.match(readFileSync(join(projectRoot, 'AGENTS.md'), 'utf8'), /report only \(`enforce: false` in factory\.config\.json\): violations are reported and do not fail the gate, but code you write or change keeps the rules/);
     assert.equal(useCodingStandard(projectRoot, { enforce: true, standardsPath: standards }).enforce, true);
+    // Template update keeps the Coding Standard section (RQ-0075): the template is made with the project's standard.
+    assert.ok(!updateEmbeddedProject(projectRoot).some((change) => change.path === 'AGENTS.md'), 'AGENTS.md unchanged');
+    updateEmbeddedProject(projectRoot, { write: true });
+    assert.match(readFileSync(join(projectRoot, 'AGENTS.md'), 'utf8'), /^## Coding Standard$/m);
     assert.throws(() => useCodingStandard(join(root, 'nowhere'), { standard: 'std', standardsPath: standards }), /ENOENT|no such file/i);
   } finally {
     rmSync(root, { recursive: true, force: true });

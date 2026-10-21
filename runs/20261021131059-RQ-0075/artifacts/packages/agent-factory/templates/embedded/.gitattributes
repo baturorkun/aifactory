@@ -1,0 +1,8 @@
+# Line endings (aifactory RQ-0075): every text file is LF in the repository
+# and in every checkout, Windows too. Vivado, Tcl and shell scripts want LF,
+# and `factory template update` then sees no difference made by line endings
+# alone (Git's core.autocrlf on Windows checks files out with CRLF otherwise).
+* text=auto eol=lf
+# Windows batch files keep CRLF, as cmd.exe expects.
+*.bat text eol=crlf
+*.cmd text eol=crlf
