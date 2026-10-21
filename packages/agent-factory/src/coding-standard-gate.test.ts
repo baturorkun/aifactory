@@ -100,13 +100,28 @@ test('a C project with a standard gets the gate command, the script and the CI j
     const ci = readFileSync(join(projectRoot, '.gitlab-ci.yml'), 'utf8');
     assert.match(ci, /\ncoding_standard:\n {2}stage: test\n {2}image: "\$C_BUILD_IMAGE"/);
     assert.match(ci, /- job: c_build\n {6}artifacts: true/);
-    assert.match(ci, /exists:\n {8}- coding-standard\/rules\.json/);
+    // RQ-0076: no exists rule; the script says first whether there is anything to check.
+    assert.doesNotMatch(ci.slice(ci.indexOf('\ncoding_standard:')), /exists:/);
+    assert.match(ci, /- code=0; node scripts\/coding-standard\.mjs --in-force \|\| code=\$\?; if \[ "\$code" -eq 10 \]; then exit 0; elif \[ "\$code" -ne 0 \]; then exit "\$code"; fi\n {4}- if ! command -v cppcheck/);
     assert.match(ci, /apt-get install -y --no-install-recommends cppcheck/);
 
     const plain = createTargetProject('plain', { dir: root, template: 'c', standardsPath: standards });
     const plainConfig = JSON.parse(readFileSync(join(plain.projectRoot, 'factory.config.json'), 'utf8'));
-    assert.equal(plainConfig.targetProject.commands.codingStandard, undefined, 'no standard, no gate command');
-    assert.match(readFileSync(join(plain.projectRoot, '.gitlab-ci.yml'), 'utf8'), /coding_standard:/, 'the job is there, gated by exists');
+    // RQ-0076: the gate and the job are there with no standard; the check says there is nothing to check.
+    assert.equal(plainConfig.targetProject.commands.codingStandard, 'pnpm standard');
+    assert.match(readFileSync(join(plain.projectRoot, '.gitlab-ci.yml'), 'utf8'), /coding_standard:/);
+    const none = spawnSync(process.execPath, [join(plain.projectRoot, 'scripts', 'coding-standard.mjs'), '--in-force'], { cwd: plain.projectRoot, encoding: 'utf8' });
+    assert.equal(none.status, 10, none.stderr);
+    assert.match(none.stdout, /no coding standard chosen/);
+    const plainRun = spawnSync(process.execPath, [join(plain.projectRoot, 'scripts', 'coding-standard.mjs')], { cwd: plain.projectRoot, encoding: 'utf8' });
+    assert.equal(plainRun.status, 0, 'the gate passes with nothing to check');
+    const chosen = spawnSync(process.execPath, [join(projectRoot, 'scripts', 'coding-standard.mjs'), '--in-force'], { cwd: projectRoot, encoding: 'utf8' });
+    assert.equal(chosen.status, 0);
+    // A standard named by hand, its rules never made: the check stops, it does not pass silently.
+    writeFileSync(join(plain.projectRoot, 'factory.config.json'), JSON.stringify({ ...plainConfig, codingStandard: { id: 'std', version: 'Rev.AA', groups: ['misra'], profile: 'default', enforce: true } }));
+    const forgotten = spawnSync(process.execPath, [join(plain.projectRoot, 'scripts', 'coding-standard.mjs')], { cwd: plain.projectRoot, encoding: 'utf8' });
+    assert.equal(forgotten.status, 2);
+    assert.match(forgotten.stderr + forgotten.stdout, /coding-standard\/rules\.json is missing for std: run pnpm factory -- standard use/);
 
     const embedded = createTargetProject('fpga', { dir: root, template: 'embedded', standard: 'std', groups: ALL_GROUPS, standardsPath: standards });
     const embeddedCi = readFileSync(join(embedded.projectRoot, '.gitlab-ci.yml'), 'utf8');

@@ -45,7 +45,8 @@ for (const [template, source, header, standard] of [['c', 'c', 'h', 'set(CMAKE_C
         targetProject: { profile: string; commands: Record<string, string>; allowedPaths: string[] };
       };
       assert.equal(config.targetProject.profile, template);
-      assert.deepEqual(config.targetProject.commands, { build: 'pnpm build', test: 'pnpm test' });
+      // codingStandard: in every c project, passing while no standard is chosen (RQ-0076).
+      assert.deepEqual(config.targetProject.commands, { build: 'pnpm build', test: 'pnpm test', codingStandard: 'pnpm standard' });
       assert.deepEqual(config.targetProject.allowedPaths, ['src', 'include', 'tests', 'cmake', 'CMakeLists.txt', '.clang-format']);
       const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
       assert.equal(scripts.build, 'cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel');

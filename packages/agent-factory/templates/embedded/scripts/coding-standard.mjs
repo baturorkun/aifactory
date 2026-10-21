@@ -40,6 +40,7 @@ export function parseArguments(argv) {
     if (arg === '--compile-commands') options.compileCommands.push(argv[++index]);
     else if (arg === '--platform') options.platform = argv[++index];
     else if (arg === '--out') options.out = argv[++index];
+    else if (arg === '--in-force') options.inForce = true;
     else if (arg === '--help' || arg === '-h') options.help = true;
     else throw new CheckError(`Unknown argument "${arg}".`);
   }
@@ -440,6 +441,13 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
   const legacyPath = join(root, STANDARD_DIR, 'standard.json');
   const written = existsSync(configPath) ? readJson(configPath).codingStandard : undefined;
   const chosen = written?.id && written?.groups?.length > 0 ? written : undefined;
+  // CI asks first whether there is anything to check (RQ-0076): 0 a standard
+  // is chosen, 10 none, so cppcheck is installed only when it is needed.
+  if (options.inForce) {
+    const inForce = Boolean(chosen) || (!written && existsSync(legacyPath));
+    console.log(inForce ? 'coding-standard: a coding standard is chosen.' : 'coding-standard: no coding standard chosen (codingStandard in factory.config.json is empty); nothing to check.');
+    return inForce ? 0 : 10;
+  }
   if (!chosen && (written || !existsSync(legacyPath))) {
     console.log('coding-standard: this project follows no coding standard (codingStandard in factory.config.json names none); nothing to check.');
     return 0;
@@ -484,7 +492,9 @@ export async function main(argv = process.argv.slice(2), root = PROJECT_ROOT) {
   return result.status === 'failed' ? 1 : 0;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Compared as real paths, as flow.mjs does: a symlinked path (macOS /var) for
+// argv[1] would skip main() and exit 0 having checked nothing (RQ-0076).
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
   main().then((code) => process.exit(code)).catch((error) => {
     console.error(`CODING STANDARD FAILED: ${error.message}`);
     process.exit(error.exitCode ?? 2);

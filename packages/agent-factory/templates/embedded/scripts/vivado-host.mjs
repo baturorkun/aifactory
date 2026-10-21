@@ -35,7 +35,9 @@ export const PROJECT_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)
 
 const EXCLUDED_TOP_LEVEL = new Set(['.env', '.git', '.DS_Store', 'node_modules', 'out', 'references', 'runs', 'handoffs']);
 // Left out of the sources at any depth, as tar's --exclude does.
-const EXCLUDED_NAMES = ['.git', '.env', '.DS_Store', '._*', '__MACOSX', 'node_modules', 'out', 'runs', 'handoffs', 'references', '*.log'];
+// __pycache__: Vitis' Python leaves one beside scripts/vitis_sw.py on the
+// builder; it is no source, here or there (RQ-0076).
+const EXCLUDED_NAMES = ['.git', '.env', '.DS_Store', '._*', '__MACOSX', 'node_modules', 'out', 'runs', 'handoffs', 'references', '*.log', '__pycache__'];
 const excludedName = (name) => EXCLUDED_NAMES.some((pattern) => (pattern.startsWith('*') ? name.endsWith(pattern.slice(1))
   : pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : name === pattern));
 
@@ -303,6 +305,7 @@ foreach ($Entry in $Entries) {
   elseif ([IO.Directory]::Exists($Root)) {
     foreach ($File in [IO.Directory]::GetFiles($Root, '*', [IO.SearchOption]::AllDirectories)) {
       $Relative = $File.Substring($Base.Length + 1).Replace([char]92, [char]47)
+      if ($Relative -match '(^|/)__pycache__/') { continue }
       if (-not $Wanted.ContainsKey($Relative)) { $Stale[$Relative] = $true }
     }
   }
