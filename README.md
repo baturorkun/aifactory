@@ -462,7 +462,12 @@ are listed as manual review. A finding is fixed or waived in
 `coding-standard/waivers.yaml` with its reason (profile `dal-a`: reviewer and
 date too); inline suppressions are ignored. The report is
 `out/coding-standard/report.md` and `report.json`; in CI the `coding_standard`
-job runs after the build in a project that has `coding-standard/rules.json`.
+job runs after the build in every c and embedded project (RQ-0076): it asks
+`scripts/coding-standard.mjs --in-force` first, passes when no standard is
+chosen, and stops when one is chosen whose rules were never made (`standard
+use` not run); cppcheck is installed only when there is something to check.
+The `codingStandard` gate is in every such project too, passing with nothing
+to check.
 
 Which phases a requirement goes through is chosen when it is created:
 `requirement new "<title>" --phases sim,build` (spec is always one), or, in a

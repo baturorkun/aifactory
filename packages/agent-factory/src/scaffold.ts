@@ -112,10 +112,11 @@ function cBuildJobs(projectName: string): string[] {
 }
 
 // The coding standard check (RQ-0053), after the build that leaves the compile
-// database, only in a project that follows a standard (coding-standard/
-// rules.json exists, made from factory.config.json's codingStandard); cppcheck comes from apt. The report is an artifact.
+// database. In every c and embedded project (RQ-0076): the job asks the
+// script first, which passes it when factory.config.json chooses no standard
+// and stops it when it chooses one whose rules were not made; cppcheck comes
+// from apt only when there is something to check. The report is an artifact.
 function codingStandardJob(projectName: string, embedded: boolean): string[] {
-  const exists = ['      exists:', '        - coding-standard/rules.json'];
   return [
     '',
     'coding_standard:',
@@ -126,10 +127,10 @@ function codingStandardJob(projectName: string, embedded: boolean): string[] {
     '  needs:',
     `    - job: ${embedded ? 'embedded_build' : 'c_build'}`,
     '      artifacts: true',
-    '  before_script:',
+    '  script:',
+    '    - code=0; node scripts/coding-standard.mjs --in-force || code=$?; if [ "$code" -eq 10 ]; then exit 0; elif [ "$code" -ne 0 ]; then exit "$code"; fi',
     '    - if ! command -v cppcheck >/dev/null 2>&1; then apt-get update && apt-get install -y --no-install-recommends cppcheck; fi',
     '    - cppcheck --version',
-    '  script:',
     '    - node scripts/coding-standard.mjs',
     '  artifacts:',
     `    name: "${projectName}-coding_standard-$CI_COMMIT_SHORT_SHA"`,
@@ -139,13 +140,10 @@ function codingStandardJob(projectName: string, embedded: boolean): string[] {
     '      - out/coding-standard/',
     '  rules:',
     "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'",
-    ...exists,
     "    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'",
     '      when: never',
     "    - if: '$CI_COMMIT_BRANCH'",
-    ...exists,
     "    - if: '$CI_COMMIT_TAG'",
-    ...exists,
   ];
 }
 
@@ -3399,9 +3397,10 @@ function applyCodingStandard(projectRoot: string, chosen: ChosenStandard): void 
 export function writeEmptyCodingStandard(projectRoot: string): void {
   const configPath = resolve(projectRoot, 'factory.config.json');
   if (!existsSync(configPath)) return;
-  const config = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
-  if (config.codingStandard !== undefined) return;
-  writeFileSync(configPath, JSON.stringify({ ...config, codingStandard: EMPTY_CODING_STANDARD }, null, 2) + '\n', 'utf8');
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as { targetProject?: { commands?: Record<string, string> }; codingStandard?: unknown };
+  // The gate is there too (RQ-0076): with no standard it passes, saying so.
+  const targetProject = { ...(config.targetProject ?? {}), commands: { ...(config.targetProject?.commands ?? {}), codingStandard: 'pnpm standard' } };
+  writeFileSync(configPath, JSON.stringify({ ...config, targetProject, codingStandard: config.codingStandard ?? EMPTY_CODING_STANDARD }, null, 2) + '\n', 'utf8');
 }
 
 // A project made before it had a standard, or changing its groups, takes one

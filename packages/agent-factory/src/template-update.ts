@@ -82,6 +82,11 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
         merged.push(`commands.${name}`);
       }
     }
+    // The coding standard gate: added where missing (RQ-0076), a project's own never changed.
+    if (commands.codingStandard === undefined && freshCommands.codingStandard !== undefined) {
+      commands.codingStandard = freshCommands.codingStandard;
+      merged.push('commands.codingStandard');
+    }
     const paths = new Set([...((target.allowedPaths ?? []) as string[]), ...(freshTarget.allowedPaths as string[])]);
     if (paths.size !== ((target.allowedPaths ?? []) as string[]).length) merged.push('allowedPaths');
     const timeout = Math.max(Number(target.commandTimeoutMs ?? 0), Number(freshTarget.commandTimeoutMs));

@@ -90,6 +90,7 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     assert.equal(config.targetProject.profile, 'embedded');
     assert.deepEqual(config.targetProject.commands, {
       designCheck: 'pnpm check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw', twinTest: 'pnpm twin', boardTest: 'pnpm board',
+      codingStandard: 'pnpm standard', // RQ-0076: there with no standard too, passing
     });
     assert.ok(config.targetProject.commandTimeoutMs >= 3_600_000, 'a project-mode build fits in the gate timeout');
     assert.equal(config.requirementDefaults.kind, 'embedded');
@@ -983,6 +984,16 @@ test('the sources go to the builder only as they change: the diff and sync steps
     assert.deepEqual(repaired, { needed: [flow], removed: 1 });
     assert.ok(sameAsHere(flow));
     assert.ok(!existsSync(join(copy, 'scripts/stray.tcl')));
+
+    // Python's __pycache__ beside scripts/vitis_sw.py on the builder is no source: kept, not counted (RQ-0076).
+    mkdirSync(join(copy, 'scripts/__pycache__'), { recursive: true });
+    writeFileSync(join(copy, 'scripts/__pycache__/vitis_sw.cpython-313.pyc'), 'bytecode');
+    assert.deepEqual(await sync(), { needed: [], removed: 0 });
+    assert.ok(existsSync(join(copy, 'scripts/__pycache__/vitis_sw.cpython-313.pyc')));
+    mkdirSync(join(project.root, 'scripts/__pycache__'), { recursive: true });
+    writeFileSync(join(project.root, 'scripts/__pycache__/local.pyc'), 'bytecode');
+    assert.ok(!host.sourceManifest(project.root).some((file) => file.path.includes('__pycache__')), 'nor one here');
+    rmSync(join(project.root, 'scripts/__pycache__'), { recursive: true });
 
     // The results in parts (RQ-0066): the collect step cuts the archive; the
     // parts joined in order are the archive, and it unpacks to what was there.
