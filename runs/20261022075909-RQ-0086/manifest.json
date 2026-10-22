@@ -4,9 +4,9 @@
   "executionMode": "handoff",
   "fast": false,
   "handoffPath": "handoffs/20261022075909-RQ-0086/handoff.md",
-  "status": "passed",
+  "status": "approved",
   "createdAt": "2026-10-22T07:59:09.851Z",
-  "updatedAt": "2026-10-22T08:00:48.995Z",
+  "updatedAt": "2026-10-22T08:00:57.296Z",
   "steps": [
     {
       "agent": "handoff",
@@ -30,5 +30,7 @@
     "lint": "passed",
     "tests": "passed",
     "security": "passed"
-  }
+  },
+  "approvedAt": "2026-10-22T08:00:57.297Z",
+  "approvedBy": "Batur Orkun"
 }
