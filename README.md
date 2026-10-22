@@ -273,6 +273,8 @@ designs/led_counter/     plain RTL, non-project mode, self-checking testbench
 designs/hello_ps/        Zynq PS block design (project mode) and a Vitis Unified app
 scripts/flow.mjs         every stage, here or on the Vivado host, and the design check
 scripts/vitis_sw.py      the Vitis workspace a design's sw/create_vitis.py hands its work to
+scripts/template-check.mjs  template-owned files as delivered, or overridden (RQ-0087)
+.factory/                template.lock.json: what the template delivered, the base of the next update
 ```
 
 `pnpm flow <stage> [design]` runs `check`, `sim`, `synth`, `impl`, `bit`,
@@ -393,7 +395,28 @@ its projects, so an embedded project's `pnpm factory -- <command>` (the script
 it on every machine. The scripts, the flow, the
 CI file, `.env.example` and `AGENTS.md` are replaced, the gates and package
 scripts merged, files a design lacks (such as `test.yaml`) added; design
-sources, board files, `.env` and requirements are left alone. `factory ci-variables --write` puts the host and
+sources, board files, `.env` and requirements are left alone. A
+template-owned file the project changed is never overwritten silently
+(RQ-0087): `.factory/template.lock.json` records the aifactory commit and the
+hash of every template-owned file as the update (or `factory new`) delivered
+it, and the update compares base (that delivery; for a file the project keeps,
+`.factory/template-base/<path>`; for a project from before the lock, its last
+`chore(template)` commit, else its first), the project's file and the
+template's: replaced when only the template moved, `kept` when only the
+project did, `merged` with `git merge-file` when both did, `conflict` (written
+with markers, the merge request left a draft) when that merge needs a hand.
+`factory template override <path> --reason "<why>"` keeps a change on purpose
+(`targetProject.templateOverrides` in factory.config.json) and runs
+`factory template propose`, which opens an aifactory issue with each file's
+reason and diff from the template's version (`GITHUB_TOKEN` from the project's
+`.env`, else aifactory's; without one the issue is written to
+`out/template-propose.md`); once the template has the change, the next update
+finds the file in sync and drops the override. `factory template status`
+lists each file as in sync, changed, overridden, conflict or missing; the
+project's `scripts/template-check.mjs` (`pnpm template:check`, the
+`templateCheck` gate of the spec phase) reports the same without aifactory,
+and the `template_check` CI job runs it with `--strict` on merge requests,
+failing on a change without an override or on conflict markers. `factory ci-variables --write` puts the host and
 board settings of `.env` into the GitLab project's CI/CD variables
 (`--with-secrets` adds the tokens, masked). The lab's shared settings
 (Vivado host, lab host, hw_server, xsdb, bot, the bot and twin tokens and the

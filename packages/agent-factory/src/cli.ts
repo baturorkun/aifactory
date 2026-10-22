@@ -66,6 +66,8 @@ import {
 import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
 import { updateEmbeddedProject, type TemplateChange } from './template-update';
+import { templateStatus } from './template-lock';
+import { overrideTemplateFile, proposeTemplateChanges, removeTemplateOverride } from './template-override';
 import { deliverTemplateUpdate, runProjectCheck, updateAifactory } from './template-delivery';
 import { ciVariables, labWideKeys, readDotEnv, writeCiVariables } from './ci-variables';
 import { labWideCiValues, loadLabInventory } from './lab-inventory';
@@ -1060,9 +1062,11 @@ standard
 // factory template update / factory ci-variables (RQ-0047)
 // ============================================================
 
-program
+const templateCommand = program
   .command('template')
-  .description('Embedded projects: bring the template-owned files up to this aifactory')
+  .description('Embedded projects: bring the template-owned files up to this aifactory');
+
+templateCommand
   .command('update')
   .description('Bring aifactory up to date, then open a merge request that takes this project to the current embedded template (from a clean, current main)')
   .option('--dry-run', 'Only list what would change; touch nothing', false)
@@ -1115,12 +1119,82 @@ program
       }
       listChanges(result.changes);
       console.log(chalk.green(`\n✓ ${result.changes.length} change(s) on ${result.branch}: ${result.url}`));
+      if (result.draft) console.log(chalk.yellow('  Files conflict: resolve them on that branch, then mark the merge request ready.'));
       console.log(chalk.dim('  Its pipeline runs the stages; merge it when they pass. This checkout stays on main.'));
     } catch (err) {
       console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
     }
   });
+
+// RQ-0087: a template-owned file kept changed on purpose, and sent back to aifactory.
+templateCommand
+  .command('status')
+  .description('List every template-owned file: in sync, changed, overridden, conflict or missing')
+  .action(() => {
+    try {
+      const root = resolve(loadConfig().targetProject.root ?? '.');
+      const { lock, files } = templateStatus(root);
+      if (!lock) {
+        console.log(chalk.yellow('No .factory/template.lock.json: the next template update writes it.'));
+        return;
+      }
+      for (const file of files) {
+        const why = file.override ? chalk.dim(`  (${file.override.reason}${file.override.issue ? `, ${file.override.issue}` : ''})`) : '';
+        const line = `  ${file.state.padEnd(10)} ${file.path}${why}`;
+        console.log(file.state === 'in sync' ? chalk.dim(line) : file.state === 'overridden' ? line : chalk.yellow(line));
+      }
+      const wrong = files.filter((file) => ['changed', 'missing', 'conflict'].includes(file.state)).length;
+      console.log(`\naifactory ${lock.aifactory}: ${files.length} template-owned file(s), ${wrong} changed without an override.`);
+      if (wrong > 0) console.log(chalk.dim('  Revert them, or keep one with: template override <path> --reason "<why>"'));
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+templateCommand
+  .command('override')
+  .description('Keep a template-owned file changed on purpose: template update keeps it, the templateCheck gate lets it through, and the change is proposed to aifactory')
+  .argument('<path>', 'The file, as .factory/template.lock.json names it (e.g. common/flow_lib.tcl)')
+  .option('--reason <text>', 'Why the project needs the change')
+  .option('--remove', 'Drop the override instead', false)
+  .option('--no-propose', 'Record it only; do not open the aifactory issue')
+  .action(async (path: string, opts: { reason?: string; remove: boolean; propose: boolean }) => {
+    try {
+      const root = resolve(loadConfig().targetProject.root ?? '.');
+      if (opts.remove) {
+        console.log(removeTemplateOverride(root, path) ? chalk.green(`✓ ${path}: override removed.`) : chalk.yellow(`${path} had no override.`));
+        return;
+      }
+      overrideTemplateFile(root, path, opts.reason ?? '');
+      console.log(chalk.green(`✓ ${path}: override recorded in factory.config.json.`));
+      if (opts.propose) await reportProposal(root, [path]);
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+templateCommand
+  .command('propose')
+  .description('Open an aifactory issue with the overridden files\' changes (all overrides when no path is given)')
+  .argument('[paths...]', 'Overridden files to propose')
+  .action(async (paths: string[]) => {
+    try {
+      await reportProposal(resolve(loadConfig().targetProject.root ?? '.'), paths);
+    } catch (err) {
+      console.error(chalk.red('Error:'), err instanceof Error ? err.message : String(err));
+      process.exitCode = 1;
+    }
+  });
+
+async function reportProposal(root: string, paths: string[]): Promise<void> {
+  const aifactoryRoot = process.env.AIFACTORY_HOME || resolve(__dirname, '../../..');
+  const result = await proposeTemplateChanges(root, { aifactoryRoot, paths });
+  if (result.url) console.log(chalk.green(`✓ Proposed to aifactory: ${result.url}`));
+  else console.log(chalk.yellow(`No GITHUB_TOKEN in the project's or aifactory's .env: the issue is written to ${result.file}; open it on aifactory by hand.`));
+}
 
 program
   .command('ci-variables')

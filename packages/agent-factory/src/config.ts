@@ -125,6 +125,7 @@ const TargetCommandsSchema = z.object({
   twinTest: z.string().optional(),
   boardTest: z.string().optional(),
   codingStandard: z.string().optional(),
+  templateCheck: z.string().optional(),
 });
 
 const TargetProjectSchema = z.object({
@@ -137,6 +138,9 @@ const TargetProjectSchema = z.object({
   // Which simulator models the device in a hardware-twin project. Recorded for
   // provenance; the actual command lives in commands.probeSimulatorRun.
   simulator: z.enum(['simics', 'renode']).optional(),
+  // Embedded: template-owned files the project keeps changed on purpose
+  // (RQ-0087), with why and the aifactory issue that proposes the change.
+  templateOverrides: z.record(z.object({ reason: z.string(), issue: z.string().optional() })).optional(),
 });
 
 const ProjectGuidelinesSchema = z.object({

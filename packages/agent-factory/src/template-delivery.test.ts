@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createTargetProject } from './scaffold';
+import { contentHash, LOCK_PATH } from './template-lock';
 import { bringMainUpToDate, deliverTemplateUpdate, runProjectCheck, TemplateDeliveryError, updateAifactory } from './template-delivery';
 import type { ChangeRequest, RepositoryPlatformAdapter } from './repository-platform/types';
 
@@ -60,7 +61,12 @@ function setup() {
     git(work, 'init', '-q', '-b', 'main', root);
     git(root, 'remote', 'add', 'origin', join(work, 'fw.git'));
   });
+  // The older template delivered it so (RQ-0087): its lock records the old file.
   appendFileSync(join(project.root, 'scripts/flow.mjs'), '\n// OLD-TEMPLATE-MARKER\n');
+  const lockPath = join(project.root, LOCK_PATH);
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+  lock.files['scripts/flow.mjs'] = contentHash('scripts/flow.mjs', readFileSync(join(project.root, 'scripts/flow.mjs')));
+  writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
   git(project.root, 'commit', '-q', '-am', 'older template');
   git(project.root, 'push', '-q', 'origin', 'main');
   return { work, aifactory, project, done: () => rmSync(work, { recursive: true, force: true }) };
@@ -78,7 +84,7 @@ test('template update opens a merge request with the template-owned changes and 
     assert.equal(result.status, 'opened');
     assert.equal(result.branch, `template/aifactory-${commit}`);
     assert.equal(result.url, 'http://gitlab/agentic/fw/-/merge_requests/8');
-    assert.deepEqual(result.changes, [{ kind: 'replace', path: 'scripts/flow.mjs' }]);
+    assert.deepEqual(result.changes, [{ kind: 'replace', path: 'scripts/flow.mjs' }, { kind: 'replace', path: LOCK_PATH }]);
     assert.deepEqual(checked, [result.branch], 'the check runs on the branch, with the new files');
     assert.equal(calls.draft?.sourceBranch, result.branch);
     assert.equal(calls.draft?.targetBranch, 'main');
@@ -99,6 +105,32 @@ test('template update opens a merge request with the template-owned changes and 
 
     // A second run while that merge request is open opens none.
     await assert.rejects(deliverTemplateUpdate(project.root, { aifactoryRoot: aifactory.root, adapter }), /A template update is already open on template\/aifactory-/);
+  } finally {
+    done();
+  }
+});
+
+test('a conflict opens the merge request as a draft, even when the check fails on its markers (RQ-0087)', async () => {
+  const { aifactory, project, done } = setup();
+  try {
+    // The project changed the very line the template dropped since.
+    const flow = join(project.root, 'scripts/flow.mjs');
+    writeFileSync(flow, readFileSync(flow, 'utf8').replace('// OLD-TEMPLATE-MARKER', '// THE-PROJECT-S-LINE'));
+    git(project.root, 'commit', '-q', '-am', 'a project change');
+    git(project.root, 'push', '-q', 'origin', 'main');
+    const { adapter, calls } = fakePlatform();
+    const result = await deliverTemplateUpdate(project.root, {
+      aifactoryRoot: aifactory.root,
+      adapter,
+      check: () => { throw new TemplateDeliveryError('the check fails on the markers'); },
+    });
+    assert.equal(result.status, 'opened');
+    assert.equal(result.draft, true);
+    assert.deepEqual(result.changes, [{ kind: 'conflict', path: 'scripts/flow.mjs' }, { kind: 'replace', path: '.factory/template.lock.json' }]);
+    assert.equal(calls.ready, undefined, 'left a draft');
+    assert.match(calls.draft?.description ?? '', /\*\*1 file\(s\) conflict\*\* \(`scripts\/flow\.mjs`\)/);
+    assert.match(git(project.root, 'show', `origin/${result.branch}:scripts/flow.mjs`), /^<{7} project\n+\/\/ THE-PROJECT-S-LINE\n={7}\n>{7} template$/m);
+    assert.equal(git(project.root, 'branch', '--show-current'), 'main');
   } finally {
     done();
   }
@@ -143,7 +175,7 @@ test('template update touches nothing unless the project is on a clean main that
 test('a project already on the template gets no branch and no merge request', async () => {
   const { aifactory, project, done } = setup();
   try {
-    git(project.root, 'checkout', '-q', 'HEAD~1', '--', 'scripts/flow.mjs');
+    git(project.root, 'checkout', '-q', 'HEAD~1', '--', 'scripts/flow.mjs', LOCK_PATH);
     git(project.root, 'commit', '-q', '-m', 'current template');
     git(project.root, 'push', '-q', 'origin', 'main');
     const { adapter, calls } = fakePlatform();
@@ -161,7 +193,7 @@ test('a project checked out with CRLF line endings (Windows core.autocrlf) is cu
   // their line endings, wrote them, and found nothing to commit.
   const { aifactory, project, done } = setup();
   try {
-    git(project.root, 'checkout', '-q', 'HEAD~1', '--', 'scripts/flow.mjs');
+    git(project.root, 'checkout', '-q', 'HEAD~1', '--', 'scripts/flow.mjs', LOCK_PATH);
     git(project.root, 'commit', '-q', '-m', 'current template');
     git(project.root, 'push', '-q', 'origin', 'main');
     git(project.root, 'config', 'core.autocrlf', 'true');

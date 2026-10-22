@@ -1,44 +1,90 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
+import { spawnSync } from 'child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { basename, dirname, join, relative, resolve } from 'path';
+import { basename, dirname, join } from 'path';
 import { readCodingStandard, withCodingStandardSection } from './coding-standard';
 import { createTargetProject } from './scaffold';
+import {
+  BASE_DIRECTORY, LOCK_PATH, TEMPLATE_ROOT, aifactoryCommit, contentHash, isTemplateOwned, normalised, readLock, readOverrides, templateFiles,
+  writeLock, type TemplateLock,
+} from './template-lock';
 
 // Brings an embedded project made from an older template up to this
 // aifactory's (RQ-0047). The template owns its scripts, the flow, the CI file
-// and the generated guidelines: those are replaced. A project owns its design
-// sources and board files: there only a file the template ships and the
-// project lacks is added (a design's test.yaml), nothing is overwritten. The
-// factory config and package scripts are merged, .gitignore gains the lines it
-// lacks. .env, requirements, runs and out/ are never touched.
+// and the generated guidelines; a project owns its design sources and board
+// files: there only a file the template ships and the project lacks is added
+// (a design's test.yaml), nothing is overwritten. The factory config and
+// package scripts are merged, .gitignore gains the lines it lacks. .env,
+// requirements, runs and out/ are never touched.
+//
+// A template-owned file is never overwritten silently (RQ-0087). With the
+// base (what the template last delivered, from the lock), mine (the
+// project's) and theirs (this template's): the project's file is replaced
+// when only the template moved, kept when only the project did, and merged
+// with `git merge-file` when both did; a merge that conflicts is written
+// with its markers for the merge request to resolve.
 
 export type TemplateChange =
-  | { kind: 'replace' | 'add'; path: string }
+  | { kind: 'replace' | 'add' | 'kept' | 'merged' | 'conflict'; path: string }
   | { kind: 'merge'; path: string; detail: string };
 
-const PROJECT_OWNED = ['designs/', 'boards/'];
-const GENERATED = ['.gitlab-ci.yml', '.env.example', 'AGENTS.md'];
-const MERGED_COMMANDS = ['designCheck', 'hdlSim', 'fpgaBuild', 'firmwareBuild', 'twinTest', 'boardTest'];
+const MERGED_COMMANDS = ['designCheck', 'templateCheck', 'hdlSim', 'fpgaBuild', 'firmwareBuild', 'twinTest', 'boardTest'];
 // codingStandard is the project's own (set by `standard use`), not the template's.
-
-function walk(root: string, directory = root, found: string[] = []): string[] {
-  for (const entry of readdirSync(directory)) {
-    const path = join(directory, entry);
-    if (statSync(path).isDirectory()) walk(root, path, found);
-    else found.push(relative(root, path).split('\\').join('/'));
-  }
-  return found;
-}
-
-// Text is compared with its line endings normalised: Git on Windows
-// (core.autocrlf) checks out with CRLF what the repository and the template
-// keep with LF, and that is no change (RQ-0075). A file with a NUL byte is
-// binary and compared byte for byte.
-const normalised = (data: Buffer) => (data.includes(0) ? data : Buffer.from(data.toString('utf8').replace(/\r\n/g, '\n'), 'utf8'));
-const same = (a: string, b: string) => existsSync(a) && existsSync(b) && normalised(readFileSync(a)).equals(normalised(readFileSync(b)));
+const TEMPLATE_COMMIT = /^chore\(template\): the aifactory embedded template at /;
 
 type JsonObject = Record<string, unknown>;
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as JsonObject;
+
+function gitOut(cwd: string, args: string[]): string | undefined {
+  const result = spawnSync('git', args, { cwd, encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 });
+  return result.status === 0 ? result.stdout.toString('utf8') : undefined;
+}
+function gitShow(cwd: string, commit: string, path: string): Buffer | undefined {
+  const result = spawnSync('git', ['show', `${commit}:${path}`], { cwd, maxBuffer: 64 * 1024 * 1024 });
+  return result.status === 0 ? result.stdout : undefined;
+}
+
+// Where the base of a file is read from, when no base copy holds it: the
+// commit that last wrote the lock; for a project from before the lock, its
+// last template update commit, else its first commit (the scaffold's).
+function baseCommit(projectRoot: string, lock: TemplateLock | undefined): string | undefined {
+  if (gitOut(projectRoot, ['rev-parse', '--verify', '--quiet', 'HEAD']) === undefined) return undefined;
+  if (lock) return gitOut(projectRoot, ['log', '-1', '--format=%H', '--', LOCK_PATH])?.trim() || undefined;
+  const subjects = gitOut(projectRoot, ['log', '--format=%H %s']) ?? '';
+  for (const line of subjects.split('\n')) {
+    const [commit, ...subject] = line.split(' ');
+    if (commit && TEMPLATE_COMMIT.test(subject.join(' '))) return commit;
+  }
+  return gitOut(projectRoot, ['rev-list', '--max-parents=0', 'HEAD'])?.trim().split('\n').pop() || undefined;
+}
+
+// `git merge-file` of mine with theirs over base, as LF text: the merged
+// text and whether it conflicts.
+function mergeFile(mine: Buffer, base: Buffer, theirs: Buffer): { text: Buffer; conflict: boolean } {
+  const scratch = mkdtempSync(join(tmpdir(), 'aifactory-merge-'));
+  try {
+    const files = ['mine', 'base', 'theirs'].map((name) => join(scratch, name));
+    [mine, base, theirs].forEach((data, index) => writeFileSync(files[index], normalised(data)));
+    const result = spawnSync('git', ['merge-file', '-p', '-L', 'project', '-L', 'base', '-L', 'template', ...files], { maxBuffer: 64 * 1024 * 1024 });
+    if (result.status === null || result.status < 0 || result.error) throw new Error(`git merge-file failed: ${String(result.stderr ?? result.error ?? '').trim()}`);
+    return { text: result.stdout, conflict: result.status > 0 };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+// The template's version of a file as the project last took it (the base
+// of a three-way merge), or undefined when nothing records it.
+export function templateBase(projectRoot: string, path: string, mine: Buffer, lock = readLock(projectRoot), commit = baseCommit(projectRoot, lock)): Buffer | undefined {
+  const copy = join(projectRoot, BASE_DIRECTORY, path);
+  if (existsSync(copy)) return readFileSync(copy);
+  // With a lock, a base is only what the lock recorded.
+  if (lock && lock.files[path] === undefined) return undefined;
+  if (lock && contentHash(path, mine) === lock.files[path]) return mine;
+  const shown = commit ? gitShow(projectRoot, commit, path) : undefined;
+  if (shown && lock && contentHash(path, shown) !== lock.files[path]) return undefined;
+  return shown;
+}
 
 export function updateEmbeddedProject(projectRoot: string, options: { write?: boolean; templateRoot?: string } = {}): TemplateChange[] {
   const config = readJson(join(projectRoot, 'factory.config.json'));
@@ -52,23 +98,84 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
     // as standard use writes it, so the update keeps it (RQ-0075).
     const freshAgents = join(fresh, 'AGENTS.md');
     writeFileSync(freshAgents, withCodingStandardSection(readFileSync(freshAgents, 'utf8'), readCodingStandard(projectRoot)), 'utf8');
-    const templateFiles = walk(join(options.templateRoot ?? resolve(__dirname, '../templates/embedded')));
     const changes: TemplateChange[] = [];
-    const copy = (path: string) => {
+    const write = (path: string, data: Buffer) => {
       if (!options.write) return;
       mkdirSync(dirname(join(projectRoot, path)), { recursive: true });
-      copyFileSync(join(fresh, path), join(projectRoot, path));
+      writeFileSync(join(projectRoot, path), data);
     };
 
-    for (const path of [...templateFiles, ...GENERATED]) {
-      const mine = join(projectRoot, path);
-      const theirs = join(fresh, path);
-      if (!existsSync(theirs) || same(mine, theirs)) continue;
-      const projectOwned = PROJECT_OWNED.some((prefix) => path.startsWith(prefix));
-      if (projectOwned && existsSync(mine)) continue;
-      changes.push({ kind: existsSync(mine) ? 'replace' : 'add', path });
-      copy(path);
+    const lock = readLock(projectRoot);
+    const commit = baseCommit(projectRoot, lock);
+    const read = (root: string, path: string) => (existsSync(join(root, path)) ? readFileSync(join(root, path)) : undefined);
+    const baseOf = (path: string, mine: Buffer) => templateBase(projectRoot, path, mine, lock, commit);
+    // The files kept different from the template: their template version is the next base.
+    const diverged = new Map<string, Buffer>();
+    const nextLock: TemplateLock = { aifactory: aifactoryCommit(), files: {} };
+
+    for (const path of templateFiles(options.templateRoot ?? TEMPLATE_ROOT)) {
+      const theirs = read(fresh, path);
+      if (!theirs) continue;
+      const mine = read(projectRoot, path);
+      if (!isTemplateOwned(path)) {
+        if (!mine) {
+          changes.push({ kind: 'add', path });
+          write(path, theirs);
+        }
+        continue;
+      }
+      nextLock.files[path] = contentHash(path, theirs);
+      if (!mine) {
+        changes.push({ kind: 'add', path });
+        write(path, theirs);
+        continue;
+      }
+      if (normalised(mine).equals(normalised(theirs))) continue;
+      const base = baseOf(path, mine);
+      // No base: a project from before the lock that Git cannot tell about is
+      // replaced as before; with a lock, a file it never delivered is the project's.
+      if (!base && !lock) {
+        changes.push({ kind: 'replace', path });
+        write(path, theirs);
+        continue;
+      }
+      if (base && normalised(mine).equals(normalised(base))) {
+        changes.push({ kind: 'replace', path });
+        write(path, theirs);
+        continue;
+      }
+      diverged.set(path, theirs);
+      if (base && normalised(theirs).equals(normalised(base))) {
+        changes.push({ kind: 'kept', path });
+        continue;
+      }
+      const merged = mergeFile(mine, base ?? Buffer.alloc(0), theirs);
+      if (!merged.conflict && merged.text.equals(normalised(theirs))) diverged.delete(path);
+      changes.push({ kind: merged.conflict ? 'conflict' : 'merged', path });
+      write(path, merged.text);
     }
+
+    // The lock and the base copies: written when what they record moved.
+    const copyOf = (path: string) => read(projectRoot, `${BASE_DIRECTORY}/${path}`);
+    const recorded = new Set([...Object.keys(lock?.files ?? {}), ...Object.keys(nextLock.files)]);
+    const lockMoved = !lock
+      || JSON.stringify(Object.entries(lock.files).sort()) !== JSON.stringify(Object.entries(nextLock.files).sort())
+      || [...recorded].some((path) => {
+        const theirs = diverged.get(path);
+        const copy = copyOf(path);
+        return theirs ? !copy?.equals(normalised(theirs)) : copy !== undefined;
+      });
+    if (lockMoved) {
+      changes.push({ kind: lock ? 'replace' : 'add', path: LOCK_PATH });
+      if (options.write) {
+        rmSync(join(projectRoot, BASE_DIRECTORY), { recursive: true, force: true });
+        for (const [path, theirs] of diverged) write(`${BASE_DIRECTORY}/${path}`, normalised(theirs));
+        writeLock(projectRoot, nextLock);
+      }
+    }
+    // An override on a file that is the template's again has done its work.
+    const overrides = readOverrides(projectRoot);
+    const settled = Object.keys(overrides).filter((path) => nextLock.files[path] !== undefined && !diverged.has(path));
 
     // factory.config.json: the embedded gates, paths, timeout and default phases.
     const freshConfig = readJson(join(fresh, 'factory.config.json'));
@@ -101,10 +208,19 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
     // (RQ-0071); a project's own choice is never touched.
     const codingStandard = config.codingStandard ?? freshConfig.codingStandard;
     if (config.codingStandard === undefined && freshConfig.codingStandard !== undefined) merged.push('codingStandard');
+    for (const path of settled) merged.push(`templateOverrides.${path} removed`);
+    const templateOverrides = Object.fromEntries(Object.entries(overrides).filter(([path]) => !settled.includes(path)));
     if (merged.length > 0) {
       changes.push({ kind: 'merge', path: 'factory.config.json', detail: merged.join(', ') });
       if (options.write) {
-        const next = { ...config, targetProject: { ...target, commands, allowedPaths: [...paths], commandTimeoutMs: timeout }, requirementDefaults: defaults, ...(codingStandard !== undefined ? { codingStandard } : {}) };
+        const rest = { ...target };
+        delete rest.templateOverrides;
+        const next = {
+          ...config,
+          targetProject: { ...rest, commands, allowedPaths: [...paths], commandTimeoutMs: timeout, ...(Object.keys(templateOverrides).length > 0 ? { templateOverrides } : {}) },
+          requirementDefaults: defaults,
+          ...(codingStandard !== undefined ? { codingStandard } : {}),
+        };
         writeFileSync(join(projectRoot, 'factory.config.json'), JSON.stringify(next, null, 2) + '\n');
       }
     }

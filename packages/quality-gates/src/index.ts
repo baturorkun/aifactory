@@ -48,6 +48,8 @@ export interface TargetGateOptions {
     firmwareBuild?: string;
     twinTest?: string;
     boardTest?: string;
+    // The template-owned files unchanged or marked (RQ-0087), in the spec phase.
+    templateCheck?: string;
     // The coding standard check (RQ-0053): `pnpm standard` when the project follows one.
     codingStandard?: string;
   };
@@ -455,7 +457,7 @@ function embeddedGates(
         reports.push({ gate, status: 'skipped', output: `Not run: the ${failedAt} phase failed.`, durationMs: 0 });
         continue;
       }
-      const command = commands[gate as 'designCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest' | 'boardTest' | 'codingStandard'];
+      const command = commands[gate as 'designCheck' | 'templateCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest' | 'boardTest' | 'codingStandard'];
       const report = commandGate(gate, command, targetRoot, undefined, timeoutMs);
       reports.push(report);
       if (report.status === 'failed') failedAt = phase;

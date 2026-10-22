@@ -89,7 +89,7 @@ test('the embedded template lays out the Vivado flow and two starting designs', 
     };
     assert.equal(config.targetProject.profile, 'embedded');
     assert.deepEqual(config.targetProject.commands, {
-      designCheck: 'pnpm check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw', twinTest: 'pnpm twin', boardTest: 'pnpm board',
+      designCheck: 'pnpm check', templateCheck: 'pnpm template:check', hdlSim: 'pnpm sim', fpgaBuild: 'pnpm run build', firmwareBuild: 'pnpm sw', twinTest: 'pnpm twin', boardTest: 'pnpm board',
       codingStandard: 'pnpm standard', // RQ-0076: there with no standard too, passing
     });
     assert.ok(config.targetProject.commandTimeoutMs >= 3_600_000, 'a project-mode build fits in the gate timeout');

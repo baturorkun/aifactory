@@ -226,6 +226,9 @@ export const GateResultsSchema = z.object({
   // design check (spec), the testbenches (sim), and the Vivado and Vitis
   // builds (build).
   designCheck: GateResultSchema.optional(),
+  // The template-owned files as the template delivered them, or marked as the
+  // project's (RQ-0087); with the design check, in the spec phase.
+  templateCheck: GateResultSchema.optional(),
   hdlSim: GateResultSchema.optional(),
   fpgaBuild: GateResultSchema.optional(),
   firmwareBuild: GateResultSchema.optional(),
@@ -268,7 +271,7 @@ export const EMBEDDED_PHASES: readonly EmbeddedPhase[] = EmbeddedPhaseSchema.opt
 // demand, every night) rather than on every change.
 export const DEFAULT_EMBEDDED_PHASES: readonly EmbeddedPhase[] = EMBEDDED_PHASES.filter((phase) => phase !== 'board');
 export const EMBEDDED_PHASE_GATES: Readonly<Record<EmbeddedPhase, readonly (keyof GateResults)[]>> = {
-  spec: ['designCheck'],
+  spec: ['designCheck', 'templateCheck'],
   sim: ['hdlSim'],
   build: ['fpgaBuild', 'firmwareBuild', 'codingStandard'],
   twin: ['twinTest'],

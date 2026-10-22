@@ -10,3 +10,5 @@ set TOP        system_wrapper
 set BD         tcl/bd.tcl
 set VITIS      unified
 set CPU        ps7_cortexa9_0
+# A design that uses the project's own IP names it: `set IPS {<ip> ...}`;
+# simulation then compiles ip/<ip>/hdl (in the order of its files.f) first.

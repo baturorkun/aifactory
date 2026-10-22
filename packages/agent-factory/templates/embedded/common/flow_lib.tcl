@@ -45,8 +45,14 @@ proc flow::main {root argv} {
     set out [file join $ROOT out $design]
 
     if {$stage eq "clean"} {
-        # Only this design's output, never a source.
-        file delete -force $out
+        # Only this design's output, never a source. The log of this very run
+        # (out/<design>/vivado-clean.log) is open, and Windows refuses to
+        # delete an open file: everything else goes.
+        if {[file isdirectory $out]} {
+            foreach entry [glob -nocomplain -directory $out *] {
+                if {[file tail $entry] ne "vivado-clean.log"} { file delete -force $entry }
+            }
+        }
         puts "CLEAN: out/$design removed"
         return
     }
@@ -128,12 +134,12 @@ proc flow::load_config {} {
     variable dir
     variable cfg
     namespace eval ::flow::project {}
-    foreach name {PART BOARD BOARD_PART MODE TOP BD VITIS} {
+    foreach name {PART BOARD BOARD_PART MODE TOP BD VITIS IPS} {
         catch {unset ::flow::project::$name}
     }
     namespace eval ::flow::project [list source [file join $dir project.tcl]]
-    set cfg [dict create BOARD "" BOARD_PART "" BD "" VITIS ""]
-    foreach name {PART BOARD BOARD_PART MODE TOP BD VITIS} {
+    set cfg [dict create BOARD "" BOARD_PART "" BD "" VITIS "" IPS ""]
+    foreach name {PART BOARD BOARD_PART MODE TOP BD VITIS IPS} {
         if {[info exists ::flow::project::$name]} {
             dict set cfg $name [set ::flow::project::$name]
         }
@@ -184,6 +190,31 @@ proc flow::files_in {subdir patterns} {
 }
 
 proc flow::hdl_sources {} { return [files_in src {*.vhd *.vhdl *.v *.sv}] }
+
+# The HDL of the design's own IP (project.tcl `set IPS {name ...}`), for
+# simulation: ip/<name>/hdl in the order of its files.f, else sorted.
+proc flow::ip_sources {} {
+    variable ROOT
+    set found {}
+    foreach ip [cfg IPS] {
+        set hdl [file join $ROOT ip $ip hdl]
+        if {![file isdirectory $hdl]} { error "IPS names '$ip' but ip/$ip/hdl does not exist" }
+        set list [file join $hdl files.f]
+        if {[file exists $list]} {
+            set fh [open $list r]
+            foreach line [split [read $fh] "\n"] {
+                set line [string trim $line]
+                if {$line ne "" && ![string match "#*" $line]} { lappend found [file normalize [file join $hdl $line]] }
+            }
+            close $fh
+        } else {
+            foreach file [lsort [glob -nocomplain -types f -directory $hdl *.vhd *.vhdl *.v *.sv]] {
+                lappend found [file normalize $file]
+            }
+        }
+    }
+    return $found
+}
 proc flow::constraints {} { return [files_in constraints {*.xdc}] }
 
 # ------------------------------------------------------------
@@ -323,7 +354,7 @@ proc flow::run_sim {} {
     file delete -force $simdir
     file mkdir $simdir
 
-    set all [concat [hdl_sources] [files_in tb {*.vhd *.vhdl *.v *.sv}]]
+    set all [concat [ip_sources] [hdl_sources] [files_in tb {*.vhd *.vhdl *.v *.sv}]]
     set vhdl [lsearch -all -inline -regexp $all {\.vhdl?$}]
     set verilog [lsearch -all -inline -regexp $all {\.v$}]
     set sv [lsearch -all -inline -regexp $all {\.sv$}]
