@@ -87,6 +87,8 @@ export interface TemplateDelivery {
   changes: TemplateChange[];
   branch?: string;
   url?: string;
+  // Left a draft: files conflict (RQ-0087).
+  draft?: boolean;
 }
 
 export async function deliverTemplateUpdate(projectRoot: string, options: {
@@ -100,7 +102,9 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
   bringMainUpToDate(projectRoot, 'The project', main);
 
   const changes = updateEmbeddedProject(projectRoot, { write: false });
-  if (changes.length === 0) return { status: 'current', changes };
+  // A file the project keeps is no change to deliver (RQ-0087).
+  if (changes.every((change) => change.kind === 'kept')) return { status: 'current', changes };
+  const conflicts = changes.filter((change) => change.kind === 'conflict').map((change) => change.path);
 
   // One template update open at a time: a second would conflict with the first.
   const open = git(projectRoot, ['ls-remote', '--heads', 'origin', 'template/*'])
@@ -115,7 +119,14 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
   git(projectRoot, ['checkout', '--quiet', '-b', branch]);
   try {
     updateEmbeddedProject(projectRoot, { write: true });
-    options.check?.(projectRoot);
+    // With conflict markers the check may well fail: the merge request is
+    // where they are resolved, so it opens anyway, as a draft.
+    try {
+      options.check?.(projectRoot);
+    } catch (err) {
+      if (conflicts.length === 0) throw err;
+      log(`the check fails with ${conflicts.length} conflict(s) in the files; the merge request opens as a draft`);
+    }
     git(projectRoot, ['add', '-A']);
     // Written, but Git sees no change (a difference only Git normalises
     // away): the project is current, nothing is pushed (RQ-0075).
@@ -132,15 +143,19 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
       description: [
         `The embedded template of aifactory at \`${commit}\` (${subject}), by \`factory template update\`.`,
         '',
-        'Template-owned files only: the scripts, the CI file, `.env.example`, `AGENTS.md`, merged package scripts and gates. Designs, boards, `.env` and requirements are not touched.',
+        'Template-owned files only: the scripts, the CI file, `.env.example`, `AGENTS.md`, merged package scripts and gates. Designs, boards, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.',
         '',
         list,
         '',
+        ...(conflicts.length > 0
+          ? [`**${conflicts.length} file(s) conflict** (${conflicts.map((path) => `\`${path}\``).join(', ')}): the project and the template both changed them. Resolve the conflict markers on this branch, keep the project's change with \`pnpm factory -- template override <path> --reason …\` if it stays different from the template, and mark the merge request ready.`, '']
+          : []),
         'The pipeline of this merge request runs the stages; merge it when they pass.',
       ].join('\n'),
       sourceBranch: branch,
       targetBranch: main,
     });
+    if (conflicts.length > 0) return { status: 'opened', changes, branch, url: draft.url, draft: true };
     const ready = await options.adapter.markChangeRequestReady(draft);
     return { status: 'opened', changes, branch, url: ready.url };
   } finally {

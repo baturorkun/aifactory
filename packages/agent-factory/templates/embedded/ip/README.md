@@ -9,3 +9,8 @@ is a change to the script and a re-package, not an edit in the XML.
 A design finds packaged IP through `ip_repo_paths` computed from the
 repository root, never an absolute path, and looks a core up by name
 (`get_ipdefs -filter {VLNV =~ "*:<ip>:*"}`) rather than by a fixed version.
+
+A design that uses an IP names it in its `project.tcl` (`set IPS {<ip> ...}`):
+`pnpm sim` then compiles `ip/<ip>/hdl` before the design's own HDL and the
+testbenches, in the order of `ip/<ip>/hdl/files.f` (one path per line, blank
+and `#` lines skipped), or sorted by name when there is no `files.f`.

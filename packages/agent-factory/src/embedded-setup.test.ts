@@ -112,7 +112,8 @@ test('template update brings a project made before the twin and board phases up 
   try {
     const { projectRoot } = createTargetProject('old', { dir: parent, template: 'embedded', labInventoryPath: join(parent, 'none.json') });
     // Make it look like a project from before RQ-0045 and RQ-0046.
-    for (const path of ['scripts/twin.mjs', 'scripts/board.mjs', 'designs/hello_ps/test.yaml']) unlinkSync(join(projectRoot, path));
+    // From before the template lock (RQ-0087) too, and not a Git checkout: nothing tells its base.
+    for (const path of ['scripts/twin.mjs', 'scripts/board.mjs', 'designs/hello_ps/test.yaml', '.factory/template.lock.json']) unlinkSync(join(projectRoot, path));
     const configPath = join(projectRoot, 'factory.config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     delete config.targetProject.commands.twinTest;
