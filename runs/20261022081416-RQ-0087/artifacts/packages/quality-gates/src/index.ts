@@ -1,0 +1,545 @@
+import { execSync } from 'child_process';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+} from 'fs';
+import { isAbsolute, join, normalize, relative, resolve, sep } from 'path';
+import { EMBEDDED_PHASES, EMBEDDED_PHASE_GATES, type EmbeddedPhase, type GateResults, type TwinPhase } from '@aifactory/contracts';
+import { boardParityGate, boardTraceGate, probeBuildGate, type ProbeLocation } from './probe';
+
+// ============================================================
+// TYPES
+// ============================================================
+
+export type { GateResults } from '@aifactory/contracts';
+export * from './probe';
+
+export interface GateReport {
+  gate: keyof GateResults;
+  status: 'passed' | 'failed' | 'skipped';
+  output: string;
+  durationMs: number;
+  /**
+   * The command this gate ran, and where. A gate that only records its output
+   * leaves no auditable trace of what it actually verified, so a stale command
+   * can keep reporting success for work it never touched.
+   */
+  command?: string;
+  cwd?: string;
+}
+
+export interface TargetGateOptions {
+  targetRoot?: string;
+  artifactPaths?: string[];
+  commandTimeoutMs?: number;
+  commands?: {
+    build?: string;
+    typeCheck?: string;
+    lint?: string;
+    test?: string;
+    // Embedded workflow (RQ-0044). With designCheck set, the run is gated by
+    // the embedded phases instead of the TypeScript gates.
+    designCheck?: string;
+    hdlSim?: string;
+    fpgaBuild?: string;
+    firmwareBuild?: string;
+    twinTest?: string;
+    boardTest?: string;
+    // The template-owned files unchanged or marked (RQ-0087), in the spec phase.
+    templateCheck?: string;
+    // The coding standard check (RQ-0053): `pnpm standard` when the project follows one.
+    codingStandard?: string;
+  };
+  /**
+   * Set for a hardware-twin run. The phase decides which gates are meaningful:
+   * before the model exists there is nothing to build, and before the board
+   * has run the probe there is nothing to compare.
+   */
+  twin?: {
+    phase: TwinPhase;
+    probe: ProbeLocation;
+  };
+  /**
+   * Embedded: the phases this run goes through (the requirement's, or fewer
+   * for a quick loop in the IDE). The others are skipped and say so.
+   */
+  embeddedPhases?: readonly EmbeddedPhase[];
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function findFiles(dir: string, suffix: string): string[] {
+  if (!existsSync(dir)) return [];
+  const results: string[] = [];
+
+  for (const item of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, item.name);
+    if (item.isDirectory()) {
+      results.push(...findFiles(full, suffix));
+    } else if (item.isFile() && item.name.endsWith(suffix)) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+function exec(
+  cmd: string,
+  cwd?: string,
+  env?: NodeJS.ProcessEnv,
+  timeoutMs = 120_000,
+): { output: string; success: boolean } {
+  try {
+    const out = execSync(cmd, {
+      cwd: cwd ?? process.cwd(),
+      timeout: timeoutMs,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: env ? { ...process.env, ...env } : process.env,
+      // A licensed-simulator suite logs every module build; the default 1 MB
+      // buffer kills the command mid-run and reports a truncated failure.
+      maxBuffer: 256 * 1024 * 1024,
+    });
+    return { output: (out ?? '').trim(), success: true };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    const out = [e.stdout, e.stderr, e.message].filter(Boolean).join('\n');
+    return { output: out.trim(), success: false };
+  }
+}
+
+function commandGate(
+  gate: keyof GateResults,
+  command: string | undefined,
+  cwd: string,
+  env?: NodeJS.ProcessEnv,
+  timeoutMs?: number,
+): GateReport {
+  const start = Date.now();
+  const configKey = gate === 'tests' ? 'test' : gate;
+  if (!command) {
+    return {
+      gate,
+      status: 'skipped',
+      output: `No targetProject.commands.${configKey} configured.`,
+      durationMs: 0,
+    };
+  }
+
+  const { output, success } = exec(command, cwd, env, timeoutMs);
+  return {
+    gate,
+    status: success ? 'passed' : 'failed',
+    output: output || (success ? `${command} passed` : `${command} failed`),
+    durationMs: Date.now() - start,
+    command,
+    cwd,
+  };
+}
+
+// ============================================================
+// GATE 1 — Schema Check
+// Validates that all step output files are valid JSON.
+// ============================================================
+
+function schemaCheck(runDir: string): GateReport {
+  const start = Date.now();
+  const stepsDir = join(runDir, 'steps');
+
+  if (!existsSync(stepsDir)) {
+    return { gate: 'schemaCheck', status: 'passed', output: 'No steps yet.', durationMs: 0 };
+  }
+
+  const files = readdirSync(stepsDir).filter((f) => f.endsWith('.json'));
+  const errors: string[] = [];
+
+  for (const f of files) {
+    try {
+      JSON.parse(readFileSync(join(stepsDir, f), 'utf8'));
+    } catch {
+      errors.push(`Invalid JSON: ${f}`);
+    }
+  }
+
+  return {
+    gate: 'schemaCheck',
+    status: errors.length === 0 ? 'passed' : 'failed',
+    output: errors.length === 0 ? `${files.length} step file(s) valid` : errors.join('\n'),
+    durationMs: Date.now() - start,
+  };
+}
+
+// ============================================================
+// GATE 2 — Type Check
+// Runs tsc --noEmit on generated TypeScript artifacts.
+// ============================================================
+
+function typeCheck(runDir: string, projectRoot: string): GateReport {
+  const start = Date.now();
+  const artifactsDir = join(runDir, 'artifacts');
+  const tsFiles = findFiles(artifactsDir, '.ts').filter((f) => !f.endsWith('.d.ts'));
+
+  if (tsFiles.length === 0) {
+    return { gate: 'typeCheck', status: 'skipped', output: 'No .ts artifacts.', durationMs: 0 };
+  }
+
+  // Write a temporary tsconfig pointing at artifacts
+  const tmpConfig = {
+    extends: resolve(projectRoot, 'tsconfig.base.json'),
+    include: [artifactsDir + '/**/*'],
+    compilerOptions: { noEmit: true, skipLibCheck: true },
+  };
+  const tmpPath = join(runDir, 'gates', 'tsconfig.artifacts.json');
+  writeFileSync(tmpPath, JSON.stringify(tmpConfig, null, 2));
+
+  const { output, success } = exec(`npx tsc --project "${tmpPath}"`, projectRoot);
+
+  return {
+    gate: 'typeCheck',
+    status: success ? 'passed' : 'failed',
+    output: output || (success ? 'No type errors' : 'Type errors found'),
+    durationMs: Date.now() - start,
+  };
+}
+
+function targetTypeCheck(targetRoot: string, command?: string, timeoutMs?: number): GateReport {
+  return commandGate('typeCheck', command, targetRoot, undefined, timeoutMs);
+}
+
+function targetBuildCheck(targetRoot: string, command?: string, timeoutMs?: number): GateReport {
+  return commandGate('build', command, targetRoot, undefined, timeoutMs);
+}
+
+// ============================================================
+// GATE 3 — Lint Check
+// Runs eslint on generated TypeScript artifacts.
+// ============================================================
+
+function lintCheck(runDir: string, projectRoot: string): GateReport {
+  const start = Date.now();
+  const artifactsDir = join(runDir, 'artifacts');
+  const tsFiles = findFiles(artifactsDir, '.ts');
+
+  if (tsFiles.length === 0) {
+    return { gate: 'lint', status: 'skipped', output: 'No .ts artifacts.', durationMs: 0 };
+  }
+
+  const { output, success } = exec(
+    `npx eslint --ext .ts "${artifactsDir}" --no-error-on-unmatched-pattern`,
+    projectRoot,
+  );
+
+  return {
+    gate: 'lint',
+    status: success ? 'passed' : 'failed',
+    output: output || (success ? 'No lint errors' : 'Lint errors found'),
+    durationMs: Date.now() - start,
+  };
+}
+
+function targetLintCheck(targetRoot: string, command?: string, timeoutMs?: number): GateReport {
+  return commandGate('lint', command, targetRoot, undefined, timeoutMs);
+}
+
+// ============================================================
+// GATE 4 — Test Check
+// Runs generated test files via Jest.
+// ============================================================
+
+function testCheck(runDir: string, projectRoot: string): GateReport {
+  const start = Date.now();
+  const artifactsDir = join(runDir, 'artifacts');
+
+  const testFiles = [
+    ...findFiles(artifactsDir, '.test.ts'),
+    ...findFiles(artifactsDir, '.spec.ts'),
+  ];
+
+  if (testFiles.length === 0) {
+    return { gate: 'tests', status: 'skipped', output: 'No test files.', durationMs: 0 };
+  }
+
+  const { output, success } = exec(
+    `npx jest --testPathPattern="${artifactsDir.replace(/\\/g, '/')}" --passWithNoTests --no-coverage`,
+    projectRoot,
+  );
+
+  return {
+    gate: 'tests',
+    status: success ? 'passed' : 'failed',
+    output: output || (success ? 'All tests passed' : 'Tests failed'),
+    durationMs: Date.now() - start,
+  };
+}
+
+function targetTestCheck(
+  targetRoot: string,
+  command?: string,
+  artifactPaths: string[] = [],
+  timeoutMs?: number,
+): GateReport {
+  return commandGate('tests', command, targetRoot, {
+    AI_FACTORY_ARTIFACT_PATHS: JSON.stringify(artifactPaths),
+  }, timeoutMs);
+}
+
+// ============================================================
+// GATE 5 — Security Check
+// Static pattern scan for common security anti-patterns.
+// ============================================================
+
+// The messages deliberately do not contain the text their pattern matches,
+// so this file does not flag itself when it is part of a change set.
+const SECURITY_PATTERNS: Array<{ id: string; re: RegExp; message: string }> = [
+  { id: 'eval', re: /\beval\s*\(/, message: 'eval usage detected' },
+  { id: 'new-function', re: /new\s+Function\s*\(/, message: 'new Function usage detected' },
+  { id: 'child-process', re: /require\(['"]child_process['"]\)/, message: 'child_process import — verify intent' },
+  { id: 'sql-template', re: /query\s*\(\s*`[^`]*\$\{/, message: 'potential SQL injection (template literal in query)' },
+  { id: 'env-assignment', re: /process\.env\.[A-Z_]+=/, message: 'env variable assignment detected' },
+];
+
+// A file may say a finding is intended (RQ-0073): a comment line of its own
+// `security-reviewed: <id> — <reason>`, the id one of SECURITY_PATTERNS'.
+// Such a finding does not fail the gate but stays in its report, with the
+// reason, so the decision is recorded where it is read. A marker without a
+// reason, or naming another id, reviews nothing.
+export function scanSecurity(content: string, rel: string): { issues: string[]; reviewed: string[] } {
+  const reasons = new Map<string, string>();
+  // A comment line of its own (// # *), not text inside a string.
+  for (const match of content.matchAll(/^\s*(?:\/\/|#|\*|\/\*)\s*security-reviewed:\s*([a-z-]+)\s*(?:—|--|-|:)\s*(\S.*?)\s*(?:\*\/)?$/gm)) {
+    reasons.set(match[1], match[2].trim());
+  }
+  const issues: string[] = [];
+  const reviewed: string[] = [];
+  for (const { id, re, message } of SECURITY_PATTERNS) {
+    if (!re.test(content)) continue;
+    const reason = reasons.get(id);
+    if (reason) reviewed.push(`${rel}: ${message} (reviewed: ${reason})`);
+    else issues.push(`${rel}: ${message}`);
+  }
+  return { issues, reviewed };
+}
+
+function securityOutput(scanned: string, issues: string[], reviewed: string[]): string {
+  if (issues.length > 0) return [...issues, ...reviewed].join('\n');
+  return reviewed.length > 0 ? [`${scanned} — no issues; reviewed:`, ...reviewed].join('\n') : `${scanned} — no issues`;
+}
+
+function securityCheck(runDir: string): GateReport {
+  const start = Date.now();
+  const artifactsDir = join(runDir, 'artifacts');
+  const files = [...findFiles(artifactsDir, '.ts'), ...findFiles(artifactsDir, '.js')];
+
+  if (files.length === 0) {
+    return { gate: 'security', status: 'skipped', output: 'No files to scan.', durationMs: 0 };
+  }
+
+  const issues: string[] = [];
+  const reviewed: string[] = [];
+
+  for (const file of files) {
+    const found = scanSecurity(readFileSync(file, 'utf8'), file.replace(runDir + '/', ''));
+    issues.push(...found.issues);
+    reviewed.push(...found.reviewed);
+  }
+
+  // Persist report
+  writeFileSync(
+    join(runDir, 'gates', 'security-report.json'),
+    JSON.stringify({ scannedFiles: files.length, issues, reviewed }, null, 2),
+  );
+
+  return {
+    gate: 'security',
+    status: issues.length === 0 ? 'passed' : 'failed',
+    output: securityOutput(`${files.length} file(s) scanned`, issues, reviewed),
+    durationMs: Date.now() - start,
+  };
+}
+
+function targetSecurityCheck(targetRoot: string, artifactPaths: string[] = []): GateReport {
+  const start = Date.now();
+  const files = artifactPaths
+    .filter((p) => p.endsWith('.ts') || p.endsWith('.js'))
+    .map((p) => safeTargetPath(targetRoot, p));
+
+  if (files.length === 0) {
+    return { gate: 'security', status: 'skipped', output: 'No files to scan.', durationMs: 0 };
+  }
+
+  const issues: string[] = [];
+  const reviewed: string[] = [];
+
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const found = scanSecurity(readFileSync(file, 'utf8'), normalizeRelativePath(relative(targetRoot, file)));
+    issues.push(...found.issues);
+    reviewed.push(...found.reviewed);
+  }
+
+  return {
+    gate: 'security',
+    status: issues.length === 0 ? 'passed' : 'failed',
+    output: securityOutput(`${files.length} applied file(s) scanned`, issues, reviewed),
+    durationMs: Date.now() - start,
+  };
+}
+
+function safeTargetPath(targetRoot: string, artifactPath: string): string {
+  if (isAbsolute(artifactPath)) {
+    throw new Error(`Artifact path must be relative: ${artifactPath}`);
+  }
+
+  const normalized = normalizeRelativePath(artifactPath);
+  if (normalized === '.' || normalized.startsWith('..') || normalized.includes('/../')) {
+    throw new Error(`Artifact path escapes target project: ${artifactPath}`);
+  }
+
+  const absolutePath = resolve(targetRoot, normalized);
+  const relFromRoot = relative(targetRoot, absolutePath);
+  if (relFromRoot.startsWith('..') || isAbsolute(relFromRoot)) {
+    throw new Error(`Artifact path escapes target project: ${artifactPath}`);
+  }
+
+  return absolutePath;
+}
+
+function normalizeRelativePath(path: string): string {
+  return normalize(path).split(sep).join('/');
+}
+
+// ============================================================
+// MAIN RUNNER
+// ============================================================
+
+function selectGates(
+  twin: TargetGateOptions['twin'],
+  standard: () => GateReport[],
+  skipped: (reason: string) => GateReport[],
+): GateReport[] {
+  if (!twin) return standard();
+  switch (twin.phase) {
+    case 'probe':
+      return [...skipped('Hardware-twin probe phase: the model is not written yet.'), probeBuildGate(twin.probe)];
+    case 'board':
+      return [...skipped('Hardware-twin board phase: waiting for the board trace.'), probeBuildGate(twin.probe), boardTraceGate(twin.probe)];
+    case 'model':
+      return [...standard(), probeBuildGate(twin.probe), boardTraceGate(twin.probe)];
+    case 'parity':
+      return [...standard(), probeBuildGate(twin.probe), boardTraceGate(twin.probe), boardParityGate(twin.probe)];
+  }
+}
+
+// An embedded run goes through its phases in order (spec, sim, build) and
+// stops at the first gate that fails: a design that does not check is not
+// simulated, and one whose testbenches fail is not sent to a build host for
+// tens of minutes. The later gates are reported as skipped, with the reason.
+function embeddedGates(
+  targetRoot: string,
+  commands: NonNullable<TargetGateOptions['commands']>,
+  timeoutMs?: number,
+  phases: readonly EmbeddedPhase[] = EMBEDDED_PHASES,
+): GateReport[] {
+  const reports: GateReport[] = [];
+  let failedAt: string | undefined;
+  for (const phase of EMBEDDED_PHASES) {
+    for (const gate of EMBEDDED_PHASE_GATES[phase]) {
+      if (!phases.includes(phase)) {
+        reports.push({ gate, status: 'skipped', output: `Not in the phases of this run (${phases.join(', ')}).`, durationMs: 0 });
+        continue;
+      }
+      if (failedAt) {
+        reports.push({ gate, status: 'skipped', output: `Not run: the ${failedAt} phase failed.`, durationMs: 0 });
+        continue;
+      }
+      const command = commands[gate as 'designCheck' | 'templateCheck' | 'hdlSim' | 'fpgaBuild' | 'firmwareBuild' | 'twinTest' | 'boardTest' | 'codingStandard'];
+      const report = commandGate(gate, command, targetRoot, undefined, timeoutMs);
+      reports.push(report);
+      if (report.status === 'failed') failedAt = phase;
+    }
+  }
+  return reports;
+}
+
+/**
+ * Runs all quality gates against a finished run directory.
+ * @param runDir  Absolute path to the run directory (runs/<run-id>)
+ * @param projectRoot  Root of the monorepo (for finding tsconfig/eslint config)
+ */
+export async function runAllGates(
+  runDir: string,
+  projectRoot: string,
+  target?: TargetGateOptions,
+): Promise<GateResults> {
+  mkdirSync(join(runDir, 'gates'), { recursive: true });
+
+  const targetRoot = target?.targetRoot ? resolve(target.targetRoot) : undefined;
+  const standard = (): GateReport[] => [
+    ...(targetRoot
+      ? [targetBuildCheck(targetRoot, target?.commands?.build, target?.commandTimeoutMs)]
+      : [commandGate('build', undefined, projectRoot)]),
+    // The coding standard needs the compile database the build left (RQ-0053);
+    // a project without a standard has no command and is skipped with the reason.
+    ...(targetRoot && target?.commands?.codingStandard
+      ? [commandGate('codingStandard', target.commands.codingStandard, targetRoot, undefined, target?.commandTimeoutMs)]
+      : []),
+    targetRoot
+      ? targetTypeCheck(targetRoot, target?.commands?.typeCheck, target?.commandTimeoutMs)
+      : typeCheck(runDir, projectRoot),
+    targetRoot
+      ? targetLintCheck(targetRoot, target?.commands?.lint, target?.commandTimeoutMs)
+      : lintCheck(runDir, projectRoot),
+    targetRoot
+      ? targetTestCheck(targetRoot, target?.commands?.test, target?.artifactPaths, target?.commandTimeoutMs)
+      : testCheck(runDir, projectRoot),
+    targetRoot
+      ? targetSecurityCheck(targetRoot, target?.artifactPaths)
+      : securityCheck(runDir),
+  ];
+  const skipped = (reason: string): GateReport[] =>
+    (['build', 'typeCheck', 'lint', 'tests', 'security'] as const).map((gate) => ({
+      gate, status: 'skipped', output: reason, durationMs: 0,
+    }));
+
+  const embedded = targetRoot !== undefined && target?.commands?.designCheck !== undefined;
+  const reports: GateReport[] = embedded
+    ? [
+        schemaCheck(runDir),
+        ...skipped('Embedded project: gated by its phases (designCheck, hdlSim, fpgaBuild, firmwareBuild).'),
+        ...embeddedGates(targetRoot, target?.commands ?? {}, target?.commandTimeoutMs, target?.embeddedPhases),
+      ]
+    : [schemaCheck(runDir), ...selectGates(target?.twin, standard, skipped)];
+
+  // Persist full report
+  writeFileSync(
+    join(runDir, 'gates', 'report.json'),
+    JSON.stringify(reports, null, 2),
+  );
+
+  // Print summary
+  for (const r of reports) {
+    const icon = r.status === 'passed' ? '✓' : r.status === 'skipped' ? '○' : '✗';
+    console.log(`    ${icon} ${r.gate.padEnd(14)} ${r.durationMs}ms`);
+    if (r.status === 'failed') {
+      r.output
+        .split('\n')
+        .slice(0, 6)
+        .forEach((line) => {
+          if (line.trim()) console.log(`      ${line}`);
+        });
+    }
+  }
+
+  return reports.reduce(
+    (acc, r) => {
+      acc[r.gate] = r.status;
+      return acc;
+    },
+    {} as GateResults,
+  );
+}

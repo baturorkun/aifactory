@@ -1,0 +1,48 @@
+{
+  "runId": "20261022081416-RQ-0087",
+  "requirementId": "RQ-0087",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261022081416-RQ-0087/handoff.md",
+  "status": "passed",
+  "createdAt": "2026-10-22T08:14:16.119Z",
+  "updatedAt": "2026-10-22T08:31:57.561Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-22T08:30:21.057Z",
+      "finishedAt": "2026-10-22T08:31:57.561Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "packages/agent-factory/src/cli.ts",
+    "packages/agent-factory/src/config.ts",
+    "packages/agent-factory/src/embedded-setup.test.ts",
+    "packages/agent-factory/src/embedded-template.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/template-delivery.test.ts",
+    "packages/agent-factory/src/template-delivery.ts",
+    "packages/agent-factory/src/template-lock.ts",
+    "packages/agent-factory/src/template-override.ts",
+    "packages/agent-factory/src/template-sync.test.ts",
+    "packages/agent-factory/src/template-update.ts",
+    "packages/agent-factory/templates/embedded/common/flow_lib.tcl",
+    "packages/agent-factory/templates/embedded/designs/hello_ps/project.tcl",
+    "packages/agent-factory/templates/embedded/ip/README.md",
+    "packages/agent-factory/templates/embedded/scripts/template-check.mjs",
+    "packages/contracts/src/index.ts",
+    "packages/quality-gates/src/index.ts"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  }
+}
