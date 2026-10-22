@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -229,6 +230,35 @@ function recordHost(design, settings) {
   writeFileSync(path, JSON.stringify(summary, null, 2) + '\n');
 }
 
+// What a design's project is made from beyond its HDL and constraints, which
+// the project reads where they are (RQ-0086): project.tcl, the design's tcl/
+// and ip/, the project's ip/, the board files and the flow library. Their
+// hash goes to flow.tcl, which makes the project again when it changed.
+const PROJECT_INPUTS = (design) => [`designs/${design}/project.tcl`, `designs/${design}/tcl`, `designs/${design}/ip`, 'ip', 'common/boards', 'common/flow_lib.tcl'];
+export function projectInputs(design, root = PROJECT_ROOT) {
+  const files = [];
+  const walk = (relative) => {
+    const path = join(root, relative);
+    if (!existsSync(path)) return;
+    if (statSync(path).isDirectory()) {
+      for (const name of readdirSync(path)) {
+        if (name === '.DS_Store' || name === '__pycache__' || name.endsWith('.md')) continue;
+        walk(`${relative}/${name}`);
+      }
+    } else {
+      files.push(relative);
+    }
+  };
+  for (const input of PROJECT_INPUTS(design)) walk(input);
+  const hash = createHash('sha256');
+  for (const file of files.sort()) {
+    hash.update(`${file}\0`);
+    hash.update(createHash('sha256').update(readFileSync(join(root, file))).digest('hex'));
+    hash.update('\n');
+  }
+  return hash.digest('hex').slice(0, 16);
+}
+
 // Where Vivado keeps the IP it synthesized out of context (RQ-0080): on a
 // build host one cache beside the copies, under its base path, so a new
 // branch's copy takes its IP from another's; here, under out/.
@@ -247,7 +277,7 @@ async function vivadoStage(settings, design, stage, options, host = {}) {
   const command = [vivado, '-mode', 'batch', '-nojournal', '-notrace',
     '-log', `out/${design}/vivado-${stage}.log`, '-source', 'flow.tcl',
     '-tclargs', design, stage, '--jobs', String(options.jobs), '--threads', String(options.threads),
-    '--ip-cache', ipCachePath(settings), ...(sha ? ['--git-sha', sha] : [])];
+    '--ip-cache', ipCachePath(settings), '--inputs', projectInputs(design), ...(sha ? ['--git-sha', sha] : [])];
   console.log(`\n▸ ${design}: ${stage} (Vivado on ${buildHost(settings)})`);
   try {
     await runOnHost(settings, command, {

@@ -10,6 +10,7 @@
 #           --jobs <n>            parallel jobs for project-mode runs
 #           --threads <n>         threads per run (general.maxThreads)
 #           --ip-cache <dir>      the out-of-context IP cache, shared by the copies on a host
+#           --inputs <hash>       what made the block design and IP; a change makes the project again
 #
 # The software stage runs in Vitis, not here: designs/<design>/sw/create_vitis.py,
 # started by scripts/flow.mjs, flow.ps1 or flow.sh.

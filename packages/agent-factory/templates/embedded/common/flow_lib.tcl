@@ -26,11 +26,11 @@ proc flow::main {root argv} {
     source [file join $ROOT common gates.tcl]
 
     if {[llength $argv] < 2} {
-        error "usage: vivado -mode batch -source flow.tcl -tclargs <design> <stage> \[--expect-version v\] \[--git-sha sha\] \[--jobs n\] \[--threads n\] \[--ip-cache dir\]\n  stages: $::flow::STAGES"
+        error "usage: vivado -mode batch -source flow.tcl -tclargs <design> <stage> \[--expect-version v\] \[--git-sha sha\] \[--jobs n\] \[--threads n\] \[--ip-cache dir\] \[--inputs hash\]\n  stages: $::flow::STAGES"
     }
     set design [lindex $argv 0]
     set stage [lindex $argv 1]
-    set opts [dict create --expect-version "" --git-sha "" --jobs 4 --threads "" --ip-cache ""]
+    set opts [dict create --expect-version "" --git-sha "" --jobs 4 --threads "" --ip-cache "" --inputs ""]
     foreach {key value} [lrange $argv 2 end] {
         if {![dict exists $opts $key]} { error "unknown option $key" }
         dict set opts $key $value
@@ -424,6 +424,25 @@ proc flow::project_open {} {
     if {[catch {current_project}] == 0} { return }
     set project_dir [file join $out project]
     set xpr [file join $project_dir "$design.xpr"]
+    # An existing project keeps the block design and the IP it was made with:
+    # bd.tcl runs only into an empty project. When what made them changed
+    # (project.tcl, the design's tcl/ and ip/, the project's ip/, the boards;
+    # their hash is --inputs, RQ-0086) the project is made again, as a clean
+    # would, so a build never carries an older block design or IP.
+    set inputs [dict get $::flow::opts --inputs]
+    set stamp [file join $out project.inputs]
+    if {$inputs ne "" && [file exists $xpr]} {
+        set before ""
+        if {[file exists $stamp]} {
+            set fh [open $stamp r]
+            set before [string trim [read $fh]]
+            close $fh
+        }
+        if {$before ne $inputs} {
+            puts "PROJECT: the block design's or the IP's inputs changed; making $xpr again"
+            file delete -force $project_dir
+        }
+    }
     if {[file exists $xpr]} {
         puts "PROJECT: opening $xpr"
         open_project $xpr
@@ -485,11 +504,24 @@ proc flow::project_open {} {
     set_property top [cfg TOP] [current_fileset]
     update_compile_order -fileset sources_1
     thread_hooks
-    # Implementation may start from this copy's last routed result, when
-    # Vivado finds that worth it (RQ-0080); synthesis already does.
-    set impl [get_runs -quiet impl_1]
-    if {$impl ne "" && [lsearch -exact [list_property $impl] AUTO_INCREMENTAL_CHECKPOINT] >= 0} {
-        set_property AUTO_INCREMENTAL_CHECKPOINT 1 $impl
+    # Every run synthesizes and implements in full (RQ-0086): an implementation
+    # started from the copy's last routed result gave a bitstream whose
+    # processor hung at its first PL access (embedded1 RQ-0009), and neither
+    # incremental flow saved time on these designs. A project an earlier
+    # template set it on is set back.
+    foreach name {synth_1 impl_1} {
+        set run [get_runs -quiet $name]
+        if {$run eq ""} { continue }
+        set properties [list_property $run]
+        if {[lsearch -exact $properties AUTO_INCREMENTAL_CHECKPOINT] >= 0} { set_property AUTO_INCREMENTAL_CHECKPOINT 0 $run }
+        if {[lsearch -exact $properties INCREMENTAL_CHECKPOINT] >= 0 && [get_property INCREMENTAL_CHECKPOINT $run] ne ""} {
+            catch { set_property INCREMENTAL_CHECKPOINT "" $run }
+        }
+    }
+    if {$inputs ne ""} {
+        set fh [open $stamp w]
+        puts $fh $inputs
+        close $fh
     }
 }
 

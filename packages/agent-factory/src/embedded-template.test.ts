@@ -1264,7 +1264,7 @@ test('the threads of one Vivado run: --threads, else VIVADO_THREADS, else 8, in 
   }
 });
 
-test('the out-of-context IP cache is shared by the copies on a build host, and implementation may be incremental', async () => {
+test('the out-of-context IP cache is shared by the copies on a build host, and no run is incremental', async () => {
   const project = scaffold();
   try {
     const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as {
@@ -1277,12 +1277,14 @@ test('the out-of-context IP cache is shared by the copies on a build host, and i
     assert.equal(flow.ipCachePath({ remote: false, basePath: '', hostType: 'linux' }), 'out/ip_cache');
     assert.match(project.read('scripts/flow.mjs'), /'--ip-cache', ipCachePath\(settings\)/);
     const lib = project.read('common/flow_lib.tcl');
-    assert.match(lib, /--threads "" --ip-cache ""\]/);
+    assert.match(lib, /--threads "" --ip-cache ""/);
     // Set before the block design's output products are made, so its IP runs use it.
     const cache = lib.indexOf('config_ip_cache -use_cache_location');
     assert.ok(cache > 0 && cache < lib.indexOf('generate_target all $bd'));
-    assert.match(lib, /set_property AUTO_INCREMENTAL_CHECKPOINT 1 \$impl/);
-    assert.match(lib, /lsearch -exact \[list_property \$impl\] AUTO_INCREMENTAL_CHECKPOINT/);
+    // No incremental flow (RQ-0086): set back to off on both runs, where Vivado has the property.
+    assert.match(lib, /foreach name \{synth_1 impl_1\}/);
+    assert.match(lib, /set_property AUTO_INCREMENTAL_CHECKPOINT 0 \$run/);
+    assert.doesNotMatch(lib, /AUTO_INCREMENTAL_CHECKPOINT 1/);
   } finally {
     project.done();
   }
@@ -1713,5 +1715,46 @@ test('the SSH host scripts sync without a command and run without an archive', a
   } finally {
     project.done();
     rmSync(work, { recursive: true, force: true });
+  }
+});
+
+// RQ-0086: a project is made again when what made its block design and IP
+// changed; its HDL and constraints, read where they are, do not count.
+test('a design project is made again when its block design or IP inputs change', async () => {
+  const project = scaffold();
+  try {
+    const flow = await import(pathToFileURL(join(project.root, 'scripts/flow.mjs')).href) as { projectInputs: (design: string, root: string) => string };
+    const inputs = () => flow.projectInputs('hello_ps', project.root);
+    const first = inputs();
+    assert.match(first, /^[0-9a-f]{16}$/);
+    assert.equal(inputs(), first, 'the same files, the same hash');
+    // HDL, software and other designs are not inputs.
+    writeFileSync(join(project.root, 'designs/hello_ps/sw/src/main.c'), 'int main(void) { return 2; }\n');
+    writeFileSync(join(project.root, 'designs/led_counter/project.tcl'), project.read('designs/led_counter/project.tcl') + '# other\n');
+    writeFileSync(join(project.root, 'ip/README.md'), 'notes\n');
+    assert.equal(inputs(), first);
+    // The block design script, an IP file, project.tcl, a board file: each changes it.
+    const changed = new Set([first]);
+    for (const [path, text] of [
+      ['designs/hello_ps/tcl/bd.tcl', project.read('designs/hello_ps/tcl/bd.tcl') + '# changed\n'],
+      ['ip/drawer/hdl/drawer.vhd', '-- an IP of the project\n'],
+      ['designs/hello_ps/project.tcl', project.read('designs/hello_ps/project.tcl') + '# changed\n'],
+      ['common/boards/README.md.tcl', '# a board file\n'],
+    ]) {
+      mkdirSync(join(project.root, path, '..'), { recursive: true });
+      writeFileSync(join(project.root, path), text);
+      const now = inputs();
+      assert.ok(!changed.has(now), `${path} changes the hash`);
+      changed.add(now);
+    }
+    assert.match(project.read('scripts/flow.mjs'), /'--inputs', projectInputs\(design\)/);
+    // flow.tcl compares it with the one the project was made with, and makes the project again.
+    const lib = project.read('common/flow_lib.tcl');
+    assert.match(lib, /--ip-cache "" --inputs ""\]/);
+    assert.match(lib, /if \{\$before ne \$inputs\} \{\n[^\n]*\n {12}file delete -force \$project_dir/);
+    assert.ok(lib.indexOf('file delete -force $project_dir') < lib.indexOf('open_project $xpr'), 'before the project is opened');
+    assert.match(lib, /set stamp \[file join \$out project\.inputs\]/);
+  } finally {
+    project.done();
   }
 });
