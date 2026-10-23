@@ -62,8 +62,9 @@ CI, so no pipeline deploys it.
 the target, `DEPLOY_DIR` (default `~/<compose project>`), holds:
 
 - `src/`: replaced on each deploy. A build gets the files Git tracks or would
-  track (`.gitignore` decides what stays behind); an image gets only the
-  compose files.
+  track (`.gitignore` decides what stays behind, and `DEPLOY_EXCLUDE` keeps
+  committed paths the stack does not need, like run records, off the wire);
+  an image gets only the compose files.
 - `runtime.env`: mode 600, kept between deploys. It is the stack's
   `--env-file`.
 - the data directories (`DEPLOY_DATA_DIRS`).

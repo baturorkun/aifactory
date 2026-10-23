@@ -116,10 +116,21 @@ pass "runtime.env: mode 600, settings, port, image, commit; secrets generated an
 [ ! -e "$STACK/src/src/demo/app 2.py" ] || fail "an iCloud copy was sent"
 pass "the working tree as Git sees it is sent; .env and ignored files are not"
 
+
 has "podman compose -p demo-svc-dev-tester --env-file $ENV_FILE -f compose.db.yml -f compose.yml up -d --build --remove-orphans @$STACK/src"
 has "podman image prune -f"
 has "curl -fsS -o /dev/null http://127.0.0.1:9300/api/health"
 pass "compose up with the files in order, prune, health check"
+
+mkdir -p "$P/runs/r1" "$P/handoffs"
+echo record > "$P/runs/r1/log.txt"; echo handoff > "$P/handoffs/h.md"
+(cd "$P" && git add runs handoffs && git -c user.name=t -c user.email=t@t commit -qm records)
+deploy $COMPOSE DEPLOY_EXCLUDE="runs handoffs" >/dev/null 2>&1 || fail "deploy with DEPLOY_EXCLUDE"
+[ ! -e "$STACK/src/runs" ] && [ ! -e "$STACK/src/handoffs" ] || fail "an excluded path was sent: $(cd "$STACK/src" && find runs handoffs 2>/dev/null)"
+[ -f "$STACK/src/src/demo/app.py" ] || fail "DEPLOY_EXCLUDE left out the rest"
+deploy $COMPOSE >/dev/null 2>&1 || fail "deploy without DEPLOY_EXCLUDE"
+[ -f "$STACK/src/runs/r1/log.txt" ] || fail "without DEPLOY_EXCLUDE a committed path stays"
+pass "DEPLOY_EXCLUDE keeps committed paths the stack does not need off the wire"
 
 deploy $COMPOSE DEPLOY_ENV_SECRETS="SESSION_SECRET=hex16 ENCRYPTION_KEY=base64url32" DEPLOY_ENV_SET_CLI_VERSION=2.2.0 >/dev/null 2>&1 || fail "second deploy"
 [ "$(sed -n 's/^SESSION_SECRET=//p' "$ENV_FILE")" = "$session" ] || fail "a secret was generated again"

@@ -522,7 +522,13 @@ deploy_compose() {
   if [ -z "$IMAGE" ]; then
     MODE=build
     git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || die "compose builds from the files Git tracks or would track: $ROOT is not a Git checkout."
-    git -C "$ROOT" ls-files -co --exclude-standard | while IFS= read -r f; do [ ! -f "$ROOT/$f" ] || printf '%s\n' "$f"; done > "$stage/files.list"
+    # DEPLOY_EXCLUDE: committed paths the stack does not need (run records),
+    # as Git pathspec globs, kept off the wire (RQ-0092).
+    set -f
+    set -- .
+    for pattern in ${DEPLOY_EXCLUDE:-}; do set -- "$@" ":(exclude,glob)$pattern" ":(exclude,glob)$pattern/**"; done
+    set +f
+    (cd "$ROOT" && git ls-files -co --exclude-standard -- "$@") | while IFS= read -r f; do [ ! -f "$ROOT/$f" ] || printf '%s\n' "$f"; done > "$stage/files.list"
     IMAGE_REF="localhost/$PROJECT:$STACK"
   else
     MODE=image
