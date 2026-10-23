@@ -2,9 +2,10 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { RepositoryPlatformAdapter } from './repository-platform/types';
-import { updateEmbeddedProject, type TemplateChange } from './template-update';
+import { templateKindOf } from './template-lock';
+import { updateTemplateProject, type TemplateChange } from './template-update';
 
-// `factory template update` (RQ-0069): an embedded project takes the
+// `factory template update` (RQ-0069; vanilla-ts, RQ-0089): a project takes the
 // current template as a merge request, never as files left in a worktree.
 // aifactory knows no project: the one the command runs in is the one updated.
 //
@@ -71,10 +72,19 @@ export function updateAifactory(root: string, log: (line: string) => void = () =
   return true;
 }
 
-// The project's design check with the new files, run by this Node: what
-// `pnpm check` runs, without pnpm, which is a .cmd on Windows (RQ-0073). A
-// check that could not start says so, not that it failed.
+// The project's check with the new files, without pnpm, which is a .cmd on
+// Windows (RQ-0073): an embedded project's design check (`pnpm check`) run by
+// this Node; a vanilla-ts project's deploy test (`pnpm test`) run by sh
+// (RQ-0089). A check that could not start says so, not that it failed.
 export function runProjectCheck(root: string): void {
+  if (templateKindOf(root).kind.template === 'vanilla-ts') {
+    const test = join(root, 'tests', 'deploy.test.sh');
+    if (!existsSync(test)) throw new TemplateDeliveryError(`The project has no tests/deploy.test.sh to check with; nothing was pushed.`);
+    const tested = spawnSync('sh', [test], { cwd: root, stdio: 'inherit' });
+    if (tested.error) throw new TemplateDeliveryError(`The deploy test could not start (${tested.error.message}); nothing was pushed.`);
+    if (tested.status !== 0) throw new TemplateDeliveryError(`The deploy test fails with the new template (exit code ${tested.status ?? 'unknown'}); nothing was pushed.`);
+    return;
+  }
   const flow = join(root, 'scripts', 'flow.mjs');
   if (!existsSync(flow)) throw new TemplateDeliveryError(`The project has no scripts/flow.mjs to check with; nothing was pushed.`);
   const checked = spawnSync(process.execPath, [flow, 'check'], { cwd: root, stdio: 'inherit' });
@@ -101,7 +111,8 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
   const main = options.adapter.targetBranch || 'main';
   bringMainUpToDate(projectRoot, 'The project', main);
 
-  const changes = updateEmbeddedProject(projectRoot, { write: false });
+  const { kind } = templateKindOf(projectRoot);
+  const changes = updateTemplateProject(projectRoot, { write: false });
   // A file the project keeps is no change to deliver (RQ-0087).
   if (changes.every((change) => change.kind === 'kept')) return { status: 'current', changes };
   const conflicts = changes.filter((change) => change.kind === 'conflict').map((change) => change.path);
@@ -118,7 +129,7 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
   const branch = `template/aifactory-${commit}`;
   git(projectRoot, ['checkout', '--quiet', '-b', branch]);
   try {
-    updateEmbeddedProject(projectRoot, { write: true });
+    updateTemplateProject(projectRoot, { write: true });
     // With conflict markers the check may well fail: the merge request is
     // where they are resolved, so it opens anyway, as a draft.
     try {
@@ -135,15 +146,17 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
       return { status: 'current', changes: [] };
     }
     const list = changes.map((change) => `- ${change.kind} ${change.path}${change.kind === 'merge' ? ` (${change.detail})` : ''}`).join('\n');
-    git(projectRoot, ['commit', '--quiet', '-m', `chore(template): the aifactory embedded template at ${commit}\n\naifactory ${commit}: ${subject}\n\n${list}`]);
+    git(projectRoot, ['commit', '--quiet', '-m', `chore(template): the aifactory ${kind.template} template at ${commit}\n\naifactory ${commit}: ${subject}\n\n${list}`]);
     git(projectRoot, ['push', '--quiet', '-u', 'origin', branch]);
     log(`pushed ${branch}`);
     const draft = await options.adapter.createDraftChangeRequest({
       title: `aifactory template update (${commit})`,
       description: [
-        `The embedded template of aifactory at \`${commit}\` (${subject}), by \`factory template update\`.`,
+        `The ${kind.template} template of aifactory at \`${commit}\` (${subject}), by \`factory template update\`.`,
         '',
-        'Template-owned files only: the scripts, the CI file, `.env.example`, `AGENTS.md`, merged package scripts and gates. Designs, boards, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.',
+        kind.template === 'embedded'
+          ? 'Template-owned files only: the scripts, the CI file, `.env.example`, `AGENTS.md`, merged package scripts and gates. Designs, boards, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.'
+          : 'Template-owned files only: the deploy scripts and their test, `deploy/README.md`, the CI file, `Dockerfile`, `nginx.conf`, `.env.example`, `AGENTS.md`, merged package scripts and gates. `src/`, `public/`, `deploy/*.env`, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.',
         '',
         list,
         '',

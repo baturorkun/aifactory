@@ -497,6 +497,12 @@ export async function runAllGates(
     targetRoot
       ? targetTestCheck(targetRoot, target?.commands?.test, target?.artifactPaths, target?.commandTimeoutMs)
       : testCheck(runDir, projectRoot),
+    // A template-owned file changed without an override (RQ-0089), for a
+    // vanilla-ts project as for an embedded one: the command reports, and the
+    // merge request's template_check job is what fails.
+    ...(targetRoot && target?.commands?.templateCheck
+      ? [commandGate('templateCheck', target.commands.templateCheck, targetRoot, undefined, target?.commandTimeoutMs)]
+      : []),
     targetRoot
       ? targetSecurityCheck(targetRoot, target?.artifactPaths)
       : securityCheck(runDir),

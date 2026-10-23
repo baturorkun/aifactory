@@ -65,7 +65,7 @@ import {
 } from './orchestrator/probe';
 import { DEFAULT_EMBEDDED_PHASES, EMBEDDED_PHASES, TWIN_PHASES, embeddedPhaseList, type EmbeddedPhase } from '@aifactory/contracts';
 import { canPrompt, promptCheckboxes } from './utils/checkbox-prompt';
-import { updateEmbeddedProject, type TemplateChange } from './template-update';
+import { updateTemplateProject, type TemplateChange } from './template-update';
 import { templateStatus } from './template-lock';
 import { overrideTemplateFile, proposeTemplateChanges, removeTemplateOverride } from './template-override';
 import { deliverTemplateUpdate, runProjectCheck, updateAifactory } from './template-delivery';
@@ -1064,11 +1064,11 @@ standard
 
 const templateCommand = program
   .command('template')
-  .description('Embedded projects: bring the template-owned files up to this aifactory');
+  .description('Embedded and vanilla-ts projects: bring the template-owned files up to this aifactory');
 
 templateCommand
   .command('update')
-  .description('Bring aifactory up to date, then open a merge request that takes this project to the current embedded template (from a clean, current main)')
+  .description('Bring aifactory up to date, then open a merge request that takes this project to the current template, embedded or vanilla-ts (from a clean, current main)')
   .option('--dry-run', 'Only list what would change; touch nothing', false)
   .option('--local', 'Write the changes into this worktree only, no branch and no merge request', false)
   .action(async (opts: { dryRun: boolean; local: boolean }) => {
@@ -1081,14 +1081,14 @@ templateCommand
         }
       };
       if (opts.dryRun || opts.local) {
-        const changes = updateEmbeddedProject(root, { write: opts.local });
+        const changes = updateTemplateProject(root, { write: opts.local });
         if (changes.length === 0) {
-          console.log(chalk.green('✓ The project is on the current embedded template.'));
+          console.log(chalk.green('✓ The project is on the current template.'));
           return;
         }
         listChanges(changes);
         console.log(opts.local
-          ? chalk.green(`\n✓ ${changes.length} change(s) written here. Review them with git diff and run pnpm check.`)
+          ? chalk.green(`\n✓ ${changes.length} change(s) written here. Review them with git diff and run the project's check (pnpm check, or pnpm test in vanilla-ts).`)
           : chalk.dim(`\n${changes.length} change(s). Nothing written: without --dry-run a merge request opens with them.`));
         return;
       }
@@ -1114,7 +1114,7 @@ templateCommand
         check: runProjectCheck,
       });
       if (result.status === 'current') {
-        console.log(chalk.green('✓ The project is on the current embedded template.'));
+        console.log(chalk.green('✓ The project is on the current template.'));
         return;
       }
       listChanges(result.changes);
