@@ -1,0 +1,31 @@
+{
+  "runId": "20261023212355-RQ-0094",
+  "requirementId": "RQ-0094",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261023212355-RQ-0094/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-23T21:23:55.569Z",
+  "updatedAt": "2026-10-23T21:29:09.663Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-23T21:27:22.113Z",
+      "finishedAt": "2026-10-23T21:28:58.721Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "skipped"
+  },
+  "approvedAt": "2026-10-23T21:29:09.664Z",
+  "approvedBy": "Batur Orkun"
+}
