@@ -165,7 +165,7 @@ test('a project without a profile laid out like website is taken as vanilla-ts a
     delete config2.targetProject.profile;
     p.write('factory.config.json', JSON.stringify(config2, null, 2) + '\n');
     unlinkSync(join(p.root, 'Dockerfile'));
-    assert.throws(() => updateTemplateProject(p.root), /template update applies to a project of profile "embedded" or "vanilla-typescript" \(targetProject\.profile is not set\)/);
+    assert.throws(() => updateTemplateProject(p.root), /template update applies to a project of profile "embedded" or "vanilla-typescript" or "python-service" \(targetProject\.profile is not set\)/);
   } finally {
     p.done();
   }

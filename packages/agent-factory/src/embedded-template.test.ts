@@ -31,7 +31,7 @@ function scaffold(template = 'embedded') {
 
 test('embedded is offered next to the other templates', () => {
   // --template and --simulator are refused together by the CLI for every template.
-  assert.deepEqual(PROJECT_TEMPLATES, ['empty', 'vanilla-ts', 'python', 'c', 'embedded']);
+  assert.deepEqual(PROJECT_TEMPLATES, ['empty', 'vanilla-ts', 'python', 'python-service', 'c', 'embedded']);
 });
 
 test('the embedded template lays out the Vivado flow and two starting designs', () => {

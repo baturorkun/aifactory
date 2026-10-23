@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { ModelAdapter, ModelRequest, ModelResponse } from './adapter';
+import { providerEnv } from './provider-env';
 
 export interface CodexCliConfig {
   model: string;
@@ -60,7 +61,7 @@ const runCodexProcess: CodexProcessRunner = ({ executable, args, stdin, cwd, tim
     let timedOut = false;
     const child = spawn(executable, args, {
       cwd,
-      env: process.env,
+      env: providerEnv(),
       stdio: ['pipe', 'ignore', 'pipe'],
     });
     const timeout = setTimeout(() => {

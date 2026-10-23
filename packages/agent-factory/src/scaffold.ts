@@ -5,7 +5,7 @@ import { embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
 import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, EMPTY_CODING_STANDARD, chooseStandard, codingStandardChoice, configuredChoice, withCodingStandardSection, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
 import { aifactoryCommit, lockOf, TEMPLATE_KINDS, templateFiles, writeLock } from './template-lock';
 
-export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
+export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'python-service' | 'c' | 'embedded';
 
 // A hardware-twin project is described by its simulator, not by a language
 // template. The two axes are mutually exclusive at `factory new`.
@@ -44,7 +44,7 @@ export type NewProjectResult = {
   simulator?: Simulator;
 };
 
-export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python', 'c', 'embedded'];
+export const PROJECT_TEMPLATES: ProjectTemplate[] = ['empty', 'vanilla-ts', 'python', 'python-service', 'c', 'embedded'];
 
 // The templates built with CMake (RQ-0043).
 function isCTemplate(template: string | undefined): boolean {
@@ -1819,6 +1819,97 @@ function writePythonTemplate(projectRoot: string): void {
   writeFileSync(resolve(projectRoot, 'src/__init__.py'), '', 'utf8');
 }
 
+// A Python service deployed as its compose stack (RQ-0090): the deploy
+// script, its test, the deploy workflow and the profiles' README from the
+// template; a service of the standard library that answers /healthz, its
+// Dockerfile and compose.yml, which are the project's from then on.
+function writePythonServiceTemplate(projectRoot: string, projectName: string): void {
+  const module = projectName.replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+  copyTemplateTree('python-service', projectRoot);
+  patchPackageScripts(projectRoot, {
+    'deploy:dev': 'sh scripts/deploy.sh',
+    factory: 'node ../aifactory/packages/agent-factory/bin/factory.js',
+    'template:check': 'node scripts/template-check.mjs',
+  });
+  mkdirSync(resolve(projectRoot, 'src', module), { recursive: true });
+  writeFileSync(
+    resolve(projectRoot, 'pyproject.toml'),
+    ['[project]', `name = "${projectName}"`, 'version = "0.1.0"', 'requires-python = ">=3.11"', ''].join('\n'),
+    'utf8',
+  );
+  writeFileSync(resolve(projectRoot, 'src', module, '__init__.py'), '', 'utf8');
+  writeFileSync(
+    resolve(projectRoot, 'src', module, '__main__.py'),
+    [
+      '"""The service: answers /healthz, which the deploy waits for."""',
+      '',
+      'import os',
+      'from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer',
+      '',
+      '',
+      'class Handler(BaseHTTPRequestHandler):',
+      '    def do_GET(self) -> None:',
+      '        body = b"ok\\n" if self.path == "/healthz" else b"' + projectName + '\\n"',
+      '        self.send_response(200)',
+      '        self.send_header("Content-Type", "text/plain")',
+      '        self.end_headers()',
+      '        self.wfile.write(body)',
+      '',
+      '',
+      'def main() -> None:',
+      '    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8000"))), Handler).serve_forever()',
+      '',
+      '',
+      'if __name__ == "__main__":',
+      '    main()',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    resolve(projectRoot, 'tests', 'test_service.py'),
+    [
+      'import unittest',
+      '',
+      `from src.${module}.__main__ import Handler`,
+      '',
+      '',
+      'class ServiceTest(unittest.TestCase):',
+      '    def test_handler_serves_get(self) -> None:',
+      '        self.assertTrue(callable(Handler.do_GET))',
+      '',
+      '',
+      'if __name__ == "__main__":',
+      '    unittest.main()',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  writeFileSync(resolve(projectRoot, 'src', '__init__.py'), '', 'utf8');
+  writeFileSync(
+    resolve(projectRoot, 'Dockerfile'),
+    ['FROM python:3.13-slim', 'WORKDIR /app', 'COPY src/ src/', 'EXPOSE 8000', `CMD ["python", "-m", "src.${module}"]`, ''].join('\n'),
+    'utf8',
+  );
+  writeFileSync(
+    resolve(projectRoot, 'compose.yml'),
+    [
+      '# The service, as scripts/deploy.sh runs it (DEPLOY_TARGET=compose).',
+      'services:',
+      '  app:',
+      '    build: .',
+      `    image: \${APP_IMAGE:-localhost/${projectName}:local}`,
+      '    ports:',
+      '      - "${APP_PORT:-8000}:8000"',
+      '    restart: unless-stopped',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const gitignore = resolve(projectRoot, '.gitignore');
+  writeFileSync(gitignore, readFileSync(gitignore, 'utf8') + ['# Python', '__pycache__/', '*.pyc', '.venv/', ''].join('\n'), 'utf8');
+}
+
 // The new project's .env, from the lab inventory (RQ-0047): the hosts filled,
 // the board's settings when a unit is named, the tokens left empty for
 // env-check to name. Without an inventory there is nothing to fill.
@@ -3252,6 +3343,16 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
             '',
           ]
         : []),
+      ...(!options.simulator && options.template === 'python-service'
+        ? [
+            '## Deploy',
+            '',
+            '- One script deploys the service as its compose stack four ways: `sh scripts/deploy.sh` with the developer\'s `.env`, and the Deploy workflow with `deploy/main.env` (main), `deploy/branch.env` (a branch, by hand) and `deploy/release.env` (a tag, by hand, behind the `release` environment). `deploy/README.md` says how.',
+            '- Deploy settings (`DEPLOY_*` in `.env`, `deploy/*.env` and CI secrets) are the operator\'s. An agent does not read or write them, and does not deploy. aifactory starts its AI providers without any `DEPLOY_*` variable.',
+            '- The aifactory template owns `scripts/deploy.sh`, `scripts/template-check.mjs`, `tests/deploy.test.sh`, `deploy/README.md`, `deploy/dev.env.example` and `.github/workflows/deploy.yml` (`.factory/template.lock.json` lists them); the project owns its sources, tests, `compose.yml`, `Dockerfile`, `deploy/*.env` and this file. `factory template update` brings the template\'s changes as a merge request; `node scripts/template-check.mjs` (the `templateCheck` gate) lists what differs.',
+            '',
+          ]
+        : []),
       ...(!options.simulator && options.template === 'embedded'
         ? [
             '## The Embedded Workflow (Vivado and Vitis)',
@@ -3367,6 +3468,15 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
     );
     writeEmbeddedTemplate(projectRoot);
     writeEmbeddedEnv(projectRoot, projectName, options);
+  } else if (options.template === 'python-service') {
+    // deploy/ is not among the paths a requirement may write: deploy settings
+    // are the operator's, never the agent's (RQ-0090).
+    writeFactoryConfig(projectRoot, promptsPath, 'python-service', ['src', 'tests', 'pyproject.toml', 'compose.yml', 'Dockerfile'], {
+      typeCheck: 'python3 -m compileall -q src',
+      test: 'python3 -m unittest discover -s tests',
+      templateCheck: 'node scripts/template-check.mjs',
+    });
+    writePythonServiceTemplate(projectRoot, projectName);
   } else if (options.template === 'python') {
     writeFactoryConfig(projectRoot, promptsPath, 'python', ['src', 'tests'], {
       typeCheck: 'pnpm typecheck',
@@ -3430,8 +3540,8 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
   else if (!options.simulator && (isCTemplate(options.template) || options.template === 'embedded')) writeEmptyCodingStandard(projectRoot);
   // What the template delivered (RQ-0087; vanilla-ts, RQ-0089), the base of the first template update.
   if (embedded) writeLock(projectRoot, lockOf(projectRoot, templateFiles(), aifactoryCommit()));
-  if (!options.simulator && options.template === 'vanilla-ts') {
-    const kind = TEMPLATE_KINDS['vanilla-typescript'];
+  if (!options.simulator && (options.template === 'vanilla-ts' || options.template === 'python-service')) {
+    const kind = TEMPLATE_KINDS[options.template === 'vanilla-ts' ? 'vanilla-typescript' : 'python-service'];
     writeLock(projectRoot, lockOf(projectRoot, templateFiles(kind.root, kind.generated), aifactoryCommit(), kind.projectOwned));
   }
 

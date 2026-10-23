@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { providerEnv } from '../model/provider-env';
 import type { FactoryConfig } from '../config';
 import { resolveTargetRoot } from '../workspace/apply';
 import { addArtifact, readManifest, setRunStatus, updateStep } from './manifest';
@@ -13,7 +14,7 @@ import {
 function runCodex(executable: string, args: string[], prompt: string, cwd: string, timeoutMs: number): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolveResult, reject) => {
     let stderr = '';
-    const child = spawn(executable, args, { cwd, env: process.env, stdio: ['pipe', 'ignore', 'pipe'] });
+    const child = spawn(executable, args, { cwd, env: providerEnv(), stdio: ['pipe', 'ignore', 'pipe'] });
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-20_000); });
