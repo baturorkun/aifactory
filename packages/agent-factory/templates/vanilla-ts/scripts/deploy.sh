@@ -541,11 +541,12 @@ deploy_compose() {
   [ -z "${DEPLOY_COMPOSE_PORT_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_PORT_VAR" "$PORT" >> "$stage/set.env"
   [ -z "${DEPLOY_COMPOSE_IMAGE_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_IMAGE_VAR" "$IMAGE_REF" >> "$stage/set.env"
   # The commit, from a checkout; a release kit out of an image has none, and
-  # the image already carries its own.
+  # the image already carries its own. The time is ISO 8601 with its offset
+  # (RQ-0092): a service parses it (datetime.fromisoformat), not just shows it.
   if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     printf 'GIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
       "$(git -C "$ROOT" rev-parse --short=7 HEAD)" \
-      "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y-%m-%d-%H-%M)" >> "$stage/set.env"
+      "$(git -C "$ROOT" log -1 --format=%cI)" >> "$stage/set.env"
   fi
 
   CMD="sh -c $(q "$COMPOSE_STACK") deploy $(q "$DIR") $(q "$STACK") $(q "$CLI") $MODE $(q "$IMAGE_REF") $(q "$FILES") \

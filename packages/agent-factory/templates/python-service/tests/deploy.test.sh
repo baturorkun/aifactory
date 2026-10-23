@@ -100,6 +100,7 @@ for line in APP_PORT=9300 APP_IMAGE=localhost/demo-svc:demo-svc-dev-tester APP_T
   grep -qx "$line" "$ENV_FILE" || fail "runtime.env lacks $line: $(cat "$ENV_FILE")"
 done
 grep -q '^GIT_COMMIT_SHA=[0-9a-f]\{7\}$' "$ENV_FILE" || fail "no commit in runtime.env"
+grep -q '^GIT_COMMIT_TIME=[0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9][-+Z]' "$ENV_FILE" || fail "the commit time is not ISO 8601: $(grep GIT_COMMIT_TIME "$ENV_FILE")"
 session=$(sed -n 's/^SESSION_SECRET=//p' "$ENV_FILE")
 key=$(sed -n 's/^ENCRYPTION_KEY=//p' "$ENV_FILE")
 [ ${#session} = 32 ] || fail "hex16 is not 32 hex digits: $session"
