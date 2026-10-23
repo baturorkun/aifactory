@@ -1064,11 +1064,11 @@ standard
 
 const templateCommand = program
   .command('template')
-  .description('Embedded and vanilla-ts projects: bring the template-owned files up to this aifactory');
+  .description('Embedded, vanilla-ts and python-service projects: bring the template-owned files up to this aifactory');
 
 templateCommand
   .command('update')
-  .description('Bring aifactory up to date, then open a merge request that takes this project to the current template, embedded or vanilla-ts (from a clean, current main)')
+  .description('Bring aifactory up to date, then open a merge request that takes this project to the current template, embedded, vanilla-ts or python-service (from a clean, current main)')
   .option('--dry-run', 'Only list what would change; touch nothing', false)
   .option('--local', 'Write the changes into this worktree only, no branch and no merge request', false)
   .action(async (opts: { dryRun: boolean; local: boolean }) => {
@@ -1088,7 +1088,7 @@ templateCommand
         }
         listChanges(changes);
         console.log(opts.local
-          ? chalk.green(`\n✓ ${changes.length} change(s) written here. Review them with git diff and run the project's check (pnpm check, or pnpm test in vanilla-ts).`)
+          ? chalk.green(`\n✓ ${changes.length} change(s) written here. Review them with git diff and run the project's check (pnpm check; sh tests/deploy.test.sh in vanilla-ts and python-service).`)
           : chalk.dim(`\n${changes.length} change(s). Nothing written: without --dry-run a merge request opens with them.`));
         return;
       }

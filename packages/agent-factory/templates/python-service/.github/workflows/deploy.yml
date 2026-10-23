@@ -1,0 +1,131 @@
+# Deploys with scripts/deploy.sh (aifactory RQ-0090), as a developer does:
+#   main     a push to the default branch, with deploy/main.env (when it exists)
+#   branch   started by hand (Run workflow: profile branch), with deploy/branch.env;
+#            stopped by hand or when the branch is deleted
+#   release  started by hand for a tag (profile release), with deploy/release.env,
+#            held by the `release` environment's protection rules
+# The aifactory template owns this file; the settings are the project's, in
+# deploy/*.env. Runner labels: repository variable DEPLOY_RUNS_ON, a JSON list
+# (default ["self-hosted"]). A remote profile's key and known hosts: secrets
+# DEPLOY_REMOTE_IDENTITY and DEPLOY_REMOTE_KNOWN_HOSTS (the release
+# environment's own, when it has them).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  delete:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Which deploy
+        type: choice
+        options: [branch, main, release]
+        default: branch
+      action:
+        description: Deploy, or stop a branch preview
+        type: choice
+        options: [deploy, stop]
+        default: deploy
+      ref:
+        description: The branch (branch, main) or tag (release); empty is the one this run is on
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  main:
+    if: >-
+      (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
+      (github.event_name == 'workflow_dispatch' && inputs.profile == 'main')
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNS_ON || '["self-hosted"]') }}
+    concurrency: deploy-main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Deploy main
+        env:
+          DEPLOY_USER: ci
+          DEPLOY_BRANCH: ${{ github.event.repository.default_branch }}
+          DEPLOY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          IDENTITY: ${{ secrets.DEPLOY_REMOTE_IDENTITY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_REMOTE_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          if [ ! -f deploy/main.env ]; then
+            echo "deploy: no deploy/main.env: main is not deployed."
+            exit 0
+          fi
+          keys="$RUNNER_TEMP/deploy-keys-$GITHUB_RUN_ID"
+          trap 'rm -rf "$keys"' EXIT
+          if [ -n "$IDENTITY" ]; then
+            mkdir -m 700 "$keys"
+            printf '%s\n' "$IDENTITY" > "$keys/id" && chmod 600 "$keys/id"
+            printf '%s\n' "$KNOWN_HOSTS" > "$keys/known_hosts"
+            export DEPLOY_REMOTE_IDENTITY_FILE="$keys/id" DEPLOY_REMOTE_KNOWN_HOSTS="$keys/known_hosts"
+          fi
+          sh scripts/deploy.sh --profile main
+
+  branch:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.profile == 'branch') ||
+      (github.event_name == 'delete' && github.event.ref_type == 'branch')
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNS_ON || '["self-hosted"]') }}
+    concurrency: deploy-branch-${{ inputs.ref || github.event.ref || github.ref_name }}
+    steps:
+      # A deleted branch cannot be checked out: its preview is stopped from the default branch.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'delete' && github.event.repository.default_branch || inputs.ref || github.ref }}
+      - name: Deploy or stop the branch preview
+        env:
+          DEPLOY_USER: ci
+          DEPLOY_BRANCH: ${{ github.event_name == 'delete' && github.event.ref || inputs.ref || github.ref_name }}
+          DEPLOY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          STOP: ${{ github.event_name == 'delete' || inputs.action == 'stop' }}
+        run: |
+          set -eu
+          [ -f deploy/branch.env ] || { echo "deploy: no deploy/branch.env"; exit 1; }
+          # A branch never sees a deploy key: its preview stays on this runner.
+          grep -qx 'DEPLOY_ACCESS=local' deploy/branch.env || { echo "deploy: deploy/branch.env must be DEPLOY_ACCESS=local"; exit 1; }
+          [ "$DEPLOY_BRANCH" != "$DEPLOY_DEFAULT_BRANCH" ] || { echo "deploy: $DEPLOY_BRANCH is the default branch: use profile main"; exit 1; }
+          if [ "$STOP" = true ]; then sh scripts/deploy.sh --profile branch --stop; else sh scripts/deploy.sh --profile branch; fi
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'release'
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNS_ON || '["self-hosted"]') }}
+    environment: release
+    concurrency: deploy-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Deploy the release
+        env:
+          DEPLOY_USER: ci
+          TAG: ${{ inputs.ref || github.ref_name }}
+          DEPLOY_BRANCH: ${{ inputs.ref || github.ref_name }}
+          DEPLOY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          IDENTITY: ${{ secrets.DEPLOY_REMOTE_IDENTITY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_REMOTE_KNOWN_HOSTS }}
+        run: |
+          set -eu
+          [ -f deploy/release.env ] || { echo "deploy: no deploy/release.env"; exit 1; }
+          git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "deploy: $TAG is not a tag: a release deploys a tag"; exit 1; }
+          keys="$RUNNER_TEMP/deploy-keys-$GITHUB_RUN_ID"
+          trap 'rm -rf "$keys"' EXIT
+          if [ -n "$IDENTITY" ]; then
+            mkdir -m 700 "$keys"
+            printf '%s\n' "$IDENTITY" > "$keys/id" && chmod 600 "$keys/id"
+            printf '%s\n' "$KNOWN_HOSTS" > "$keys/known_hosts"
+            export DEPLOY_REMOTE_IDENTITY_FILE="$keys/id" DEPLOY_REMOTE_KNOWN_HOSTS="$keys/known_hosts"
+          fi
+          # DEPLOY_IMAGE in the profile: run that registry image at this tag; else build the tag.
+          image=$(sed -n 's/^DEPLOY_IMAGE=//p' deploy/release.env | head -n 1)
+          if [ -n "$image" ]; then sh scripts/deploy.sh --profile release --image "$image:$TAG"; else sh scripts/deploy.sh --profile release; fi

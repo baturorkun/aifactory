@@ -1,23 +1,41 @@
 #!/bin/sh
-# Deploys the site (aifactory RQ-0088): a developer runs it as `pnpm run deploy:dev`,
-# CI's deploy_linux and deploy_preview_linux run it with a prebuilt image.
+# Deploys the project (aifactory RQ-0088; compose, RQ-0090): a developer runs it
+# (`pnpm run deploy:dev`, or `sh scripts/deploy.sh`), CI runs it with a profile.
 #
-#   DEPLOY_TARGET  container | directory   what a deploy is
-#   DEPLOY_ACCESS  local | remote          where it goes (remote: over ssh)
+#   DEPLOY_TARGET  container | directory | compose   what a deploy is
+#   DEPLOY_ACCESS  local | remote                    where it goes (remote: over ssh)
+#
+# container: the nginx image as one container; directory: the release copied
+# into a directory; compose: the project's own compose stack, built from the
+# working tree on the target or run from a registry image.
 #
 # Settings come from the environment, else from deploy/<profile>.env when a
 # profile is named (--profile or DEPLOY_PROFILE: deploy/main.env for main,
 # deploy/release.env for a tag, committed, no secrets), else from the DEPLOY_*
 # lines of .env; .env.example lists them. Only release/<project>/ (and for a container,
-# Dockerfile and nginx.conf) leaves this machine.
+# Dockerfile and nginx.conf) leaves this machine; for compose, the files Git
+# tracks or would track (.gitignore decides).
+#
+# Deploy settings are the operator's: an agent neither reads nor writes them,
+# and aifactory starts no AI provider with a DEPLOY_* variable (RQ-0090).
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# The project's name, from package.json: container names, labels, the marker.
-PROJECT=$(sed -n 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -n 1)
+# The project's name, from package.json, else pyproject.toml's [project]:
+# container names, labels, the marker.
+if [ -f "$ROOT/package.json" ]; then
+  NAME_FROM=package.json
+  PROJECT=$(sed -n 's/^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/package.json" | head -n 1)
+elif [ -f "$ROOT/pyproject.toml" ]; then
+  NAME_FROM="pyproject.toml's [project]"
+  PROJECT=$(awk '/^\[project\][[:space:]]*$/ { inside = 1; next } /^\[/ { inside = 0 }
+    inside && /^[[:space:]]*name[[:space:]]*=/ { sub(/^[^=]*=[[:space:]]*/, ""); gsub(/["\047[:space:]]/, ""); print; exit }' "$ROOT/pyproject.toml")
+else
+  echo "deploy: no package.json or pyproject.toml to read the project's name from" >&2; exit 1
+fi
 PROJECT=${PROJECT##*/}
 case $PROJECT in
-  ''|*[!a-z0-9._-]*) echo "package.json needs a name of lower-case letters, digits, ., _ and -: '$PROJECT'" >&2; exit 1 ;;
+  ''|*[!a-z0-9._-]*) echo "$NAME_FROM needs a name of lower-case letters, digits, ., _ and -: '$PROJECT'" >&2; exit 1 ;;
 esac
 MARKER=.aifactory-deploy
 
@@ -26,17 +44,20 @@ usage() {
 Usage: pnpm run deploy:dev [-- options]
 
   --dry-run        print what would be built, sent, run or copied; change nothing
-  --stop           remove this deploy's container (container target)
+  --stop           remove this deploy's container (container), or take the
+                   stack down, keeping its volumes (compose)
   --no-build       deploy the existing dist/ without running pnpm build
   --prebuilt       deploy release/<project>/ as it is: no build, no release.sh (CI)
-  --image <tag>    run this already built image instead of building one (CI)
+  --image <tag>    run this already built image instead of building one (CI;
+                   compose: pulled on the target)
   --label <k=v>    an extra container label, repeatable (CI)
   --port <n>       the container's host port, overriding the branch rule below
   --profile <name> read deploy/<name>.env (CI: main, release); DEPLOY_PROFILE too
 
 Container port: on the default branch DEPLOY_PORT; on factory/RQ-N
 DEPLOY_BRANCH_PORT_BASE + N (empty base: 8100, so RQ-17 is 8117); on another
-branch 20000 + the pipeline id in CI, DEPLOY_PORT here.
+branch 20000 + the pipeline id in CI, DEPLOY_PORT here. The branch is
+DEPLOY_BRANCH (GitHub Actions sets it), else CI_COMMIT_BRANCH, else Git's.
 EOF
 }
 
@@ -89,9 +110,14 @@ fi
 
 TARGET=${DEPLOY_TARGET:-}
 ACCESS=${DEPLOY_ACCESS:-}
-[ -n "$TARGET" ] || die "DEPLOY_TARGET is empty: set it in .env to container or directory."
+[ -n "$TARGET" ] || die "DEPLOY_TARGET is empty: set it in .env to container, directory or compose."
 [ -n "$ACCESS" ] || die "DEPLOY_ACCESS is empty: set it in .env to local or remote."
-case $TARGET in container|directory) ;; *) die "DEPLOY_TARGET must be container or directory, not '$TARGET'." ;; esac
+case $TARGET in container|directory|compose) ;; *) die "DEPLOY_TARGET must be container, directory or compose, not '$TARGET'." ;; esac
+# container and directory ship a static release (scripts/release.sh): a
+# project without one (a Python service) runs as its compose stack.
+if [ "$TARGET" != compose ] && [ ! -f "$ROOT/scripts/release.sh" ]; then
+  die "DEPLOY_TARGET=$TARGET ships a static release (scripts/release.sh), which this project has none of: use DEPLOY_TARGET=compose."
+fi
 case $ACCESS in local|remote) ;; *) die "DEPLOY_ACCESS must be local or remote, not '$ACCESS'." ;; esac
 
 # Whose deploy: names the container and the directory marker.
@@ -163,19 +189,24 @@ build_release() {
 # --- container ---------------------------------------------------------------
 
 # The container's host port from the branch (CI's, else this checkout's).
+# DEPLOY_BRANCH, DEPLOY_DEFAULT_BRANCH and DEPLOY_RUN_ID are any CI's names
+# (GitHub Actions sets them); GitLab's own are read when they are not set.
+current_branch() { printf '%s' "${DEPLOY_BRANCH:-${CI_COMMIT_BRANCH:-$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)}}"; }
 resolve_port() {
-  BRANCH=${CI_COMMIT_BRANCH:-$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)}
+  BRANCH=$(current_branch)
+  RUN_ID=${DEPLOY_RUN_ID:-${CI_PIPELINE_ID:-}}
   RQ=$(printf '%s' "$BRANCH" | sed -n -E 's#^(factory[/-])?[Rr][Qq]-0*([0-9]+)([^0-9].*)?$#\2#p')
   if [ -n "$PORT_ARG" ]; then
     PORT=$PORT_ARG WHY="--port"
-  elif [ "$BRANCH" = "${CI_DEFAULT_BRANCH:-main}" ]; then
+  elif [ "$BRANCH" = "${DEPLOY_DEFAULT_BRANCH:-${CI_DEFAULT_BRANCH:-main}}" ]; then
     PORT=${DEPLOY_PORT:-} WHY="DEPLOY_PORT ($BRANCH)"
   elif [ -n "$RQ" ]; then
     BASE=${DEPLOY_BRANCH_PORT_BASE:-8100}
     case $BASE in ''|*[!0-9]*) die "DEPLOY_BRANCH_PORT_BASE must be a number: $BASE" ;; esac
     PORT=$((BASE + RQ)) WHY="DEPLOY_BRANCH_PORT_BASE $BASE + RQ-$RQ"
-  elif [ -n "${CI_PIPELINE_ID:-}" ]; then
-    PORT=$((20000 + CI_PIPELINE_ID % 40000)) WHY="20000 + pipeline $CI_PIPELINE_ID"
+  elif [ -n "$RUN_ID" ]; then
+    case $RUN_ID in *[!0-9]*) die "the run id must be a number: $RUN_ID" ;; esac
+    PORT=$((20000 + RUN_ID % 40000)) WHY="20000 + pipeline $RUN_ID"
   else
     PORT=${DEPLOY_PORT:-} WHY="DEPLOY_PORT"
   fi
@@ -327,4 +358,206 @@ deploy_directory() {
   say "$WHERE: $DEPLOY_PATH"
 }
 
-if [ "$TARGET" = container ]; then deploy_container; else deploy_directory; fi
+# --- compose -----------------------------------------------------------------
+
+# Runs on the target with a tar stream on stdin: src/ (the working tree, or
+# only the compose files for an image) and set.env (the lines this deploy
+# writes into runtime.env). DEPLOY_DIR keeps runtime.env between deploys:
+# a secret is generated there once and never leaves it.
+# Arguments: dir, compose project, engine, mode (build|image|stop), image,
+# files, overlays, secrets, copies, data dirs, port, health path, seconds.
+COMPOSE_STACK='set -eu
+dir=$1 project=$2 engine=$3 mode=$4 image=$5 files=$6 overlays=$7 secrets=$8 copies=$9
+shift 9
+datadirs=$1 port=$2 health=$3 seconds=$4
+say() { echo "deploy: $*"; }
+die() { echo "deploy: $*" >&2; exit 2; }
+case $dir in "~") dir=$HOME ;; "~/"*) dir=$HOME/${dir#"~/"} ;; esac
+case $dir in /*) ;; *) die "DEPLOY_DIR must be absolute or start with ~/: $dir" ;; esac
+command -v "$engine" >/dev/null 2>&1 || die "$engine is not installed on this host (DEPLOY_DOCKER)"
+env_file=$dir/runtime.env
+# The files in order, then each overlay whose network exists here.
+compose() {
+  chosen=""
+  for f in $files; do chosen="$chosen -f $f"; done
+  for pair in $overlays; do
+    if "$engine" network inspect "${pair%%:*}" >/dev/null 2>&1; then chosen="$chosen -f ${pair#*:}"; fi
+  done
+  (cd "$dir/src" && "$engine" compose -p "$project" --env-file "$env_file" $chosen "$@")
+}
+if [ "$mode" = stop ]; then
+  [ -d "$dir/src" ] || { say "no stack in $dir: nothing to stop"; exit 0; }
+  compose down
+  say "stack $project down, volumes kept"
+  exit 0
+fi
+mkdir -p "$dir"
+umask 077
+[ -f "$env_file" ] || : > "$env_file"
+chmod 600 "$env_file"
+has() { grep -q "^$1=" "$env_file"; }
+set_env() {
+  grep -v "^$1=" "$env_file" > "$env_file.tmp" || true
+  printf "%s=%s\n" "$1" "$2" >> "$env_file.tmp"
+  mv -f "$env_file.tmp" "$env_file"
+}
+stage=$(mktemp -d)
+trap "rm -rf \"$stage\"" EXIT
+tar -xf - -C "$stage"
+while IFS= read -r line || [ -n "$line" ]; do
+  [ -n "$line" ] || continue
+  set_env "${line%%=*}" "${line#*=}"
+done < "$stage/set.env"
+for pair in $secrets; do
+  name=${pair%%=*} kind=${pair#*=}
+  has "$name" && continue
+  case $kind in
+    hex[0-9]*) value=$(od -An -tx1 -N "${kind#hex}" /dev/urandom | tr -d " \n") ;;
+    base64url[0-9]*) value=$(head -c "${kind#base64url}" /dev/urandom | base64 | tr -d "\n" | tr "+/" "-_") ;;
+    *) die "DEPLOY_ENV_SECRETS: $name has an unknown kind $kind (hex<N> or base64url<N>)" ;;
+  esac
+  set_env "$name" "$value"
+  say "generated $name in $env_file"
+done
+for pair in $copies; do
+  from=${pair%%:*} names=${pair#*:}
+  case $from in "~/"*) from=$HOME/${from#"~/"} ;; esac
+  for name in $(echo "$names" | tr "," " "); do
+    has "$name" && continue
+    [ -f "$from" ] || die "DEPLOY_ENV_COPY: $from is missing, and $name is not set in $env_file"
+    value=$(sed -n "s/^$name=//p" "$from" | head -n 1)
+    [ -n "$value" ] || die "DEPLOY_ENV_COPY: $from has no $name"
+    set_env "$name" "$value"
+    say "copied $name from $from"
+  done
+done
+for pair in $datadirs; do
+  name=${pair%%=*} rest=${pair#*=}
+  sub=${rest%%:*} uid=${rest#*:}
+  [ "$uid" != "$rest" ] || uid=""
+  mkdir -p "$dir/$sub"
+  if [ -n "$uid" ]; then
+    if [ "$engine" = podman ] && [ "$(id -u)" != 0 ]; then podman unshare chown "$uid:$uid" "$dir/$sub"
+    else chown "$uid:$uid" "$dir/$sub" 2>/dev/null || say "warning: could not give $dir/$sub to uid $uid"
+    fi
+  fi
+  set_env "$name" "$dir/$sub"
+done
+rm -rf "$dir/src.new"
+mv "$stage/src" "$dir/src.new"
+rm -rf "$dir/src"
+mv "$dir/src.new" "$dir/src"
+if [ "$mode" = image ]; then
+  "$engine" pull "$image" >/dev/null
+  compose up -d --no-build --remove-orphans
+else
+  compose up -d --build --remove-orphans
+fi
+"$engine" image prune -f >/dev/null 2>&1 || true
+[ -n "$health" ] || exit 0
+url="http://127.0.0.1:$port$health"
+tries=$seconds
+until { command -v curl >/dev/null 2>&1 && curl -fsS -o /dev/null "$url"; } || { command -v wget >/dev/null 2>&1 && wget -q -O /dev/null "$url"; }; do
+  tries=$((tries - 1))
+  if [ "$tries" -le 0 ]; then
+    compose logs --tail 50 >&2 || true
+    die "health check failed: $url did not answer within ${seconds}s"
+  fi
+  sleep 1
+done
+say "healthy: $url"'
+
+# Space-separated pairs of a setting, each checked against its shape.
+check_pairs() {
+  for pair in $2; do
+    printf '%s\n' "$pair" | grep -Eq "$3" || die "$1: '$pair' is not $4"
+  done
+}
+
+deploy_compose() {
+  CLI=${DEPLOY_DOCKER:-docker}
+  case $CLI in docker|podman) ;; *) die "DEPLOY_DOCKER must be docker or podman for compose, not '$CLI'." ;; esac
+  # dev-<who> on a developer's deploy, the profile's name in CI, and the
+  # branch for a branch preview: each branch is a stack of its own.
+  case $PROFILE in
+    '') KIND=dev-$DEPLOY_WHO ;;
+    branch) KIND=$(current_branch | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed 's/^-*//; s/-*$//') ;;
+    *) KIND=$PROFILE ;;
+  esac
+  STACK=${DEPLOY_COMPOSE_PROJECT:-$PROJECT-$KIND}
+  case $STACK in *[!a-z0-9_-]*) die "DEPLOY_COMPOSE_PROJECT must be lower-case letters, digits, - and _: $STACK" ;; esac
+  DIR=${DEPLOY_DIR:-"~/$STACK"}
+  FILES=${DEPLOY_COMPOSE_FILES:-compose.yml}
+  check_pairs DEPLOY_COMPOSE_OVERLAYS "${DEPLOY_COMPOSE_OVERLAYS:-}" '^[A-Za-z0-9_.-]+:[^:]+$' "network:file"
+  check_pairs DEPLOY_ENV_SECRETS "${DEPLOY_ENV_SECRETS:-}" '^[A-Za-z_][A-Za-z0-9_]*=(hex|base64url)[0-9]+$' "NAME=hex<N> or NAME=base64url<N>"
+  check_pairs DEPLOY_ENV_COPY "${DEPLOY_ENV_COPY:-}" '^[^:]+:[A-Za-z_][A-Za-z0-9_,]*$' "path:NAME,NAME"
+  check_pairs DEPLOY_DATA_DIRS "${DEPLOY_DATA_DIRS:-}" '^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9_.-]+(:[0-9]+)?$' "NAME=dir or NAME=dir:uid"
+  if [ "$STOP" = 1 ]; then
+    CMD="sh -c $(q "$COMPOSE_STACK") deploy $(q "$DIR") $(q "$STACK") $(q "$CLI") stop '' $(q "$FILES") $(q "${DEPLOY_COMPOSE_OVERLAYS:-}") '' '' '' '' '' ''"
+    on_target "$CMD"
+    say "stack $STACK down on $WHERE"
+    return 0
+  fi
+  [ "$PREBUILT" = 0 ] || die "--prebuilt applies to the container and directory targets."
+  for f in $FILES; do [ -f "$ROOT/$f" ] || die "$f is missing: a compose file DEPLOY_COMPOSE_FILES names."; done
+  resolve_port
+
+  stage=$(mktemp -d)
+  trap 'rm -rf "$stage"' EXIT
+  mkdir "$stage/src"
+  # What goes: the working tree as Git sees it for a build, the compose
+  # files for an image.
+  if [ -z "$IMAGE" ]; then
+    MODE=build
+    git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || die "compose builds from the files Git tracks or would track: $ROOT is not a Git checkout."
+    git -C "$ROOT" ls-files -co --exclude-standard | while IFS= read -r f; do [ ! -f "$ROOT/$f" ] || printf '%s\n' "$f"; done > "$stage/files.list"
+    IMAGE_REF="localhost/$PROJECT:$STACK"
+  else
+    MODE=image
+    for f in $FILES; do printf '%s\n' "$f"; done > "$stage/files.list"
+    for pair in ${DEPLOY_COMPOSE_OVERLAYS:-}; do printf '%s\n' "${pair#*:}"; done >> "$stage/files.list"
+    IMAGE_REF=$IMAGE
+  fi
+  while IFS= read -r f; do
+    [ -f "$ROOT/$f" ] || die "$f is missing: a compose file the deploy names."
+  done < "$stage/files.list"
+  for f in $FILES; do grep -qxF -- "$f" "$stage/files.list" || die "$f is not among the files sent (ignored by .gitignore?)."; done
+
+  # The lines runtime.env takes on every deploy: DEPLOY_ENV_SET_<NAME>,
+  # the port, the image and the commit.
+  env | sed -n 's/^DEPLOY_ENV_SET_\([A-Za-z_][A-Za-z0-9_]*=.*\)$/\1/p' | LC_ALL=C sort > "$stage/set.env"
+  [ -z "${DEPLOY_COMPOSE_PORT_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_PORT_VAR" "$PORT" >> "$stage/set.env"
+  [ -z "${DEPLOY_COMPOSE_IMAGE_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_IMAGE_VAR" "$IMAGE_REF" >> "$stage/set.env"
+  printf 'GIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
+    "$(git -C "$ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo unknown)" \
+    "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y-%m-%d-%H-%M 2>/dev/null || echo unknown)" >> "$stage/set.env"
+
+  CMD="sh -c $(q "$COMPOSE_STACK") deploy $(q "$DIR") $(q "$STACK") $(q "$CLI") $MODE $(q "$IMAGE_REF") $(q "$FILES") \
+$(q "${DEPLOY_COMPOSE_OVERLAYS:-}") $(q "${DEPLOY_ENV_SECRETS:-}") $(q "${DEPLOY_ENV_COPY:-}") $(q "${DEPLOY_DATA_DIRS:-}") \
+$PORT $(q "${DEPLOY_HEALTH_PATH:-/healthz}") ${DEPLOY_HEALTH_SECONDS:-90}"
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "[dry-run] local: $(wc -l < "$stage/files.list" | tr -d ' ') files ($MODE) and $(wc -l < "$stage/set.env" | tr -d ' ') runtime.env lines -> $WHERE:$DIR"
+    sed 's/=.*/=…/; s/^/[dry-run]   set /' "$stage/set.env"
+    echo "[dry-run] $WHERE: $CLI compose -p $STACK -f $FILES up -d ($MODE), health $PORT${DEPLOY_HEALTH_PATH:-/healthz}"
+    return 0
+  fi
+  (
+    cd "$ROOT"
+    if tar --version 2>/dev/null | grep -q bsdtar; then
+      COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -cf "$stage/src.tar" -T "$stage/files.list"
+    else
+      tar -cf "$stage/src.tar" -T "$stage/files.list"
+    fi
+  )
+  (cd "$stage/src" && tar -xf "$stage/src.tar")
+  rm -f "$stage/src.tar" "$stage/files.list"
+  tar_dir "$stage" | on_target "$CMD" || die "the stack did not come up ($WHERE)"
+  say "stack $STACK ($IMAGE_REF) on $WHERE"
+  say "http://$URL_HOST:$PORT/"
+}
+
+case $TARGET in
+  container) deploy_container ;;
+  directory) deploy_directory ;;
+  compose) deploy_compose ;;
+esac

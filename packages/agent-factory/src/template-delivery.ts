@@ -5,7 +5,7 @@ import type { RepositoryPlatformAdapter } from './repository-platform/types';
 import { templateKindOf } from './template-lock';
 import { updateTemplateProject, type TemplateChange } from './template-update';
 
-// `factory template update` (RQ-0069; vanilla-ts, RQ-0089): a project takes the
+// `factory template update` (RQ-0069; vanilla-ts, RQ-0089; python-service, RQ-0090): a project takes the
 // current template as a merge request, never as files left in a worktree.
 // aifactory knows no project: the one the command runs in is the one updated.
 //
@@ -74,10 +74,10 @@ export function updateAifactory(root: string, log: (line: string) => void = () =
 
 // The project's check with the new files, without pnpm, which is a .cmd on
 // Windows (RQ-0073): an embedded project's design check (`pnpm check`) run by
-// this Node; a vanilla-ts project's deploy test (`pnpm test`) run by sh
-// (RQ-0089). A check that could not start says so, not that it failed.
+// this Node; a vanilla-ts or python-service project's deploy test run by sh
+// (RQ-0089, RQ-0090). A check that could not start says so, not that it failed.
 export function runProjectCheck(root: string): void {
-  if (templateKindOf(root).kind.template === 'vanilla-ts') {
+  if (templateKindOf(root).kind.template !== 'embedded') {
     const test = join(root, 'tests', 'deploy.test.sh');
     if (!existsSync(test)) throw new TemplateDeliveryError(`The project has no tests/deploy.test.sh to check with; nothing was pushed.`);
     const tested = spawnSync('sh', [test], { cwd: root, stdio: 'inherit' });
@@ -156,7 +156,9 @@ export async function deliverTemplateUpdate(projectRoot: string, options: {
         '',
         kind.template === 'embedded'
           ? 'Template-owned files only: the scripts, the CI file, `.env.example`, `AGENTS.md`, merged package scripts and gates. Designs, boards, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.'
-          : 'Template-owned files only: the deploy scripts and their test, `deploy/README.md`, the CI file, `Dockerfile`, `nginx.conf`, `.env.example`, `AGENTS.md`, merged package scripts and gates. `src/`, `public/`, `deploy/*.env`, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.',
+          : kind.template === 'python-service'
+            ? 'Template-owned files only: the deploy script and its test, the template check, `deploy/README.md`, `deploy/dev.env.example`, `.github/workflows/deploy.yml` and the `templateCheck` gate. The sources, tests, `AGENTS.md`, `.env.example`, compose files, `Dockerfile`, the project\'s own CI, `deploy/*.env`, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.'
+            : 'Template-owned files only: the deploy scripts and their test, `deploy/README.md`, the CI file, `Dockerfile`, `nginx.conf`, `.env.example`, `AGENTS.md`, merged package scripts and gates. `src/`, `public/`, `deploy/*.env`, `.env` and requirements are not touched. A file the project changed is never overwritten: `kept` when only the project changed it, `merged` when both did, `conflict` when the merge needs a hand.',
         '',
         list,
         '',

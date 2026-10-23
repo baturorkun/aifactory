@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ModelAdapter, ModelRequest, ModelResponse } from './adapter';
+import { providerEnv } from './provider-env';
 
 /**
  * Drives the Claude Code CLI as a plain completion provider, the way
@@ -71,7 +72,7 @@ const runClaudeProcess: ClaudeProcessRunner = ({ executable, args, stdin, cwd, t
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const child = spawn(executable, args, { cwd, env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(executable, args, { cwd, env: providerEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');

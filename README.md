@@ -248,6 +248,53 @@ its `typecheck` / `build` scripts. The check before the push is
 grew on its own before taking updates, with no base to compare, is kept and
 listed by `template:check`, never replaced.
 
+#### `python-service`
+
+A Python service deployed as its own compose stack (RQ-0090):
+
+```text
+pyproject.toml, src/<name>/__main__.py (answers /healthz), tests/
+Dockerfile, compose.yml
+scripts/deploy.sh, scripts/template-check.mjs, tests/deploy.test.sh
+deploy/branch.env, deploy/dev.env.example, deploy/README.md
+.github/workflows/deploy.yml
+```
+
+The same `scripts/deploy.sh` as `vanilla-ts` (byte for byte), with a third
+target, `DEPLOY_TARGET=compose`. It builds the working tree as Git sees it on
+the target (or pulls `--image`), then runs `docker compose` or `podman compose`
+with the project's compose files.
+- `DEPLOY_DIR/runtime.env` (mode 600) stays on the target. It takes
+  `DEPLOY_ENV_SET_<NAME>` settings on every deploy and generates
+  `DEPLOY_ENV_SECRETS` once.
+- An overlay (`DEPLOY_COMPOSE_OVERLAYS`) joins a side stack, such as a log
+  stack, only where its network exists.
+- Each branch preview is a stack of its own.
+
+The project name comes from `package.json`, else `pyproject.toml`.
+`.github/workflows/deploy.yml` runs it:
+- main on a push;
+- a branch preview by hand, stopped when the branch is deleted;
+- a release by hand for a tag, behind the GitHub environment `release`.
+
+The ssh key comes from secrets.
+
+`factory template update` works on such a project with or without a
+`package.json` and delivers a pull request on GitHub.
+- **Template-owned:** only the files above under `scripts/`, `tests/`,
+  `deploy/` (except `branch.env`) and `.github/workflows/deploy.yml`.
+- **Project-owned:** `AGENTS.md`, `.env.example`, the compose files,
+  `Dockerfile`, its own CI and its `test` / `lint` / `typeCheck` gates.
+- **Gates and checks:** the template adds `templateCheck`. The check before
+  the push is `tests/deploy.test.sh`.
+- **Older projects** (NetForgeSH): a project older than the template has no
+  lock, and its first commit is not taken as the template's. A file of its
+  own is kept.
+
+Deploy settings never reach an AI provider. `claude-cli`, `codex-cli` and the
+direct runner start their process without any `DEPLOY_*` variable, and
+`deploy/` is not among the paths a requirement may write.
+
 #### `python`
 
 Creates a minimal Python target project:

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { dirname, join, relative, resolve } from 'path';
 
 // What the template last delivered to a project (RQ-0087; vanilla-ts too,
-// RQ-0089), so a
+// RQ-0089; python-service, RQ-0090), so a
 // project that changed a template-owned file is told from one on an older
 // template. `.factory/template.lock.json` holds the aifactory commit and the
 // sha256 of each template-owned file as the template wrote it; where the
@@ -26,9 +26,9 @@ export const TEMPLATE_ROOT = resolve(__dirname, '../templates/embedded');
 // A template a project can take updates of, by its targetProject.profile
 // (RQ-0089): the same lock, merge, override and check for each.
 export interface TemplateKind {
-  profile: 'embedded' | 'vanilla-typescript';
+  profile: 'embedded' | 'vanilla-typescript' | 'python-service';
   /** The scaffold's template name, also in the commit and merge request. */
-  template: 'embedded' | 'vanilla-ts';
+  template: 'embedded' | 'vanilla-ts' | 'python-service';
   root: string;
   projectOwned: string[];
   generated: string[];
@@ -43,6 +43,13 @@ export interface TemplateKind {
    * next base, for projects that grew their own before they took updates.
    */
   unknownBase: 'replace' | 'keep';
+  /**
+   * Whether a project without a lock or a template update commit was made by
+   * the scaffold, so its first commit holds what the template delivered. Not
+   * for a project older than its template (a Python service): there the first
+   * commit is the project's own (RQ-0090).
+   */
+  firstCommitIsTemplate: boolean;
 }
 
 export const TEMPLATE_KINDS: Record<TemplateKind['profile'], TemplateKind> = {
@@ -55,6 +62,7 @@ export const TEMPLATE_KINDS: Record<TemplateKind['profile'], TemplateKind> = {
     // codingStandard is the project's own (set by `standard use`), not the template's.
     commands: ['designCheck', 'templateCheck', 'hdlSim', 'fpgaBuild', 'firmwareBuild', 'twinTest', 'boardTest'],
     unknownBase: 'replace',
+    firstCommitIsTemplate: true,
   },
   'vanilla-typescript': {
     profile: 'vanilla-typescript',
@@ -69,6 +77,24 @@ export const TEMPLATE_KINDS: Record<TemplateKind['profile'], TemplateKind> = {
     scripts: ['deploy:dev', 'test', 'factory', 'template:check'],
     // website had its own nginx.conf, Dockerfile and AGENTS.md long before.
     unknownBase: 'keep',
+    firstCommitIsTemplate: true,
+  },
+  'python-service': {
+    profile: 'python-service',
+    template: 'python-service',
+    root: resolve(__dirname, '../templates/python-service'),
+    // A Python service (NetForgeSH) is older than its template: its
+    // AGENTS.md, .env.example, compose files, Dockerfile and CI are its own.
+    // The template brings the deploy script, its test, the deploy workflow
+    // and the profiles' README; the branch profile is the project's.
+    projectOwned: ['deploy/branch.env'],
+    generated: [],
+    // test, lint and typeCheck are the project's: only the template's own check.
+    commands: ['templateCheck'],
+    // No package scripts: a Python project may have no package.json at all.
+    scripts: [],
+    unknownBase: 'keep',
+    firstCommitIsTemplate: false,
   },
 };
 
