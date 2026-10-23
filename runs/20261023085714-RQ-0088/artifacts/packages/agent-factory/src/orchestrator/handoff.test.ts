@@ -1,0 +1,322 @@
+import assert from 'node:assert/strict';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { RunManifestSchema } from '@aifactory/contracts';
+import { FactoryConfigSchema } from '../config';
+import {
+  beginHandoffRun,
+  createHandoffPackage,
+  finishHandoffRun,
+} from './handoff';
+import { readManifest, writeManifest } from './manifest';
+
+test('legacy agent manifests default to agent mode', () => {
+  const manifest = RunManifestSchema.parse({
+    runId: '20260726000000-RQ-0000',
+    requirementId: 'RQ-0000',
+    status: 'passed',
+    createdAt: '2026-07-26T00:00:00.000Z',
+    updatedAt: '2026-07-26T00:00:00.000Z',
+    steps: [],
+    artifacts: [],
+    gateResults: {},
+  });
+
+  assert.equal(manifest.executionMode, 'agent');
+  assert.deepEqual(manifest.deletedFiles, []);
+});
+
+test('handoff queries configured RAG and embeds answer with sources', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  mkdirSync(requirements);
+  writeFileSync(
+    join(requirements, 'RQ-0001.md'),
+    '# ARINC Layer\n\nImplement the Layer parent-child rules.',
+  );
+  writeFileSync(
+    join(root, 'PROJECT_GUIDELINES.md'),
+    '# Project Guidelines\n\n- Preserve Supplement 8 compatibility.',
+  );
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: {
+      requirements,
+      constraints: join(root, 'constraints'),
+      handoffs,
+      runs,
+    },
+    targetProject: { root },
+    projectGuidelines: {
+      files: ['./PROJECT_GUIDELINES.md'],
+      required: true,
+    },
+    rag: {
+      grounding: {
+        enabled: true,
+        chatUrl: 'http://rag.example/query',
+        sourceIds: ['source-a'],
+      },
+    },
+  });
+  let requestBody: Record<string, unknown> | undefined;
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(
+      JSON.stringify({
+        answer: 'A Layer can parent supported Container widgets.',
+        sources: [
+          {
+            sourceId: 'source-a',
+            relativePath: 'ARINC 661/ARINC661P1-8.pdf',
+            score: 0.9,
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  };
+
+  try {
+    const handoffId = await createHandoffPackage('RQ-0001', config, fetchImpl);
+    const handoff = readFileSync(join(handoffs, handoffId, 'handoff.md'), 'utf8');
+    const ragContext = JSON.parse(
+      readFileSync(join(handoffs, handoffId, 'rag-context.json'), 'utf8'),
+    ) as { answer: string };
+    const manifest = readManifest(join(runs, handoffId));
+
+    assert.deepEqual(requestBody?.sourceIds, ['source-a']);
+    assert.match(handoffId, /^\d{14}-RQ-0001$/);
+    assert.match(handoff, /## RAG Grounding/);
+    assert.match(handoff, /## Project Guidelines/);
+    assert.match(handoff, /Preserve Supplement 8 compatibility/);
+    assert.match(handoff, new RegExp(`Run ID: \`${handoffId}\``));
+    assert.match(handoff, /A Layer can parent supported Container widgets/);
+    assert.match(handoff, /ARINC661P1-8\.pdf/);
+    assert.equal(ragContext.answer, 'A Layer can parent supported Container widgets.');
+    assert.equal(manifest.executionMode, 'handoff');
+    assert.equal(manifest.status, 'queued');
+    assert.equal(manifest.steps[0]?.agent, 'handoff');
+    assert.equal(manifest.steps[0]?.status, 'pending');
+    assert.equal(manifest.projectGuidelines?.files[0]?.path, 'PROJECT_GUIDELINES.md');
+    assert.ok(existsSync(join(handoffs, handoffId, 'project-guidelines.json')));
+    assert.equal(
+      readFileSync(join(runs, handoffId, 'rag-context.json'), 'utf8'),
+      readFileSync(join(handoffs, handoffId, 'rag-context.json'), 'utf8'),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('handoff run captures implementation artifacts and finalizes like an agent run', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-run-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0002.md'), '# Manual change\n\nUpdate the target.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(target, 'src', 'removed.ts'), 'export const removed = true;\n');
+
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: {
+      requirements,
+      constraints: join(root, 'constraints'),
+      handoffs,
+      runs,
+    },
+    targetProject: {
+      root: target,
+      allowedPaths: ['src'],
+    },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0002', config);
+    const secondRunId = await createHandoffPackage('RQ-0002', config);
+    assert.notEqual(secondRunId, runId);
+    assert.ok(existsSync(join(handoffs, runId, 'handoff.md')));
+    assert.ok(existsSync(join(handoffs, secondRunId, 'handoff.md')));
+
+    const started = beginHandoffRun(runId, config);
+    assert.equal(started.status, 'running');
+    assert.equal(started.steps[0]?.status, 'running');
+
+    writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 2;\n');
+    writeFileSync(join(target, 'src', 'added.ts'), 'export const added = true;\n');
+    rmSync(join(target, 'src', 'removed.ts'));
+
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.equal(finished.status, 'passed');
+    assert.equal(finished.executionMode, 'handoff');
+    assert.equal(finished.steps[0]?.status, 'passed');
+    assert.deepEqual(finished.artifacts, ['src/added.ts', 'src/main.ts']);
+    assert.deepEqual(finished.deletedFiles, ['src/removed.ts']);
+    assert.deepEqual(Object.values(finished.gateResults), [
+      'skipped',
+      'skipped',
+      'skipped',
+      'skipped',
+      'skipped',
+      'skipped',
+    ]);
+    assert.equal(
+      readFileSync(join(runs, runId, 'artifacts', 'src', 'main.ts'), 'utf8'),
+      'export const value = 2;\n',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('handoff capture is not bounded by targetProject.allowedPaths', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-outside-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0004.md'), '# Outside the allow list\n\nTouch project files.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(target, 'package.json'), '{"name":"target"}\n');
+
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, constraints: join(root, 'constraints'), handoffs, runs },
+    // The allow list bounds where factory agents may write. A person
+    // implementing a handoff legitimately edits project configuration too.
+    targetProject: { root: target, allowedPaths: ['src'] },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0004', config);
+    beginHandoffRun(runId, config);
+
+    writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 2;\n');
+    writeFileSync(join(target, 'package.json'), '{"name":"target","version":"0.1.0"}\n');
+    writeFileSync(join(target, 'AGENTS.md'), '# Rules\n');
+
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.deepEqual(finished.artifacts, ['AGENTS.md', 'package.json', 'src/main.ts']);
+    assert.equal(
+      readFileSync(join(runs, runId, 'artifacts', 'package.json'), 'utf8'),
+      '{"name":"target","version":"0.1.0"}\n',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('handoff capture skips what the project\'s .gitignore ignores (RQ-0088)', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-gitignore-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  mkdirSync(join(target, 'release', 'site'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0005.md'), '# Ignored output\n\nBuild a release.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(target, 'release', 'site', 'old.js'), '// in the baseline\n');
+  execFileSync('git', ['init', '--quiet'], { cwd: target });
+
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, constraints: join(root, 'constraints'), handoffs, runs },
+    targetProject: { root: target },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0005', config);
+    beginHandoffRun(runId, config);
+
+    // The change ignores release/; the build writes there.
+    writeFileSync(join(target, '.gitignore'), 'release/\n');
+    writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 2;\n');
+    writeFileSync(join(target, 'release', 'site', 'old.js'), '// rebuilt\n');
+    writeFileSync(join(target, 'release', 'site', 'new.js'), '// built\n');
+
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.deepEqual(finished.artifacts, ['.gitignore', 'src/main.ts'], 'release/ is ignored, not an artifact');
+    assert.deepEqual(finished.deletedFiles, [], 'a file still on disk is not deleted, though it left the capture');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('handoff finish uses the project directory fallback when target root is omitted', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-root-fallback-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  mkdirSync(requirements);
+  mkdirSync(handoffs);
+  mkdirSync(runs);
+  writeFileSync(join(requirements, 'RQ-0003.md'), '# Root fallback\n\nTrack this handoff.');
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, handoffs, runs },
+    targetProject: { allowedPaths: ['nonexistent-handoff-test-path'] },
+  });
+  try {
+    const runId = await createHandoffPackage('RQ-0003', config);
+    beginHandoffRun(runId, config);
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.equal(finished.status, 'passed');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a passed hardware-twin run can be finished again until its boardParity gate passes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-parity-'));
+  const requirements = join(root, 'requirements');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0003.md'), '# Twin change\n\nModel the device.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, constraints: join(root, 'constraints'), handoffs: join(root, 'handoffs'), runs },
+    targetProject: { root: target, allowedPaths: ['src'] },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0003', config);
+    beginHandoffRun(runId, config);
+    const passed = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.equal(passed.status, 'passed');
+    assert.throws(() => beginHandoffRun(runId, config), /already passed/, 'a standard run stays final');
+
+    // Gated in phase model: boardParity did not run, so approve would refuse it.
+    const runDir = join(runs, runId);
+    writeManifest(runDir, { ...passed, twin: { phase: 'model', probe: 'device' }, gateResults: { ...passed.gateResults, boardParity: 'skipped' } });
+    assert.equal(beginHandoffRun(runId, config).status, 'running');
+
+    // Once boardParity has passed, the run is final again.
+    writeManifest(runDir, { ...readManifest(runDir), status: 'passed', gateResults: { ...passed.gateResults, boardParity: 'passed' } });
+    assert.throws(() => beginHandoffRun(runId, config), /already passed/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
