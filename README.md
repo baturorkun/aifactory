@@ -275,9 +275,14 @@ The project name comes from `package.json`, else `pyproject.toml`.
 `.github/workflows/deploy.yml` runs it:
 - main on a push;
 - a branch preview by hand, stopped when the branch is deleted;
-- a release when a tag `v*` is pushed (or by hand for a tag), behind the
-  GitHub environment `release`, on the runner `DEPLOY_RELEASE_RUNS_ON` names
-  (a runner on the production host deploys there locally, RQ-0091).
+- a release by hand for a tag, behind the GitHub environment `release`.
+
+A release host behind a VPN keeps no checkout and no runner (RQ-0091).
+- The image carries its deploy kit in `/opt/aifactory-deploy`.
+- `sh release-here.sh <tag>` on the host pulls the tag's image from the
+  registry and deploys it with the kit's `deploy/release.env`.
+- That profile says `DEPLOY_ACCESS=local` and `DEPLOY_BY=host`, and
+  `deploy.sh` refuses such a profile in CI.
 
 The ssh key comes from secrets.
 

@@ -2,14 +2,13 @@
 #   main     a push to the default branch, with deploy/main.env (when it exists)
 #   branch   started by hand (Run workflow: profile branch), with deploy/branch.env;
 #            stopped by hand or when the branch is deleted
-#   release  a pushed tag (v*), or started by hand for a tag (profile release),
-#            with deploy/release.env (none: a tag deploys nothing), under the
-#            `release` environment, whose protection rules can hold it
+#   release  started by hand for a tag (profile release), with deploy/release.env,
+#            held by the `release` environment's protection rules. A release
+#            whose profile says DEPLOY_BY=host (a host behind a VPN) is never
+#            deployed here: release-here.sh deploys it on its host (RQ-0091)
 # The aifactory template owns this file; the settings are the project's, in
 # deploy/*.env. Runner labels: repository variable DEPLOY_RUNS_ON, a JSON list
-# (default ["self-hosted"]); DEPLOY_RELEASE_RUNS_ON for the release when it
-# runs elsewhere (a runner on the production host itself, RQ-0091). A remote
-# profile's key and known hosts: secrets
+# (default ["self-hosted"]). A remote profile's key and known hosts: secrets
 # DEPLOY_REMOTE_IDENTITY and DEPLOY_REMOTE_KNOWN_HOSTS (the release
 # environment's own, when it has them).
 name: Deploy
@@ -17,7 +16,6 @@ name: Deploy
 on:
   push:
     branches: [main]
-    tags: ['v*']
   delete:
   workflow_dispatch:
     inputs:
@@ -42,7 +40,7 @@ permissions:
 jobs:
   main:
     if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && github.ref_name == github.event.repository.default_branch) ||
+      (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch) ||
       (github.event_name == 'workflow_dispatch' && inputs.profile == 'main')
     runs-on: ${{ fromJSON(vars.DEPLOY_RUNS_ON || '["self-hosted"]') }}
     concurrency: deploy-main
@@ -101,10 +99,8 @@ jobs:
           if [ "$STOP" = true ]; then sh scripts/deploy.sh --profile branch --stop; else sh scripts/deploy.sh --profile branch; fi
 
   release:
-    if: >-
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
-      (github.event_name == 'workflow_dispatch' && inputs.profile == 'release')
-    runs-on: ${{ fromJSON(vars.DEPLOY_RELEASE_RUNS_ON || vars.DEPLOY_RUNS_ON || '["self-hosted"]') }}
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'release'
+    runs-on: ${{ fromJSON(vars.DEPLOY_RUNS_ON || '["self-hosted"]') }}
     environment: release
     concurrency: deploy-release
     steps:
@@ -115,7 +111,6 @@ jobs:
         env:
           DEPLOY_USER: ci
           TAG: ${{ inputs.ref || github.ref_name }}
-          BY_TAG: ${{ github.event_name == 'push' }}
           DEPLOY_BRANCH: ${{ inputs.ref || github.ref_name }}
           DEPLOY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           DEPLOY_RUN_ID: ${{ github.run_id }}
@@ -123,11 +118,7 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.DEPLOY_REMOTE_KNOWN_HOSTS }}
         run: |
           set -eu
-          if [ ! -f deploy/release.env ]; then
-            # A project that does not release by tag is not failed by one.
-            echo "deploy: no deploy/release.env: $TAG is not deployed."
-            [ "$BY_TAG" = true ] && exit 0 || exit 1
-          fi
+          [ -f deploy/release.env ] || { echo "deploy: no deploy/release.env"; exit 1; }
           git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || { echo "deploy: $TAG is not a tag: a release deploys a tag"; exit 1; }
           keys="$RUNNER_TEMP/deploy-keys-$GITHUB_RUN_ID"
           trap 'rm -rf "$keys"' EXIT

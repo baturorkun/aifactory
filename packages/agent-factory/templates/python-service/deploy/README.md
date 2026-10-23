@@ -8,7 +8,7 @@ the same `DEPLOY_*` settings, from a different place:
 | a developer's | `sh scripts/deploy.sh` | `.env` (not committed; `deploy/dev.env.example` lists the variables) |
 | main | a push to the default branch | `deploy/main.env` |
 | branch | the Deploy workflow, run by hand (profile `branch`) | `deploy/branch.env` |
-| release | a pushed tag (`v*`), or the Deploy workflow run by hand for a tag | `deploy/release.env` |
+| release | the Deploy workflow, run by hand for a tag (profile `release`) | `deploy/release.env` |
 
 The files here are committed and hold no secrets. A setting in the
 environment wins over a profile, and a profile over `.env`.
@@ -22,16 +22,39 @@ not read or write them. aifactory starts its AI providers without any
   (`<project>-<branch>`), on port `DEPLOY_BRANCH_PORT_BASE` + the RQ number.
   Deleting the branch stops its stack.
 - **main**: without `deploy/main.env`, a push to main deploys nothing.
-- **release** runs when a tag `v*` is pushed (or by hand for a tag), in the
-  GitHub environment `release`; protection rules (required reviewers) make it
-  wait for an approval. Without `deploy/release.env` a tag deploys nothing.
-  It runs on the runner the repository variable `DEPLOY_RELEASE_RUNS_ON`
-  names (a JSON list of labels), else on `DEPLOY_RUNS_ON`'s. A runner on the
-  production host itself deploys with `DEPLOY_ACCESS=local`: no key, no VPN.
+- **release** runs in the GitHub environment `release`. Give it protection
+  rules (required reviewers) so a release waits for an approval.
   - With `DEPLOY_IMAGE` in `deploy/release.env`, it runs that registry image
     at the tag (`--image <DEPLOY_IMAGE>:<tag>`; the target must be logged in
     to the registry).
   - Without `DEPLOY_IMAGE`, it builds the tag on the target.
+
+## A release on its own host
+
+A release host that no runner reaches (behind a VPN) keeps no checkout and no
+key.
+
+1. On the tag, CI builds and publishes the image.
+2. The image carries its deploy kit in `/opt/aifactory-deploy`. The
+   `Dockerfile` copies the compose files, the project's name file, `deploy/`,
+   `scripts/deploy.sh` and `scripts/release-here.sh` there.
+3. Copy `scripts/release-here.sh` once into the stack's directory on the host,
+   then run it there:
+
+   ```
+   sh release-here.sh --image ghcr.io/<owner>/<project> v1.2.3   # the first time
+   sh release-here.sh v1.2.3                                     # from then on
+   ```
+
+   It pulls the tag's image, takes the kit out and runs the kit's
+   `deploy.sh --profile release --image <image>:<tag>` on that host. The
+   stack's directory is where the script lives, unless the profile names
+   `DEPLOY_DIR`. The host must be logged in to the registry. The script
+   replaces itself with the tag's copy for the next release.
+
+`deploy/release.env` for this says `DEPLOY_ACCESS=local` and `DEPLOY_BY=host`.
+`scripts/deploy.sh` refuses a `DEPLOY_BY=host` profile in GitHub or GitLab
+CI, so no pipeline deploys it.
 
 ## The compose target
 

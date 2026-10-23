@@ -17,7 +17,7 @@ import { updateTemplateProject } from './template-update';
 
 const IDENTITY = { GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 const TEMPLATES = resolve(__dirname, '../templates');
-const OWNED = ['scripts/deploy.sh', 'scripts/template-check.mjs', 'tests/deploy.test.sh', 'deploy/README.md', 'deploy/dev.env.example', '.github/workflows/deploy.yml'];
+const OWNED = ['scripts/deploy.sh', 'scripts/release-here.sh', 'scripts/template-check.mjs', 'tests/deploy.test.sh', 'deploy/README.md', 'deploy/dev.env.example', '.github/workflows/deploy.yml'];
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...IDENTITY } });
@@ -49,6 +49,9 @@ test('a new python-service project: its lock, its gates, no deploy path for an a
     assert.match(read('AGENTS.md'), /An agent does not read or write them, and does not deploy/);
     assert.match(read('pyproject.toml'), /^name = "svc"$/m);
     assert.match(read('compose.yml'), /\$\{APP_PORT:-8000\}:8000/);
+    // RQ-0091: the image carries the kit release-here.sh takes out of it.
+    assert.match(read('Dockerfile'), /^COPY scripts\/deploy\.sh scripts\/release-here\.sh \/opt\/aifactory-deploy\/scripts\/$/m);
+    assert.match(read('Dockerfile'), /^COPY deploy\/ \/opt\/aifactory-deploy\/deploy\/$/m);
     const check = spawnSync(process.execPath, ['scripts/template-check.mjs', '--strict'], { cwd: root, encoding: 'utf8' });
     assert.equal(check.status, 0, check.stdout + check.stderr);
     git(root, 'init', '-q', '-b', 'main');
@@ -117,17 +120,10 @@ test('a Python service older than the template takes only the deploy files and k
   }
 });
 
-test('the deploy workflow: main on a push, a release on its tag, a branch by hand, keys from secrets, nothing GitLab', () => {
+test('the deploy workflow: main on a push, branch and release by hand, keys from secrets, nothing GitLab', () => {
   const workflow = readFileSync(join(TEMPLATES, 'python-service/.github/workflows/deploy.yml'), 'utf8');
   for (const job of ['main', 'branch', 'release']) assert.match(workflow, new RegExp(`^  ${job}:$`, 'm'), job);
-  assert.match(workflow, /^ {2}push:\n {4}branches: \[main\]\n {4}tags: \['v\*'\]$/m);
-  // RQ-0091: the tag's push deploys the release, on its own runner when one is named.
-  const release = workflow.slice(workflow.indexOf('\n  release:'));
-  assert.match(release, /github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/);
-  assert.match(release, /runs-on: \$\{\{ fromJSON\(vars\.DEPLOY_RELEASE_RUNS_ON \|\| vars\.DEPLOY_RUNS_ON \|\| '\["self-hosted"\]'\) \}\}/);
-  assert.match(release, /\[ "\$BY_TAG" = true \] && exit 0 \|\| exit 1/);
-  // A tag's push is not main's.
-  assert.match(workflow, /github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/heads\/'\) && github\.ref_name == github\.event\.repository\.default_branch/);
+  assert.match(workflow, /^ {2}push:\n {4}branches: \[main\]$/m);
   assert.match(workflow, /^ {2}delete:$/m);
   assert.match(workflow, /^ {2}workflow_dispatch:$/m);
   assert.match(workflow, /^ {4}environment: release$/m);

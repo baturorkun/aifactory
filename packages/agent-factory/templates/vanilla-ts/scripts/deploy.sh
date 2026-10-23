@@ -108,6 +108,18 @@ if [ -n "$PROFILE" ]; then
 fi
 [ ! -f "$ROOT/.env" ] || load_settings "$ROOT/.env"
 
+# A profile deployed on its own host (DEPLOY_BY=host: a release behind a VPN,
+# started there with release-here.sh from the image) is never deployed by CI
+# (RQ-0091).
+case ${DEPLOY_BY:-} in
+  ''|ci) ;;
+  host)
+    if [ -n "${GITHUB_ACTIONS:-}${GITLAB_CI:-}" ]; then
+      die "${PROFILE:-this} profile says DEPLOY_BY=host: it is deployed on its host (sh release-here.sh <tag> there), never by CI."
+    fi ;;
+  *) die "DEPLOY_BY must be ci or host, not '$DEPLOY_BY'." ;;
+esac
+
 TARGET=${DEPLOY_TARGET:-}
 ACCESS=${DEPLOY_ACCESS:-}
 [ -n "$TARGET" ] || die "DEPLOY_TARGET is empty: set it in .env to container, directory or compose."
@@ -528,9 +540,13 @@ deploy_compose() {
   env | sed -n 's/^DEPLOY_ENV_SET_\([A-Za-z_][A-Za-z0-9_]*=.*\)$/\1/p' | LC_ALL=C sort > "$stage/set.env"
   [ -z "${DEPLOY_COMPOSE_PORT_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_PORT_VAR" "$PORT" >> "$stage/set.env"
   [ -z "${DEPLOY_COMPOSE_IMAGE_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_IMAGE_VAR" "$IMAGE_REF" >> "$stage/set.env"
-  printf 'GIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
-    "$(git -C "$ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo unknown)" \
-    "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y-%m-%d-%H-%M 2>/dev/null || echo unknown)" >> "$stage/set.env"
+  # The commit, from a checkout; a release kit out of an image has none, and
+  # the image already carries its own.
+  if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    printf 'GIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
+      "$(git -C "$ROOT" rev-parse --short=7 HEAD)" \
+      "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y-%m-%d-%H-%M)" >> "$stage/set.env"
+  fi
 
   CMD="sh -c $(q "$COMPOSE_STACK") deploy $(q "$DIR") $(q "$STACK") $(q "$CLI") $MODE $(q "$IMAGE_REF") $(q "$FILES") \
 $(q "${DEPLOY_COMPOSE_OVERLAYS:-}") $(q "${DEPLOY_ENV_SECRETS:-}") $(q "${DEPLOY_ENV_COPY:-}") $(q "${DEPLOY_DATA_DIRS:-}") \
