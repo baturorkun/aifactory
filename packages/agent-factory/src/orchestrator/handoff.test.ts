@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -218,6 +219,44 @@ test('handoff capture is not bounded by targetProject.allowedPaths', async () =>
       readFileSync(join(runs, runId, 'artifacts', 'package.json'), 'utf8'),
       '{"name":"target","version":"0.1.0"}\n',
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('handoff capture skips what the project\'s .gitignore ignores (RQ-0088)', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'aifactory-handoff-gitignore-'));
+  const requirements = join(root, 'requirements');
+  const handoffs = join(root, 'handoffs');
+  const runs = join(root, 'runs');
+  const target = join(root, 'target');
+  mkdirSync(requirements);
+  mkdirSync(join(target, 'src'), { recursive: true });
+  mkdirSync(join(target, 'release', 'site'), { recursive: true });
+  writeFileSync(join(requirements, 'RQ-0005.md'), '# Ignored output\n\nBuild a release.');
+  writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 1;\n');
+  writeFileSync(join(target, 'release', 'site', 'old.js'), '// in the baseline\n');
+  execFileSync('git', ['init', '--quiet'], { cwd: target });
+
+  const config = FactoryConfigSchema.parse({
+    model: { provider: 'mock', name: 'mock' },
+    paths: { requirements, constraints: join(root, 'constraints'), handoffs, runs },
+    targetProject: { root: target },
+  });
+
+  try {
+    const runId = await createHandoffPackage('RQ-0005', config);
+    beginHandoffRun(runId, config);
+
+    // The change ignores release/; the build writes there.
+    writeFileSync(join(target, '.gitignore'), 'release/\n');
+    writeFileSync(join(target, 'src', 'main.ts'), 'export const value = 2;\n');
+    writeFileSync(join(target, 'release', 'site', 'old.js'), '// rebuilt\n');
+    writeFileSync(join(target, 'release', 'site', 'new.js'), '// built\n');
+
+    const finished = await finishHandoffRun(runId, config, { skipGates: true });
+    assert.deepEqual(finished.artifacts, ['.gitignore', 'src/main.ts'], 'release/ is ignored, not an artifact');
+    assert.deepEqual(finished.deletedFiles, [], 'a file still on disk is not deleted, though it left the capture');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

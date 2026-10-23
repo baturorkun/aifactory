@@ -200,6 +200,9 @@ src/main.ts
 src/styles.css
 tsconfig.json
 tsconfig.build.json
+scripts/deploy.sh, scripts/release.sh, scripts/ci-remote-tools.sh
+tests/deploy.test.sh
+deploy/branch.env, deploy/README.md
 ```
 
 Generated scripts include:
@@ -207,7 +210,27 @@ Generated scripts include:
 ```bash
 pnpm typecheck
 pnpm build
+pnpm test          # tests/deploy.test.sh
+pnpm run deploy:dev
 ```
+
+One script, `scripts/deploy.sh`, deploys the application four ways (RQ-0088):
+
+| Kind | Trigger | Settings |
+|---|---|---|
+| a developer's | `pnpm run deploy:dev` | `.env` (`DEPLOY_*`, listed in `.env.example`) |
+| main | a push to main | `deploy/main.env`; without it, the runner's Docker |
+| branch | a push to another branch | `deploy/branch.env`: the runner's Docker, port 8100 + the RQ number |
+| release | a tag (`deploy_release`) | `deploy/release.env` |
+
+`DEPLOY_TARGET` is `container` (the nginx image) or `directory` (the release
+copied into `DEPLOY_PATH`, touching only the files the last deploy wrote);
+`DEPLOY_ACCESS` is `local` or `remote` (ssh). A remote deploy needs
+`DEPLOY_REMOTE_IDENTITY_FILE` and `DEPLOY_REMOTE_KNOWN_HOSTS`; in CI they are
+protected GitLab File variables. The profiles are committed and hold no
+secrets. The scripts read the project's name from `package.json`, so they are
+the same file in every project. `deploy/README.md` in the project has the
+details and examples.
 
 #### `python`
 

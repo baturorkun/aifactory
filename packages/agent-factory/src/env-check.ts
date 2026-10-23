@@ -31,7 +31,7 @@ export interface EnvSectionReport {
 export interface EnvCheckReport {
   envFileExists: boolean;
   sections: EnvSectionReport[];
-  /** The SSH logins an embedded project's stages use (RQ-0054), when set. */
+  /** The SSH logins an embedded project's stages use (RQ-0054) and a remote deploy (RQ-0088), when set. */
   hosts: string[];
   /** Keys that are empty in both .env and .env.example — the actionable set. */
   empty: string[];
@@ -131,7 +131,8 @@ export function analyzeEnv(exampleText: string, envText: string | null): EnvChec
   return { envFileExists: envText !== null, sections, empty, counts, hosts: stageHosts(values) };
 }
 
-// The SSH logins an embedded project's stages use (RQ-0054): the Vivado host
+// The SSH logins an embedded project's stages use (RQ-0054), and a vanilla-ts
+// project's remote deploy (RQ-0088): the Vivado host
 // for sim, build and sw; the lab host for board and twin. The check, sim and
 // build phases need only the first, so a developer who runs no board or twin
 // phase needs no key on the lab host.
@@ -155,6 +156,9 @@ export function stageHosts(values: Map<string, string>): string[] {
   const twin = login('TWIN');
   if (twin && twin !== board) hosts.push(`${twin.padEnd(34)} twin (Docker host; only when you run the twin phase yourself)`);
   else if (twin) hosts[hosts.length - 1] = hosts[hosts.length - 1].replace('board (lab host;', 'board, twin (lab host;');
+  // A vanilla-ts project's deploy:dev to a remote host (RQ-0088).
+  const deploy = (values.get('DEPLOY_ACCESS') || '').toLowerCase() === 'remote' ? login('DEPLOY') : null;
+  if (deploy) hosts.push(`${deploy.padEnd(34)} deploy:dev (${values.get('DEPLOY_TARGET') || '<target>'}; key DEPLOY_REMOTE_IDENTITY_FILE, host key DEPLOY_REMOTE_KNOWN_HOSTS)`);
   return hosts;
 }
 
