@@ -279,15 +279,17 @@ test('new projects enable the draft requirement branch workflow', () => {
     assert.match(ci, /stop_preview_linux:[\s\S]*?docker rm --force "\$PREVIEW_CONTAINER_NAME"/);
     assert.match(ci, /stop_preview_linux:[\s\S]*?action: stop/);
     assert.match(ci, /APP_PORT: "8282"/);
-    assert.match(ci, /--publish "\$APP_PORT:8282"/);
+    // The deploy jobs run scripts/deploy.sh with the committed profiles (RQ-0088).
+    assert.match(ci, /build_static:[\s\S]*?- sh scripts\/release\.sh/);
+    assert.match(ci, /deploy_linux:[\s\S]*?if \[ -f deploy\/main\.env \][\s\S]*?--profile main --prebuilt/);
+    assert.match(ci, /deploy_linux:[\s\S]*?DEPLOY_PORT="\$\{DEPLOY_PORT:-\$APP_PORT\}"[\s\S]*?--image "\$LOCAL_DOCKER_IMAGE"/);
+    assert.match(ci, /deploy_release:[\s\S]*?--profile release --prebuilt[\s\S]*?rules:\n {4}- if: '\$CI_COMMIT_TAG'\n {6}when: on_success/);
     assert.doesNotMatch(ci, /APP_PREVIEW_PORT: "8283"/);
     assert.match(ci, /PREVIEW_CONTAINER_NAME="\$CONTAINER_NAME-preview-\$CI_COMMIT_REF_SLUG"/);
-    assert.match(ci, /\^\(factory-\)\?rq-\[0-9\]\+\(\$\|-\)/);
-    assert.match(ci, /DEPLOYMENT_ID="\$REQUIREMENT_NUMBER"/);
-    assert.match(ci, /DEPLOYMENT_ID="\$CI_PIPELINE_ID"/);
-    assert.match(ci, /LEGACY_PREVIEW_PORT="81\$\{DEPLOYMENT_ID\}"/);
-    assert.match(ci, /PREVIEW_PORT=\$\(\(20000 \+ DEPLOYMENT_ID % 40000\)\)/);
-    assert.match(ci, /--publish "\$PREVIEW_PORT:8282"/);
+    assert.match(ci, /deploy\/branch\.env must say DEPLOY_TARGET=container and DEPLOY_ACCESS=local/);
+    assert.match(ci, /\$\{PROFILE:\+--profile "\$PROFILE"\}/);
+    assert.match(ci, /\$\{APP_PREVIEW_PORT:\+--port "\$APP_PREVIEW_PORT"\}/);
+    assert.doesNotMatch(ci, /LEGACY_PREVIEW_PORT|DEPLOYMENT_ID/, 'the preview port rule lives in scripts/deploy.sh');
     assert.match(ci, /docker rm --force "\$PREVIEW_CONTAINER_NAME"/);
     assert.match(ci, /docker save "\$LOCAL_DOCKER_IMAGE"/);
     assert.match(ci, /docker load --input lifecycle-project-image\.tar/);

@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { spawnSync } from 'child_process';
 import { CODING_STANDARD_DIRECTORY, describeCodingStandard, readCodingStandard } from '../coding-standard';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import { join, normalize, resolve, sep } from 'path';
@@ -82,7 +83,24 @@ function listTargetFiles(root: string): string[] {
     }
   }
   walk(root);
-  return results.sort();
+  return withoutGitIgnored(root, results).sort();
+}
+
+// What the project's .gitignore ignores is not the project's either: a build's
+// output (`release/` in a vanilla-ts project, RQ-0088) would otherwise land in
+// the run as changed artifacts. Outside a git work tree the fixed list above
+// is all there is.
+function withoutGitIgnored(root: string, files: string[]): string[] {
+  if (files.length === 0) return files;
+  const result = spawnSync('git', ['-C', root, 'check-ignore', '--stdin', '-z'], {
+    input: files.join('\0') + '\0',
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  // 0: some ignored, 1: none ignored, anything else: not a git work tree (or no git).
+  if (result.status !== 0) return files;
+  const ignored = new Set(result.stdout.split('\0').filter(Boolean));
+  return files.filter((file) => !ignored.has(file));
 }
 
 function normalizeRelativePath(path: string): string {
@@ -212,8 +230,10 @@ export async function finishImplementationRun(
     const changedFiles = Object.keys(current)
       .filter((file) => baseline.files[file] !== current[file])
       .sort();
+    // A file still on disk is not deleted, only out of the capture (newly
+    // ignored by .gitignore, RQ-0088).
     const deletedFiles = Object.keys(baseline.files)
-      .filter((file) => !(file in current))
+      .filter((file) => !(file in current) && !existsSync(resolve(targetRoot, file)))
       .sort();
 
     for (const file of changedFiles) {
