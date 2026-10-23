@@ -1,6 +1,6 @@
 ---
 id: RQ-0088
-status: ready
+status: completed
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -8,6 +8,9 @@ createdByEmail: "batur@bc.int"
 createdAt: "2026-10-23T06:01:43.754Z"
 branch: "factory/RQ-0088"
 createdFromCommit: "ad121829c48c6e274c5b4e3a15ed69ad7311ba90"
+completedRunId: "20261023085714-RQ-0088"
+completedBy: "human"
+completedAt: "2026-10-23T09:17:04.228Z"
 githubPullRequestUrl: "https://github.com/baturorkun/aifactory/pull/155"
 githubPullRequestIid: 155
 githubIssueUrl: "https://github.com/baturorkun/aifactory/issues/154"
