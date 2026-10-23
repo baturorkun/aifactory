@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { join, relative, resolve } from 'path';
 import { embeddedEnvValues, fillEnv, loadLabInventory } from './lab-inventory';
 import { CODING_STANDARDS_SOURCE, CODING_STANDARD_DIRECTORY, EMPTY_CODING_STANDARD, chooseStandard, codingStandardChoice, configuredChoice, withCodingStandardSection, codingStandardRecord, excludedRuleFiles, writeCodingStandard, type ChosenStandard, type CodingStandard } from './coding-standard';
-import { aifactoryCommit, lockOf, templateFiles, writeLock } from './template-lock';
+import { aifactoryCommit, lockOf, TEMPLATE_KINDS, templateFiles, writeLock } from './template-lock';
 
 export type ProjectTemplate = 'empty' | 'vanilla-ts' | 'python' | 'c' | 'embedded';
 
@@ -997,6 +997,17 @@ function writeGitlabCi(projectRoot: string, projectName: string, deployable: boo
       ...(deployable
         ? [
             '',
+            // A template-owned file changed on main only on purpose (RQ-0089).
+            'template_check:',
+            '  stage: build',
+            '  image: node:20-alpine',
+            '  tags:',
+            '    - linux',
+            '  script:',
+            '    - node scripts/template-check.mjs --strict',
+            '  rules:',
+            '    - if: \'$CI_PIPELINE_SOURCE == "merge_request_event"\'',
+            '',
             'build_static:',
             '  stage: build',
             '  image: node:20-alpine',
@@ -1707,6 +1718,9 @@ function writeVanillaTsTemplate(projectRoot: string, projectName: string, tscScr
     // Not `deploy`: `pnpm deploy` is a pnpm command.
     'deploy:dev': 'sh scripts/deploy.sh',
     test: 'sh tests/deploy.test.sh',
+    // `pnpm factory -- template update` and its check (RQ-0089), as in an embedded project.
+    factory: 'node ../aifactory/packages/agent-factory/bin/factory.js',
+    'template:check': 'node scripts/template-check.mjs',
   });
   const gitignore = resolve(projectRoot, '.gitignore');
   writeFileSync(gitignore, readFileSync(gitignore, 'utf8') + ['# Laid out by scripts/release.sh for the image and directory deploys.', 'release/', ''].join('\n'), 'utf8');
@@ -3234,6 +3248,7 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
             '- One script deploys the application four ways: `pnpm run deploy:dev` with the developer\'s `.env`, and in CI main with `deploy/main.env`, a branch with `deploy/branch.env`, a tag with `deploy/release.env` (`deploy/README.md`). The `deploy/*.env` profiles are committed and hold no secrets; a setting in the environment wins over a profile, and a profile over `.env`.',
             '- `DEPLOY_TARGET` is `container` (the nginx image) or `directory` (the release copied into `DEPLOY_PATH`; only the files the last deploy wrote are replaced or removed); `DEPLOY_ACCESS` is `local` or `remote` (ssh). `remote` needs `DEPLOY_REMOTE_IDENTITY_FILE` and `DEPLOY_REMOTE_KNOWN_HOSTS`, in CI as protected GitLab File variables.',
             '- `scripts/deploy.sh`, `scripts/release.sh`, `scripts/ci-remote-tools.sh` and `tests/deploy.test.sh` are the template\'s and read the project\'s name from `package.json`. Change deploy behaviour there, not in `.gitlab-ci.yml`, and keep `pnpm test` passing. A branch preview stays `container` + `local` on the runner.',
+            '- The aifactory template owns `scripts/`, `tests/deploy.test.sh`, `deploy/README.md`, `.gitlab-ci.yml`, `Dockerfile`, `nginx.conf`, `.dockerignore`, `.env.example` and this file (`.factory/template.lock.json` lists them); the project owns `src/`, `public/`, `deploy/*.env` and its other files. `pnpm factory -- template update` brings the template\'s changes as a merge request. Change a template file to try something; on main it is either the template\'s again or kept as the project\'s with `pnpm factory -- template override <path> --reason "<why>"`, which proposes the change to aifactory. `pnpm template:check` (the `templateCheck` gate) lists what differs, and the merge request pipeline fails on a change without an override.',
             '',
           ]
         : []),
@@ -3320,6 +3335,8 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
       typeCheck: 'pnpm typecheck',
       // tests/deploy.test.sh: the deploy scripts (RQ-0088).
       test: 'pnpm test',
+      // A template-owned file changed on purpose only (RQ-0089).
+      templateCheck: 'pnpm template:check',
     });
     writeVanillaTsTemplate(projectRoot, projectName, tscScript);
     writeContainerFiles(projectRoot, projectName);
@@ -3411,8 +3428,12 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
 
   if (chosenStandard) applyCodingStandard(projectRoot, chosenStandard);
   else if (!options.simulator && (isCTemplate(options.template) || options.template === 'embedded')) writeEmptyCodingStandard(projectRoot);
-  // What the template delivered (RQ-0087), the base of the first template update.
+  // What the template delivered (RQ-0087; vanilla-ts, RQ-0089), the base of the first template update.
   if (embedded) writeLock(projectRoot, lockOf(projectRoot, templateFiles(), aifactoryCommit()));
+  if (!options.simulator && options.template === 'vanilla-ts') {
+    const kind = TEMPLATE_KINDS['vanilla-typescript'];
+    writeLock(projectRoot, lockOf(projectRoot, templateFiles(kind.root, kind.generated), aifactoryCommit(), kind.projectOwned));
+  }
 
   return options.simulator
     ? { projectName, projectRoot, simulator: options.simulator as Simulator }

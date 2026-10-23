@@ -5,15 +5,17 @@ import { basename, dirname, join } from 'path';
 import { readCodingStandard, withCodingStandardSection } from './coding-standard';
 import { createTargetProject } from './scaffold';
 import {
-  BASE_DIRECTORY, LOCK_PATH, TEMPLATE_ROOT, aifactoryCommit, contentHash, isTemplateOwned, normalised, readLock, readOverrides, templateFiles,
+  BASE_DIRECTORY, LOCK_PATH, aifactoryCommit, contentHash, isTemplateOwned, normalised, readLock, readOverrides, templateFiles, templateKindOf,
   writeLock, type TemplateLock,
 } from './template-lock';
 
-// Brings an embedded project made from an older template up to this
-// aifactory's (RQ-0047). The template owns its scripts, the flow, the CI file
-// and the generated guidelines; a project owns its design sources and board
-// files: there only a file the template ships and the project lacks is added
-// (a design's test.yaml), nothing is overwritten. The factory config and
+// Brings a project made from an older template up to this aifactory's
+// (RQ-0047; vanilla-ts too, RQ-0089). The template owns its scripts, the CI
+// file and the generated guidelines (embedded: the flow; vanilla-ts: the
+// deploy scripts and the container files); a project owns its sources (embedded:
+// design sources and board files; vanilla-ts: deploy/branch.env): there only a
+// file the template ships and the project lacks is added (a design's
+// test.yaml), nothing is overwritten. The factory config and
 // package scripts are merged, .gitignore gains the lines it lacks. .env,
 // requirements, runs and out/ are never touched.
 //
@@ -28,9 +30,8 @@ export type TemplateChange =
   | { kind: 'replace' | 'add' | 'kept' | 'merged' | 'conflict'; path: string }
   | { kind: 'merge'; path: string; detail: string };
 
-const MERGED_COMMANDS = ['designCheck', 'templateCheck', 'hdlSim', 'fpgaBuild', 'firmwareBuild', 'twinTest', 'boardTest'];
-// codingStandard is the project's own (set by `standard use`), not the template's.
-const TEMPLATE_COMMIT = /^chore\(template\): the aifactory embedded template at /;
+// The commit a template update makes, of either kind.
+const TEMPLATE_COMMIT = /^chore\(template\): the aifactory (embedded|vanilla-ts) template at /;
 
 type JsonObject = Record<string, unknown>;
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as JsonObject;
@@ -86,14 +87,18 @@ export function templateBase(projectRoot: string, path: string, mine: Buffer, lo
   return shown;
 }
 
-export function updateEmbeddedProject(projectRoot: string, options: { write?: boolean; templateRoot?: string } = {}): TemplateChange[] {
+export function updateTemplateProject(projectRoot: string, options: { write?: boolean; templateRoot?: string } = {}): TemplateChange[] {
   const config = readJson(join(projectRoot, 'factory.config.json'));
   const target = (config.targetProject ?? {}) as JsonObject;
-  if (target.profile !== 'embedded') throw new Error('template update applies to an embedded project (targetProject.profile "embedded").');
+  const { kind, inferred } = templateKindOf(projectRoot);
 
   const scratch = mkdtempSync(join(tmpdir(), 'aifactory-template-'));
   try {
-    const fresh = createTargetProject(basename(projectRoot), { dir: scratch, template: 'embedded', labInventoryPath: join(scratch, 'none.json') }).projectRoot;
+    const fresh = createTargetProject(basename(projectRoot), {
+      dir: scratch,
+      template: kind.template,
+      ...(kind.template === 'embedded' ? { labInventoryPath: join(scratch, 'none.json') } : {}),
+    }).projectRoot;
     // The template's AGENTS.md with this project's Coding Standard section,
     // as standard use writes it, so the update keeps it (RQ-0075).
     const freshAgents = join(fresh, 'AGENTS.md');
@@ -113,11 +118,11 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
     const diverged = new Map<string, Buffer>();
     const nextLock: TemplateLock = { aifactory: aifactoryCommit(), files: {} };
 
-    for (const path of templateFiles(options.templateRoot ?? TEMPLATE_ROOT)) {
+    for (const path of templateFiles(options.templateRoot ?? kind.root, kind.generated)) {
       const theirs = read(fresh, path);
       if (!theirs) continue;
       const mine = read(projectRoot, path);
-      if (!isTemplateOwned(path)) {
+      if (!isTemplateOwned(path, kind.projectOwned)) {
         if (!mine) {
           changes.push({ kind: 'add', path });
           write(path, theirs);
@@ -133,8 +138,14 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
       if (normalised(mine).equals(normalised(theirs))) continue;
       const base = baseOf(path, mine);
       // No base: a project from before the lock that Git cannot tell about is
-      // replaced as before; with a lock, a file it never delivered is the project's.
+      // replaced as before (embedded) or kept (vanilla-ts, RQ-0089); with a
+      // lock, a file it never delivered is the project's.
       if (!base && !lock) {
+        if (kind.unknownBase === 'keep') {
+          diverged.set(path, theirs);
+          changes.push({ kind: 'kept', path });
+          continue;
+        }
         changes.push({ kind: 'replace', path });
         write(path, theirs);
         continue;
@@ -177,13 +188,14 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
     const overrides = readOverrides(projectRoot);
     const settled = Object.keys(overrides).filter((path) => nextLock.files[path] !== undefined && !diverged.has(path));
 
-    // factory.config.json: the embedded gates, paths, timeout and default phases.
+    // factory.config.json: the template's gates, paths, timeout, default phases,
+    // and the profile of a project made before profiles (RQ-0089).
     const freshConfig = readJson(join(fresh, 'factory.config.json'));
     const freshTarget = freshConfig.targetProject as JsonObject;
     const commands = { ...((target.commands ?? {}) as JsonObject) };
     const freshCommands = freshTarget.commands as JsonObject;
     const merged: string[] = [];
-    for (const name of MERGED_COMMANDS) {
+    for (const name of kind.commands) {
       if (freshCommands[name] !== undefined && commands[name] !== freshCommands[name]) {
         commands[name] = freshCommands[name];
         merged.push(`commands.${name}`);
@@ -196,8 +208,9 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
     }
     const paths = new Set([...((target.allowedPaths ?? []) as string[]), ...(freshTarget.allowedPaths as string[])]);
     if (paths.size !== ((target.allowedPaths ?? []) as string[]).length) merged.push('allowedPaths');
-    const timeout = Math.max(Number(target.commandTimeoutMs ?? 0), Number(freshTarget.commandTimeoutMs));
+    const timeout = Math.max(Number(target.commandTimeoutMs ?? 0), Number(freshTarget.commandTimeoutMs ?? 0));
     if (timeout !== Number(target.commandTimeoutMs ?? 0)) merged.push('commandTimeoutMs');
+    if (inferred) merged.push(`profile "${kind.profile}"`);
     const defaults = { ...((config.requirementDefaults ?? {}) as JsonObject) };
     const freshDefaults = freshConfig.requirementDefaults as JsonObject;
     if (defaults.embeddedPhases === undefined && freshDefaults.embeddedPhases !== undefined) {
@@ -217,7 +230,14 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
         delete rest.templateOverrides;
         const next = {
           ...config,
-          targetProject: { ...rest, commands, allowedPaths: [...paths], commandTimeoutMs: timeout, ...(Object.keys(templateOverrides).length > 0 ? { templateOverrides } : {}) },
+          targetProject: {
+            ...rest,
+            ...(inferred ? { profile: kind.profile } : {}),
+            commands,
+            allowedPaths: [...paths],
+            ...(timeout > 0 ? { commandTimeoutMs: timeout } : {}),
+            ...(Object.keys(templateOverrides).length > 0 ? { templateOverrides } : {}),
+          },
           requirementDefaults: defaults,
           ...(codingStandard !== undefined ? { codingStandard } : {}),
         };
@@ -225,11 +245,11 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
       }
     }
 
-    // package.json: the flow's scripts.
+    // package.json: the template's scripts.
     const pkg = readJson(join(projectRoot, 'package.json'));
     const scripts = { ...((pkg.scripts ?? {}) as Record<string, string>) };
     const freshScripts = readJson(join(fresh, 'package.json')).scripts as Record<string, string>;
-    const scriptChanges = Object.keys(freshScripts).filter((name) => scripts[name] !== freshScripts[name]);
+    const scriptChanges = Object.keys(freshScripts).filter((name) => (kind.scripts ?? Object.keys(freshScripts)).includes(name) && scripts[name] !== freshScripts[name]);
     if (scriptChanges.length > 0) {
       changes.push({ kind: 'merge', path: 'package.json', detail: scriptChanges.map((name) => `scripts.${name}`).join(', ') });
       if (options.write) {
@@ -252,3 +272,6 @@ export function updateEmbeddedProject(projectRoot: string, options: { write?: bo
     rmSync(scratch, { recursive: true, force: true });
   }
 }
+
+// The name embedded projects and their tests have called it by since RQ-0047.
+export const updateEmbeddedProject = updateTemplateProject;

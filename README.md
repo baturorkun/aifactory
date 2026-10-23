@@ -232,6 +232,22 @@ secrets. The scripts read the project's name from `package.json`, so they are
 the same file in every project. `deploy/README.md` in the project has the
 details and examples.
 
+A `vanilla-ts` project takes aifactory's template changes as an embedded one
+does (RQ-0089): `pnpm factory -- template update` in the project opens a merge
+request (`--dry-run` lists, `--local` writes here), with the same lock,
+three-way merge, `template override` / `propose` / `status` and
+`templateCheck` gate (`pnpm template:check`, the `template_check` job on merge
+requests). The template owns `scripts/`, `tests/deploy.test.sh`,
+`deploy/README.md`, `.gitlab-ci.yml`, `Dockerfile`, `nginx.conf`,
+`.dockerignore`, `.env.example` and `AGENTS.md`; the project owns `src/`,
+`public/`, `deploy/*.env` (`deploy/branch.env` is only added when missing) and
+its `typecheck` / `build` scripts. The check before the push is
+`tests/deploy.test.sh`. A project made before profiles (no
+`targetProject.profile`, but `public/index.html`, `tsconfig.build.json` and a
+`Dockerfile`) is taken as `vanilla-typescript` and gets the profile; a file it
+grew on its own before taking updates, with no base to compare, is kept and
+listed by `template:check`, never replaced.
+
 #### `python`
 
 Creates a minimal Python target project:

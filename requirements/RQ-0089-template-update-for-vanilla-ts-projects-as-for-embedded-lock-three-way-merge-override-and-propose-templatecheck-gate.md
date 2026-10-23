@@ -1,6 +1,6 @@
 ---
 id: RQ-0089
-status: draft
+status: ready
 executionMode: handoff
 pipelineFast: false
 createdByName: "Batur Orkun"
@@ -38,12 +38,22 @@ deploy scripts RQ-0088 put in the template reach `website`, `sitescribe` and
 | scaffold template | `embedded` | `vanilla-ts` |
 | written by the scaffold | `.gitlab-ci.yml`, `.env.example`, `AGENTS.md` | the same, and `Dockerfile`, `nginx.conf`, `.dockerignore` |
 | project-owned (only added when missing) | `designs/`, `boards/` | `deploy/branch.env` (its port base is the project's) |
-| merged commands | the embedded gates | `typeCheck`, `test`, `templateCheck` |
+| merged commands | the embedded gates | `test`, `templateCheck` |
+| merged package scripts | all of a fresh project's | `deploy:dev`, `test`, `factory`, `template:check` |
+| a differing file with no known base | replaced (as before) | kept, the template's version saved as the next base |
 
 The project owns everything else it has: `src/`, `public/`, `tsconfig*`,
 `PROJECT_GUIDELINES.md`, `deploy/main.env`, `deploy/release.env`.
 `factory.config.json`, `package.json` and `.gitignore` are merged as for
-embedded. Lock, base copies, the three-way merge, `kept` / `merged` /
+embedded. In `vanilla-ts` `typecheck`, `build` and `commands.typeCheck` name
+the path to aifactory's `tsc` from where the project was made (a fresh
+project in a scratch directory has another), so they stay the project's.
+A file that differs from the template with no base to tell whose change it
+is (no lock, not in a template commit or the first commit) is kept rather
+than replaced: `website` grew its own `nginx.conf`, `Dockerfile` and
+`AGENTS.md` before it took updates; the template's version becomes the base
+of the next update, and `template:check` lists the file until it is made
+the template's or overridden. Lock, base copies, the three-way merge, `kept` / `merged` /
 `conflict`, overrides and `propose` are the same code for both kinds;
 nothing embedded does changes.
 
@@ -106,5 +116,13 @@ owns and how to keep a change (`template override`).
 - Delivery opens a merge request named for the `vanilla-ts` template, with
   `pnpm test` as its check; a failing test pushes nothing.
 - `template update --dry-run` in `website` lists its changes and writes
-  nothing (run by hand, reported in the handoff).
+  nothing. Run on 23 October 2026: add `scripts/template-check.mjs`,
+  conflict `.gitlab-ci.yml` and `.env.example`, kept `AGENTS.md`,
+  `Dockerfile`, `nginx.conf`, add the lock, merge `factory.config.json`
+  (`templateCheck`, `allowedPaths`, `commandTimeoutMs`, the profile),
+  `package.json` (`factory`, `template:check`) and `.gitignore`; its
+  `typecheck` and `build` untouched.
+- A project like `website` (no lock, a file added after its first commit):
+  the file is kept and its template version is the next base; its `tsc`
+  scripts are not touched.
 - The aifactory test suite and typecheck pass.

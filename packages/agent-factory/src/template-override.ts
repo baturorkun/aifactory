@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'os';
 import { basename, join } from 'path';
 import { readDotEnv } from './ci-variables';
-import { readLock, readOverrides, writeOverrides, type TemplateOverride } from './template-lock';
+import { readLock, readOverrides, templateKindOf, writeOverrides, type TemplateOverride } from './template-lock';
 import { templateBase } from './template-update';
 
 // A template-owned file the project keeps changed on purpose (RQ-0087):
@@ -62,7 +62,7 @@ export function proposalBody(projectRoot: string, paths: string[]): { title: str
   const commit = git(projectRoot, ['rev-parse', '--short=7', 'HEAD']) || 'uncommitted';
   const title = `Template change from ${project}: ${paths.join(', ')}`;
   const body = [
-    `Proposed from the embedded project \`${project}\` at \`${commit}\` by \`factory template propose\` (RQ-0087): template-owned files it keeps changed. The diff is from the template's version the project last took (\`.factory/template.lock.json\`, aifactory \`${readLock(projectRoot)?.aifactory ?? 'unknown'}\`).`,
+    `Proposed from the ${templateKindOf(projectRoot).kind.template} project \`${project}\` at \`${commit}\` by \`factory template propose\` (RQ-0087): template-owned files it keeps changed. The diff is from the template's version the project last took (\`.factory/template.lock.json\`, aifactory \`${readLock(projectRoot)?.aifactory ?? 'unknown'}\`).`,
     '',
     'Taken into the template (`requirement new --from-issue`), the next `template update` of the project finds these files the template\'s again and drops their overrides. A change only this project needs is better a setting the template reads (like `IPS` in `project.tcl`) than an override kept for good.',
     ...paths.flatMap((path) => [

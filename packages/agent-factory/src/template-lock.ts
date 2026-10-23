@@ -3,7 +3,8 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 
-// What the embedded template last delivered to a project (RQ-0087), so a
+// What the template last delivered to a project (RQ-0087; vanilla-ts too,
+// RQ-0089), so a
 // project that changed a template-owned file is told from one on an older
 // template. `.factory/template.lock.json` holds the aifactory commit and the
 // sha256 of each template-owned file as the template wrote it; where the
@@ -21,6 +22,67 @@ export const PROJECT_OWNED = ['designs/', 'boards/'];
 // Written by the scaffold rather than copied from the template directory.
 export const GENERATED = ['.gitlab-ci.yml', '.env.example', 'AGENTS.md'];
 export const TEMPLATE_ROOT = resolve(__dirname, '../templates/embedded');
+
+// A template a project can take updates of, by its targetProject.profile
+// (RQ-0089): the same lock, merge, override and check for each.
+export interface TemplateKind {
+  profile: 'embedded' | 'vanilla-typescript';
+  /** The scaffold's template name, also in the commit and merge request. */
+  template: 'embedded' | 'vanilla-ts';
+  root: string;
+  projectOwned: string[];
+  generated: string[];
+  /** factory.config.json commands the template sets. */
+  commands: string[];
+  /** package.json scripts the template sets; every script of a fresh project when absent. */
+  scripts?: string[];
+  /**
+   * A file that differs from the template with no base to tell whose change it
+   * is (no lock, and Git does not have it from a template commit): replaced, as
+   * embedded projects always were, or kept with the template's version as the
+   * next base, for projects that grew their own before they took updates.
+   */
+  unknownBase: 'replace' | 'keep';
+}
+
+export const TEMPLATE_KINDS: Record<TemplateKind['profile'], TemplateKind> = {
+  embedded: {
+    profile: 'embedded',
+    template: 'embedded',
+    root: TEMPLATE_ROOT,
+    projectOwned: PROJECT_OWNED,
+    generated: GENERATED,
+    // codingStandard is the project's own (set by `standard use`), not the template's.
+    commands: ['designCheck', 'templateCheck', 'hdlSim', 'fpgaBuild', 'firmwareBuild', 'twinTest', 'boardTest'],
+    unknownBase: 'replace',
+  },
+  'vanilla-typescript': {
+    profile: 'vanilla-typescript',
+    template: 'vanilla-ts',
+    root: resolve(__dirname, '../templates/vanilla-ts'),
+    // The branch preview's port base is the project's (8300 in website, 8100 here).
+    projectOwned: ['deploy/branch.env'],
+    generated: [...GENERATED, 'Dockerfile', 'nginx.conf', '.dockerignore'],
+    // typeCheck and build name the path to aifactory's tsc from where the
+    // project was made: the project's own, never merged.
+    commands: ['test', 'templateCheck'],
+    scripts: ['deploy:dev', 'test', 'factory', 'template:check'],
+    // website had its own nginx.conf, Dockerfile and AGENTS.md long before.
+    unknownBase: 'keep',
+  },
+};
+
+// A vanilla-ts project made before profiles (website) is known by its layout.
+const looksVanillaTs = (root: string) => ['public/index.html', 'tsconfig.build.json', 'Dockerfile'].every((path) => existsSync(join(root, path)));
+
+/** The template a project takes updates of, and whether its profile has to be written. */
+export function templateKindOf(root: string): { kind: TemplateKind; inferred: boolean } {
+  const config = existsSync(configPath(root)) ? (JSON.parse(readFileSync(configPath(root), 'utf8')) as JsonObject) : {};
+  const profile = ((config.targetProject ?? {}) as JsonObject).profile as string | undefined;
+  if (profile && profile in TEMPLATE_KINDS) return { kind: TEMPLATE_KINDS[profile as TemplateKind['profile']], inferred: false };
+  if (!profile && looksVanillaTs(root)) return { kind: TEMPLATE_KINDS['vanilla-typescript'], inferred: true };
+  throw new Error(`template update applies to a project of profile ${Object.keys(TEMPLATE_KINDS).map((name) => `"${name}"`).join(' or ')} (targetProject.profile${profile ? ` is "${profile}"` : ' is not set'}).`);
+}
 
 export interface TemplateLock {
   aifactory: string;
@@ -42,12 +104,12 @@ function walk(root: string, directory = root, found: string[] = []): string[] {
 }
 
 // Every file of the template directory, and the ones the scaffold writes.
-export function templateFiles(templateRoot = TEMPLATE_ROOT): string[] {
-  return [...walk(templateRoot), ...GENERATED];
+export function templateFiles(templateRoot = TEMPLATE_ROOT, generated = GENERATED): string[] {
+  return [...walk(templateRoot), ...generated];
 }
 
 // The files the template owns and replaces: what the lock records.
-export const isTemplateOwned = (path: string) => !PROJECT_OWNED.some((prefix) => path.startsWith(prefix));
+export const isTemplateOwned = (path: string, projectOwned = PROJECT_OWNED) => !projectOwned.some((prefix) => path.startsWith(prefix));
 
 // Text is compared with its line endings normalised: Git on Windows
 // (core.autocrlf) checks out with CRLF what the repository and the template
@@ -82,10 +144,10 @@ export function writeLock(root: string, lock: TemplateLock): void {
 }
 
 // The lock of a project whose template-owned files are as the template wrote them.
-export function lockOf(root: string, paths: string[], aifactory: string): TemplateLock {
+export function lockOf(root: string, paths: string[], aifactory: string, projectOwned = PROJECT_OWNED): TemplateLock {
   const files: Record<string, string> = {};
   for (const path of paths) {
-    const hash = isTemplateOwned(path) ? fileHash(root, path) : undefined;
+    const hash = isTemplateOwned(path, projectOwned) ? fileHash(root, path) : undefined;
     if (hash) files[path] = hash;
   }
   return { aifactory, files };

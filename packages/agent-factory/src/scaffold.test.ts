@@ -114,7 +114,9 @@ test('new projects enable the draft requirement branch workflow', () => {
     const packageJson = JSON.parse(
       readFileSync(join(result.projectRoot, 'package.json'), 'utf8'),
     ) as { scripts?: Record<string, string> };
-    assert.equal(packageJson.scripts?.factory, undefined);
+    // aifactory sits next to its projects (RQ-0069): the fixed sibling path, as
+    // in an embedded project, for `pnpm factory -- template update` (RQ-0089).
+    assert.equal(packageJson.scripts?.factory, 'node ../aifactory/packages/agent-factory/bin/factory.js');
     assert.deepEqual(config.requirementBranches, {
       enabled: true,
       branchPrefix: 'factory/',
