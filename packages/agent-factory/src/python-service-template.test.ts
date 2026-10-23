@@ -117,10 +117,17 @@ test('a Python service older than the template takes only the deploy files and k
   }
 });
 
-test('the deploy workflow: main on a push, branch and release by hand, keys from secrets, nothing GitLab', () => {
+test('the deploy workflow: main on a push, a release on its tag, a branch by hand, keys from secrets, nothing GitLab', () => {
   const workflow = readFileSync(join(TEMPLATES, 'python-service/.github/workflows/deploy.yml'), 'utf8');
   for (const job of ['main', 'branch', 'release']) assert.match(workflow, new RegExp(`^  ${job}:$`, 'm'), job);
-  assert.match(workflow, /^ {2}push:\n {4}branches: \[main\]$/m);
+  assert.match(workflow, /^ {2}push:\n {4}branches: \[main\]\n {4}tags: \['v\*'\]$/m);
+  // RQ-0091: the tag's push deploys the release, on its own runner when one is named.
+  const release = workflow.slice(workflow.indexOf('\n  release:'));
+  assert.match(release, /github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/);
+  assert.match(release, /runs-on: \$\{\{ fromJSON\(vars\.DEPLOY_RELEASE_RUNS_ON \|\| vars\.DEPLOY_RUNS_ON \|\| '\["self-hosted"\]'\) \}\}/);
+  assert.match(release, /\[ "\$BY_TAG" = true \] && exit 0 \|\| exit 1/);
+  // A tag's push is not main's.
+  assert.match(workflow, /github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/heads\/'\) && github\.ref_name == github\.event\.repository\.default_branch/);
   assert.match(workflow, /^ {2}delete:$/m);
   assert.match(workflow, /^ {2}workflow_dispatch:$/m);
   assert.match(workflow, /^ {4}environment: release$/m);

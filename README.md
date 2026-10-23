@@ -275,7 +275,9 @@ The project name comes from `package.json`, else `pyproject.toml`.
 `.github/workflows/deploy.yml` runs it:
 - main on a push;
 - a branch preview by hand, stopped when the branch is deleted;
-- a release by hand for a tag, behind the GitHub environment `release`.
+- a release when a tag `v*` is pushed (or by hand for a tag), behind the
+  GitHub environment `release`, on the runner `DEPLOY_RELEASE_RUNS_ON` names
+  (a runner on the production host deploys there locally, RQ-0091).
 
 The ssh key comes from secrets.
 

@@ -8,7 +8,7 @@ the same `DEPLOY_*` settings, from a different place:
 | a developer's | `sh scripts/deploy.sh` | `.env` (not committed; `deploy/dev.env.example` lists the variables) |
 | main | a push to the default branch | `deploy/main.env` |
 | branch | the Deploy workflow, run by hand (profile `branch`) | `deploy/branch.env` |
-| release | the Deploy workflow, run by hand for a tag (profile `release`) | `deploy/release.env` |
+| release | a pushed tag (`v*`), or the Deploy workflow run by hand for a tag | `deploy/release.env` |
 
 The files here are committed and hold no secrets. A setting in the
 environment wins over a profile, and a profile over `.env`.
@@ -22,8 +22,12 @@ not read or write them. aifactory starts its AI providers without any
   (`<project>-<branch>`), on port `DEPLOY_BRANCH_PORT_BASE` + the RQ number.
   Deleting the branch stops its stack.
 - **main**: without `deploy/main.env`, a push to main deploys nothing.
-- **release** runs in the GitHub environment `release`. Give it protection
-  rules (required reviewers) so a release waits for an approval.
+- **release** runs when a tag `v*` is pushed (or by hand for a tag), in the
+  GitHub environment `release`; protection rules (required reviewers) make it
+  wait for an approval. Without `deploy/release.env` a tag deploys nothing.
+  It runs on the runner the repository variable `DEPLOY_RELEASE_RUNS_ON`
+  names (a JSON list of labels), else on `DEPLOY_RUNS_ON`'s. A runner on the
+  production host itself deploys with `DEPLOY_ACCESS=local`: no key, no VPN.
   - With `DEPLOY_IMAGE` in `deploy/release.env`, it runs that registry image
     at the tag (`--image <DEPLOY_IMAGE>:<tag>`; the target must be logged in
     to the registry).
