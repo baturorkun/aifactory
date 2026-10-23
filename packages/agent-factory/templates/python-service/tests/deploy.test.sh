@@ -148,7 +148,13 @@ pass "an overlay is added only where its network exists"
 
 deploy $COMPOSE DEPLOY_DATA_DIRS="BACKUP_DIR=backups:10001" >/dev/null 2>&1 || fail "data dirs"
 [ -d "$STACK/backups" ] || fail "data directory not made"
-has "podman unshare chown 10001:10001 $STACK/backups"
+# Rootless, podman maps the uid (unshare); as root (a CI runner) it is chown.
+if [ "$(id -u)" = 0 ]; then
+  [ "$(stat -c %u "$STACK/backups" 2>/dev/null || stat -f %u "$STACK/backups")" = 10001 ] || fail "backups not given to 10001 as root"
+  hasnt "podman unshare"
+else
+  has "podman unshare chown 10001:10001 $STACK/backups"
+fi
 grep -qx "BACKUP_DIR=$STACK/backups" "$ENV_FILE" || fail "data directory not in runtime.env"
 pass "a data directory is made, given to its uid under podman, and named in runtime.env"
 
