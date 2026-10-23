@@ -277,6 +277,13 @@ The project name comes from `package.json`, else `pyproject.toml`.
 - a branch preview by hand, stopped when the branch is deleted;
 - a release by hand for a tag, behind the GitHub environment `release`.
 
+A release host behind a VPN keeps no checkout and no runner (RQ-0091).
+- The image carries its deploy kit in `/opt/aifactory-deploy`.
+- `sh release-here.sh <tag>` on the host pulls the tag's image from the
+  registry and deploys it with the kit's `deploy/release.env`.
+- That profile says `DEPLOY_ACCESS=local` and `DEPLOY_BY=host`, and
+  `deploy.sh` refuses such a profile in CI.
+
 The ssh key comes from secrets.
 
 `factory template update` works on such a project with or without a

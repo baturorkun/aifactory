@@ -3,7 +3,9 @@
 #   branch   started by hand (Run workflow: profile branch), with deploy/branch.env;
 #            stopped by hand or when the branch is deleted
 #   release  started by hand for a tag (profile release), with deploy/release.env,
-#            held by the `release` environment's protection rules
+#            held by the `release` environment's protection rules. A release
+#            whose profile says DEPLOY_BY=host (a host behind a VPN) is never
+#            deployed here: release-here.sh deploys it on its host (RQ-0091)
 # The aifactory template owns this file; the settings are the project's, in
 # deploy/*.env. Runner labels: repository variable DEPLOY_RUNS_ON, a JSON list
 # (default ["self-hosted"]). A remote profile's key and known hosts: secrets

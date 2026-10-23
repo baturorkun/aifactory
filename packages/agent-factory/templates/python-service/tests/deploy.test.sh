@@ -39,6 +39,9 @@ echo "$(basename "$0") $* @$(pwd)" >> "$FAKE_LOG"
 case $1 in
   network) case " ${FAKE_NETWORKS:-} " in *" $3 "*) exit 0 ;; *) exit 1 ;; esac ;;
   compose) case " $* " in *" logs "*) echo "fake stack log" ;; esac ;;
+  pull) exit "${FAKE_PULL_EXIT:-0}" ;;
+  create) echo fake-container ;;
+  cp) [ -n "${FAKE_KIT:-}" ] || exit 1; cp -R "$FAKE_KIT/." "$3" ;;
 esac
 exit 0
 EOF
@@ -67,6 +70,7 @@ ARGS=''
 deploy() {
   : > "$LOG"
   for name in $(env | sed -n 's/^\(DEPLOY_[A-Za-z0-9_]*\)=.*/\1/p; s/^\(CI_[A-Z_]*\)=.*/\1/p'); do unset "$name"; done
+  unset GITHUB_ACTIONS GITLAB_CI
   env DEPLOY_USER=tester DEPLOY_HEALTH_SECONDS=2 "$@" "$RUN_SH" "$P/scripts/deploy.sh" ${ARGS:-}
 }
 has() { grep -qF -- "$1" "$LOG" || fail "expected a call with '$1'; calls:
@@ -202,5 +206,63 @@ out=$(ARGS="--profile branch"; deploy DEPLOY_BRANCH=factory/RQ-0012 2>&1) || fai
 has "compose -p demo-svc-factory-rq-0012 "
 [ -f "$HOME/demo-svc-factory-rq-0012/runtime.env" ] || fail "the branch's stack directory"
 pass "each branch preview is a stack of its own, named after its branch"
+
+# --- a release deployed on its own host (RQ-0091) -------------------------------------
+
+out=$(deploy $COMPOSE DEPLOY_BY=host GITHUB_ACTIONS=true 2>&1) && fail "CI deployed a DEPLOY_BY=host profile"
+case $out in *"DEPLOY_BY=host: it is deployed on its host"*) ;; *) fail "the refusal is not said: $out" ;; esac
+hasnt "podman"
+out=$(deploy $COMPOSE DEPLOY_BY=host GITLAB_CI=true 2>&1) && fail "GitLab CI deployed a DEPLOY_BY=host profile"
+deploy $COMPOSE DEPLOY_BY=host >/dev/null 2>&1 || fail "DEPLOY_BY=host refused outside CI"
+out=$(deploy $COMPOSE DEPLOY_BY=someone 2>&1) && fail "an unknown DEPLOY_BY accepted"
+pass "a DEPLOY_BY=host profile is refused in GitHub and GitLab CI, deployed by hand"
+
+# release-here.sh on a host with no checkout: the deploy kit comes out of the image.
+KIT="$WORK/kit"
+mkdir -p "$KIT/scripts" "$KIT/deploy"
+cp "$PROJECT_ROOT/scripts/deploy.sh" "$PROJECT_ROOT/scripts/release-here.sh" "$KIT/scripts/"
+cp "$P/pyproject.toml" "$P/compose.yml" "$KIT/"
+printf 'DEPLOY_TARGET=compose\nDEPLOY_ACCESS=local\nDEPLOY_BY=host\nDEPLOY_DOCKER=podman\nDEPLOY_PORT=9400\nDEPLOY_COMPOSE_PROJECT=demo\nDEPLOY_COMPOSE_IMAGE_VAR=APP_IMAGE\nDEPLOY_ENV_SECRETS=SESSION_SECRET=hex16\n' > "$KIT/deploy/release.env"
+H="$WORK/prod-host"
+mkdir -p "$H"
+cp "$PROJECT_ROOT/scripts/release-here.sh" "$H/"
+release() {
+  : > "$LOG"
+  for name in $(env | sed -n 's/^\(DEPLOY_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$name"; done
+  unset GITHUB_ACTIONS GITLAB_CI
+  (cd "$WORK" && env FAKE_KIT="$KIT" DEPLOY_HEALTH_SECONDS=2 "$@" "$RUN_SH" "$H/release-here.sh" ${RELEASE_ARGS})
+}
+out=$(RELEASE_ARGS="v1.0.0"; release 2>&1) && fail "a release without an image's name"
+case $out in *"The first time: sh release-here.sh --image"*) ;; *) fail "$out" ;; esac
+out=$(RELEASE_ARGS="--image ghcr.io/x/demo:v1 v1.0.0"; release 2>&1) && fail "an image name with a tag accepted"
+out=$(RELEASE_ARGS="--image ghcr.io/x/demo v1.0.0"; release 2>&1) || fail "release-here: $out"
+has "podman pull ghcr.io/x/demo:v1.0.0"
+has "podman create ghcr.io/x/demo:v1.0.0"
+has "podman compose -p demo --env-file $H/runtime.env -f compose.yml up -d --no-build --remove-orphans"
+has "podman rm fake-container"
+grep -qx APP_IMAGE=ghcr.io/x/demo:v1.0.0 "$H/runtime.env" || fail "the tag's image not in runtime.env"
+grep -q '^SESSION_SECRET=' "$H/runtime.env" || fail "the secret not made"
+if grep -q '^GIT_COMMIT' "$H/runtime.env"; then fail "a kit with no checkout wrote a commit"; fi
+[ "$(cat "$H/release-here.image")" = ghcr.io/x/demo ] || fail "the image's name not kept"
+case $out in *"$(sed -n 's/^SESSION_SECRET=//p' "$H/runtime.env")"*) fail "a secret was printed" ;; esac
+pass "release-here.sh pulls the tag, takes the deploy kit out of the image and runs it here"
+
+out=$(RELEASE_ARGS="v1.0.1"; release 2>&1) || fail "second release: $out"
+has "podman pull ghcr.io/x/demo:v1.0.1"
+echo '# newer' >> "$KIT/scripts/release-here.sh"
+out=$(RELEASE_ARGS="v1.0.2"; release 2>&1) || fail "self update: $out"
+cmp -s "$KIT/scripts/release-here.sh" "$H/release-here.sh" || fail "release-here.sh not updated from the image"
+pass "the image's name is remembered; the script updates itself from the tag's image"
+
+out=$(RELEASE_ARGS="v1.0.3 --dry-run"; release 2>&1) || fail "dry run: $out"
+hasnt "up -d"
+out=$(RELEASE_ARGS="v1.0.3"; release FAKE_PULL_EXIT=1 2>&1) && fail "a failed pull deployed"
+case $out in *"cannot pull ghcr.io/x/demo:v1.0.3"*) ;; *) fail "$out" ;; esac
+out=$(RELEASE_ARGS="main"; release 2>&1) && fail "a branch released"
+sed -i.bak '/^DEPLOY_BY=host$/d' "$KIT/deploy/release.env" && rm -f "$KIT/deploy/release.env.bak"
+out=$(RELEASE_ARGS="v1.0.4"; release 2>&1) && fail "a profile CI could deploy was released here"
+case $out in *"must say DEPLOY_BY=host"*) ;; *) fail "$out" ;; esac
+hasnt "up -d"
+pass "a dry run, a failed pull, a branch and a profile without DEPLOY_BY=host deploy nothing"
 
 echo "all compose deploy tests passed (${SHELL_UNDER_TEST:-sh})"

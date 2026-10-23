@@ -17,7 +17,7 @@ import { updateTemplateProject } from './template-update';
 
 const IDENTITY = { GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
 const TEMPLATES = resolve(__dirname, '../templates');
-const OWNED = ['scripts/deploy.sh', 'scripts/template-check.mjs', 'tests/deploy.test.sh', 'deploy/README.md', 'deploy/dev.env.example', '.github/workflows/deploy.yml'];
+const OWNED = ['scripts/deploy.sh', 'scripts/release-here.sh', 'scripts/template-check.mjs', 'tests/deploy.test.sh', 'deploy/README.md', 'deploy/dev.env.example', '.github/workflows/deploy.yml'];
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...IDENTITY } });
@@ -49,6 +49,9 @@ test('a new python-service project: its lock, its gates, no deploy path for an a
     assert.match(read('AGENTS.md'), /An agent does not read or write them, and does not deploy/);
     assert.match(read('pyproject.toml'), /^name = "svc"$/m);
     assert.match(read('compose.yml'), /\$\{APP_PORT:-8000\}:8000/);
+    // RQ-0091: the image carries the kit release-here.sh takes out of it.
+    assert.match(read('Dockerfile'), /^COPY scripts\/deploy\.sh scripts\/release-here\.sh \/opt\/aifactory-deploy\/scripts\/$/m);
+    assert.match(read('Dockerfile'), /^COPY deploy\/ \/opt\/aifactory-deploy\/deploy\/$/m);
     const check = spawnSync(process.execPath, ['scripts/template-check.mjs', '--strict'], { cwd: root, encoding: 'utf8' });
     assert.equal(check.status, 0, check.stdout + check.stderr);
     git(root, 'init', '-q', '-b', 'main');

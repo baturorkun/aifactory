@@ -1888,7 +1888,19 @@ function writePythonServiceTemplate(projectRoot: string, projectName: string): v
   writeFileSync(resolve(projectRoot, 'src', '__init__.py'), '', 'utf8');
   writeFileSync(
     resolve(projectRoot, 'Dockerfile'),
-    ['FROM python:3.13-slim', 'WORKDIR /app', 'COPY src/ src/', 'EXPOSE 8000', `CMD ["python", "-m", "src.${module}"]`, ''].join('\n'),
+    [
+      'FROM python:3.13-slim',
+      'WORKDIR /app',
+      'COPY src/ src/',
+      // What release-here.sh takes out of the image on a host with no checkout (RQ-0091).
+      '# The deploy kit: release-here.sh takes it out of the image on the release host.',
+      'COPY compose.yml pyproject.toml /opt/aifactory-deploy/',
+      'COPY deploy/ /opt/aifactory-deploy/deploy/',
+      'COPY scripts/deploy.sh scripts/release-here.sh /opt/aifactory-deploy/scripts/',
+      'EXPOSE 8000',
+      `CMD ["python", "-m", "src.${module}"]`,
+      '',
+    ].join('\n'),
     'utf8',
   );
   writeFileSync(
@@ -3349,7 +3361,8 @@ export function createTargetProject(projectName: string, options: NewProjectOpti
             '',
             '- One script deploys the service as its compose stack four ways: `sh scripts/deploy.sh` with the developer\'s `.env`, and the Deploy workflow with `deploy/main.env` (main), `deploy/branch.env` (a branch, by hand) and `deploy/release.env` (a tag, by hand, behind the `release` environment). `deploy/README.md` says how.',
             '- Deploy settings (`DEPLOY_*` in `.env`, `deploy/*.env` and CI secrets) are the operator\'s. An agent does not read or write them, and does not deploy. aifactory starts its AI providers without any `DEPLOY_*` variable.',
-            '- The aifactory template owns `scripts/deploy.sh`, `scripts/template-check.mjs`, `tests/deploy.test.sh`, `deploy/README.md`, `deploy/dev.env.example` and `.github/workflows/deploy.yml` (`.factory/template.lock.json` lists them); the project owns its sources, tests, `compose.yml`, `Dockerfile`, `deploy/*.env` and this file. `factory template update` brings the template\'s changes as a merge request; `node scripts/template-check.mjs` (the `templateCheck` gate) lists what differs.',
+            '- A release host behind a VPN keeps no checkout: the image carries its deploy kit in `/opt/aifactory-deploy` (the `Dockerfile` copies it), and `sh release-here.sh <tag>` there pulls the tag\'s image and deploys it with `deploy/release.env` (`DEPLOY_ACCESS=local`, `DEPLOY_BY=host`: CI never deploys it).',
+            '- The aifactory template owns `scripts/deploy.sh`, `scripts/release-here.sh`, `scripts/template-check.mjs`, `tests/deploy.test.sh`, `deploy/README.md`, `deploy/dev.env.example` and `.github/workflows/deploy.yml` (`.factory/template.lock.json` lists them); the project owns its sources, tests, `compose.yml`, `Dockerfile`, `deploy/*.env` and this file. `factory template update` brings the template\'s changes as a merge request; `node scripts/template-check.mjs` (the `templateCheck` gate) lists what differs.',
             '',
           ]
         : []),
