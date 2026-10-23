@@ -522,7 +522,13 @@ deploy_compose() {
   if [ -z "$IMAGE" ]; then
     MODE=build
     git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || die "compose builds from the files Git tracks or would track: $ROOT is not a Git checkout."
-    git -C "$ROOT" ls-files -co --exclude-standard | while IFS= read -r f; do [ ! -f "$ROOT/$f" ] || printf '%s\n' "$f"; done > "$stage/files.list"
+    # DEPLOY_EXCLUDE: committed paths the stack does not need (run records),
+    # as Git pathspec globs, kept off the wire (RQ-0092).
+    set -f
+    set -- .
+    for pattern in ${DEPLOY_EXCLUDE:-}; do set -- "$@" ":(exclude,glob)$pattern" ":(exclude,glob)$pattern/**"; done
+    set +f
+    (cd "$ROOT" && git ls-files -co --exclude-standard -- "$@") | while IFS= read -r f; do [ ! -f "$ROOT/$f" ] || printf '%s\n' "$f"; done > "$stage/files.list"
     IMAGE_REF="localhost/$PROJECT:$STACK"
   else
     MODE=image
@@ -541,11 +547,12 @@ deploy_compose() {
   [ -z "${DEPLOY_COMPOSE_PORT_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_PORT_VAR" "$PORT" >> "$stage/set.env"
   [ -z "${DEPLOY_COMPOSE_IMAGE_VAR:-}" ] || printf '%s=%s\n' "$DEPLOY_COMPOSE_IMAGE_VAR" "$IMAGE_REF" >> "$stage/set.env"
   # The commit, from a checkout; a release kit out of an image has none, and
-  # the image already carries its own.
+  # the image already carries its own. The time is ISO 8601 with its offset
+  # (RQ-0092): a service parses it (datetime.fromisoformat), not just shows it.
   if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
     printf 'GIT_COMMIT_SHA=%s\nGIT_COMMIT_TIME=%s\n' \
       "$(git -C "$ROOT" rev-parse --short=7 HEAD)" \
-      "$(git -C "$ROOT" log -1 --format=%cd --date=format:%Y-%m-%d-%H-%M)" >> "$stage/set.env"
+      "$(git -C "$ROOT" log -1 --format=%cI)" >> "$stage/set.env"
   fi
 
   CMD="sh -c $(q "$COMPOSE_STACK") deploy $(q "$DIR") $(q "$STACK") $(q "$CLI") $MODE $(q "$IMAGE_REF") $(q "$FILES") \
