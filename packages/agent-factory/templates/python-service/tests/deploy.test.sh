@@ -213,6 +213,14 @@ case $out in *"port 20007"*) ;; *) fail "DEPLOY_RUN_ID not used: $out" ;; esac
 pass "GitHub Actions' branch and run id give the port as GitLab's do"
 
 mkdir -p "$P/deploy"
+printf 'DEPLOY_TARGET=compose\nDEPLOY_ACCESS=local\nDEPLOY_DOCKER=podman\nDEPLOY_PORT=9000\nDEPLOY_BRANCH_PORT_BASE=8100\n' > "$P/deploy/stage.env"
+out=$(ARGS="--profile stage"; deploy DEPLOY_BRANCH=factory/RQ-0164 2>&1) || fail "named profile on an RQ branch: $out"
+case $out in *"port 9000: DEPLOY_PORT (profile stage)"*) ;; *) fail "a named profile followed the branch: $out" ;; esac
+out=$(ARGS="--dry-run"; deploy $COMPOSE DEPLOY_COMPOSE_FILES="compose.db.yml compose.yml" 2>&1) || fail "dry run files: $out"
+case $out in *"-f compose.db.yml -f compose.yml up -d"*) ;; *) fail "the dry run does not show each file: $out" ;; esac
+pass "a named profile keeps its DEPLOY_PORT on any branch; the dry run names each compose file"
+
+mkdir -p "$P/deploy"
 printf 'DEPLOY_TARGET=compose\nDEPLOY_ACCESS=local\nDEPLOY_DOCKER=podman\nDEPLOY_BRANCH_PORT_BASE=9000\n' > "$P/deploy/branch.env"
 out=$(ARGS="--profile branch"; deploy DEPLOY_BRANCH=factory/RQ-0012 2>&1) || fail "branch profile: $out"
 has "compose -p demo-svc-factory-rq-0012 "
