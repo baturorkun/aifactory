@@ -1,0 +1,44 @@
+{
+  "runId": "20261023094654-RQ-0089",
+  "requirementId": "RQ-0089",
+  "executionMode": "handoff",
+  "fast": false,
+  "handoffPath": "handoffs/20261023094654-RQ-0089/handoff.md",
+  "status": "approved",
+  "createdAt": "2026-10-23T09:46:54.209Z",
+  "updatedAt": "2026-10-23T09:57:13.397Z",
+  "steps": [
+    {
+      "agent": "handoff",
+      "status": "passed",
+      "startedAt": "2026-10-23T09:46:59.641Z",
+      "finishedAt": "2026-10-23T09:57:03.651Z",
+      "retries": 0
+    }
+  ],
+  "artifacts": [
+    "README.md",
+    "packages/agent-factory/src/cli.ts",
+    "packages/agent-factory/src/scaffold.test.ts",
+    "packages/agent-factory/src/scaffold.ts",
+    "packages/agent-factory/src/template-delivery.ts",
+    "packages/agent-factory/src/template-lock.ts",
+    "packages/agent-factory/src/template-override.ts",
+    "packages/agent-factory/src/template-update.ts",
+    "packages/agent-factory/src/vanilla-ts-template-sync.test.ts",
+    "packages/agent-factory/templates/vanilla-ts/scripts/template-check.mjs",
+    "packages/quality-gates/src/index.ts",
+    "requirements/RQ-0089-template-update-for-vanilla-ts-projects-as-for-embedded-lock-three-way-merge-override-and-propose-templatecheck-gate.md"
+  ],
+  "deletedFiles": [],
+  "gateResults": {
+    "schemaCheck": "passed",
+    "build": "skipped",
+    "typeCheck": "passed",
+    "lint": "passed",
+    "tests": "passed",
+    "security": "passed"
+  },
+  "approvedAt": "2026-10-23T09:57:13.398Z",
+  "approvedBy": "human"
+}
