@@ -54,7 +54,8 @@ Usage: pnpm run deploy:dev [-- options]
   --port <n>       the container's host port, overriding the branch rule below
   --profile <name> read deploy/<name>.env (CI: main, release); DEPLOY_PROFILE too
 
-Container port: on the default branch DEPLOY_PORT; on factory/RQ-N
+Container port: with a profile other than branch, DEPLOY_PORT on any branch;
+otherwise on the default branch DEPLOY_PORT; on factory/RQ-N
 DEPLOY_BRANCH_PORT_BASE + N (empty base: 8100, so RQ-17 is 8117); on another
 branch 20000 + the pipeline id in CI, DEPLOY_PORT here. The branch is
 DEPLOY_BRANCH (GitHub Actions sets it), else CI_COMMIT_BRANCH, else Git's.
@@ -210,6 +211,11 @@ resolve_port() {
   RQ=$(printf '%s' "$BRANCH" | sed -n -E 's#^(factory[/-])?[Rr][Qq]-0*([0-9]+)([^0-9].*)?$#\2#p')
   if [ -n "$PORT_ARG" ]; then
     PORT=$PORT_ARG WHY="--port"
+  elif [ -n "$PROFILE" ] && [ "$PROFILE" != branch ]; then
+    # A named place (main, release, a test stack) has its own port on any
+    # branch it is deployed from (RQ-0093); only a branch preview and a
+    # developer's own deploy follow the branch.
+    PORT=${DEPLOY_PORT:-} WHY="DEPLOY_PORT (profile $PROFILE)"
   elif [ "$BRANCH" = "${DEPLOY_DEFAULT_BRANCH:-${CI_DEFAULT_BRANCH:-main}}" ]; then
     PORT=${DEPLOY_PORT:-} WHY="DEPLOY_PORT ($BRANCH)"
   elif [ -n "$RQ" ]; then
@@ -561,7 +567,7 @@ $PORT $(q "${DEPLOY_HEALTH_PATH:-/healthz}") ${DEPLOY_HEALTH_SECONDS:-90}"
   if [ "$DRY_RUN" = 1 ]; then
     echo "[dry-run] local: $(wc -l < "$stage/files.list" | tr -d ' ') files ($MODE) and $(wc -l < "$stage/set.env" | tr -d ' ') runtime.env lines -> $WHERE:$DIR"
     sed 's/=.*/=…/; s/^/[dry-run]   set /' "$stage/set.env"
-    echo "[dry-run] $WHERE: $CLI compose -p $STACK -f $FILES up -d ($MODE), health $PORT${DEPLOY_HEALTH_PATH:-/healthz}"
+    echo "[dry-run] $WHERE: $CLI compose -p $STACK$(for f in $FILES; do printf ' -f %s' "$f"; done) up -d ($MODE), health $PORT${DEPLOY_HEALTH_PATH:-/healthz}"
     return 0
   fi
   (
