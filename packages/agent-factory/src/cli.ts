@@ -42,6 +42,8 @@ import {
   syncRequirementBranch,
 } from './requirement-branches';
 import {
+  baseChangesNotTaken,
+  describeBaseChanges,
   cancelRequirement,
   commitApprovedRun,
   completeRequirement,
@@ -631,6 +633,17 @@ program
       });
       console.log();
       printRunSummary(manifest);
+      // The gates ran on this branch alone; completion will insist on main's
+      // changes being taken (RQ-0095), so say so now.
+      if (config.requirementBranches.enabled) {
+        try {
+          const root = resolve(config.targetProject.root ?? '.');
+          const behind = baseChangesNotTaken(root, config.requirementBranches.remote, config.requirementBranches.baseBranch);
+          if (behind.files.length > 0) console.log(chalk.yellow(`\n⚠ ${describeBaseChanges(behind, config.requirementBranches.remote, config.requirementBranches.baseBranch)}\n  and finish again before completion.`));
+        } catch {
+          // No remote to ask: completion will.
+        }
+      }
       if (manifest.status === 'passed') {
         console.log(chalk.green(`\n✓ Passed  — Handoff run: ${chalk.bold(runId)}\n`));
         const missing = (manifest.embedded?.requirementPhases ?? []).filter((phase) => !(manifest.embedded?.phases ?? []).includes(phase));

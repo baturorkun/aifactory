@@ -14,6 +14,7 @@ import { parseRequirement } from './requirements/parser';
 import { FactoryConfigSchema, type FactoryConfig } from './config';
 import {
   assertChangeRequestReadyForTest,
+  baseChangesNotTaken,
   cancelRequirement,
   commitApprovedRun,
   completeRequirement,
@@ -1111,6 +1112,64 @@ test('the source labels can be renamed in the project config', async () => {
       fromIssue: 7,
     });
     assert.deepEqual(adapter.sources.get(7)?.labels, ['bug', 'bug::fixing']);
+  } finally {
+    repo.cleanup();
+  }
+});
+
+// RQ-0095: what is merged must have run with main's code; completion refuses a
+// branch that has not taken main's code or template changes. The records other
+// requirements keep on main (their draft reservations) are not changes.
+test('completion refuses a branch behind main\'s code, and not one behind only its requirement records', async () => {
+  const repo = makeRepository();
+  const adapter = new FakeRepositoryPlatform();
+  adapter.sources.set(7, sourceIssue(7));
+  try {
+    repo.config.repositoryPlatforms.gitlab = {
+      baseUrl: GITLAB_ENVIRONMENT.GITLAB_URL, projectId: GITLAB_ENVIRONMENT.GITLAB_PROJECT_ID, token: GITLAB_ENVIRONMENT.GITLAB_TOKEN,
+      targetBranch: 'main', removeSourceBranchOnMerge: true,
+      labels: { draft: 'factory::draft', ready: 'factory::ready', running: 'factory::running', needsFix: 'factory::needs-fix', passed: 'factory::passed' },
+    };
+    const created = await createDraftRequirement('Behind main', 'handoff', repo.config, { environment: GITLAB_ENVIRONMENT, platformAdapter: adapter, fromIssue: 7 });
+    completeDraft(join(repo.root, created.requirementFile));
+    await submitRequirement(created.requirementId, repo.config, { createHandoff: async () => 'run-approved', platformAdapter: adapter });
+    const runDir = join(repo.root, 'runs', 'run-approved');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'manifest.json'), JSON.stringify({
+      runId: 'run-approved', requirementId: created.requirementId, executionMode: 'handoff', fast: false, status: 'approved',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), steps: [], artifacts: [], deletedFiles: [], gateResults: {}, approvedBy: 'Reviewer Name',
+    }, null, 2));
+    git(repo.root, 'add', created.requirementFile, 'runs/run-approved/manifest.json');
+    git(repo.root, 'commit', '-m', 'implement');
+    git(repo.root, 'push', 'origin', created.branch);
+    adapter.resolveHeadSha = () => git(repo.root, 'rev-parse', 'HEAD');
+    adapter.onMerge = (sha) => { git(repo.root, 'push', 'origin', `${sha}:main`); };
+    const complete = () => completeRequirement(created.requirementId, 'run-approved', repo.config, { environment: GITLAB_ENVIRONMENT, platformAdapter: adapter });
+
+    // Another requirement reserved on main, and records of a run: not a change.
+    const other = join(repo.root, '..', 'other');
+    git(join(repo.root, '..'), 'clone', '-q', repo.remote, other);
+    git(other, 'config', 'user.name', 'Other'); git(other, 'config', 'user.email', 'o@example.com');
+    writeFileSync(join(other, 'requirements', 'RQ-0003-other.md'), '# RQ-0003 - Other\n');
+    mkdirSync(join(other, 'runs', 'r9'), { recursive: true });
+    writeFileSync(join(other, 'runs', 'r9', 'manifest.json'), '{}');
+    git(other, 'add', '.'); git(other, 'commit', '-q', '-m', 'requirement(RQ-0003): reserve draft'); git(other, 'push', '-q', 'origin', 'main');
+    assert.deepEqual(baseChangesNotTaken(repo.root, 'origin', 'main'), { commits: 1, files: [] });
+
+    // Code on main this branch has not taken: refused, naming the files and the way.
+    writeFileSync(join(other, 'README.md'), '# Test project\n\nchanged on main\n');
+    writeFileSync(join(other, 'scripts.txt'), 'template\n');
+    git(other, 'add', '.'); git(other, 'commit', '-q', '-m', 'feat: on main'); git(other, 'push', '-q', 'origin', 'main');
+    assert.deepEqual(baseChangesNotTaken(repo.root, 'origin', 'main').files, ['README.md', 'scripts.txt']);
+    await assert.rejects(complete(), /main has changes this branch has not taken \(2 commit\(s\): README\.md, scripts\.txt\)\. Take them first:\n {2}git fetch origin && git merge origin\/main && git push\nthen rerun completion when the pipeline is green/);
+    assert.equal(parseRequirement(created.requirementId, repo.config.paths.requirements).lifecycle?.status, 'ready', 'nothing was completed');
+
+    // Taken: completion goes on.
+    git(repo.root, 'merge', '-q', '--no-edit', 'origin/main');
+    git(repo.root, 'push', '-q', 'origin', created.branch);
+    assert.deepEqual(baseChangesNotTaken(repo.root, 'origin', 'main'), { commits: 0, files: [] });
+    const result = await complete();
+    assert.equal(result.status, 'completed');
   } finally {
     repo.cleanup();
   }

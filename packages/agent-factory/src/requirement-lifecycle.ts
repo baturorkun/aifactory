@@ -152,6 +152,27 @@ function git(
   return result.status === 0 ? result.stdout.trim() : '';
 }
 
+// What the base branch gained since this branch left it, without the
+// requirement records other requirements keep there (RQ-0095): code or
+// template changes this branch has not taken. Completion refuses them: what
+// is merged must have run with them; handoff-finish only says so.
+const RECORDS_ONLY = ['requirements/', 'runs/', 'handoffs/'];
+export function baseChangesNotTaken(root: string, remote: string, baseBranch: string): { commits: number; files: string[] } {
+  git(root, ['fetch', '--quiet', remote, baseBranch]);
+  const base = `${remote}/${baseBranch}`;
+  const commits = Number(git(root, ['rev-list', '--count', `HEAD..${base}`], { allowFailure: true })) || 0;
+  if (commits === 0) return { commits: 0, files: [] };
+  const files = git(root, ['diff', '--name-only', `HEAD...${base}`], { allowFailure: true })
+    .split('\n').map((line) => line.trim()).filter(Boolean)
+    .filter((file) => !RECORDS_ONLY.some((prefix) => file.startsWith(prefix)));
+  return { commits, files };
+}
+
+export function describeBaseChanges(changes: { commits: number; files: string[] }, remote: string, baseBranch: string): string {
+  const shown = changes.files.slice(0, 6).join(', ') + (changes.files.length > 6 ? `, … (${changes.files.length} files)` : '');
+  return `${baseBranch} has changes this branch has not taken (${changes.commits} commit(s): ${shown}). Take them first:\n  git fetch ${remote} && git merge ${remote}/${baseBranch} && git push`;
+}
+
 function projectRoot(config: FactoryConfig): string {
   if (!config.requirementBranches.enabled) {
     throw new Error('requirementBranches.enabled must be true.');
@@ -743,6 +764,10 @@ export async function completeRequirement(
   const alreadyMerged = readiness.mergeStatus === 'merged' || readiness.changeRequest.state === 'merged';
   if (!alreadyMerged) {
     if (activeBranch !== branch) throw new Error(`${id} must be completed from ${branch} before it is merged.`);
+    const behind = baseChangesNotTaken(root, remote, baseBranch);
+    if (behind.files.length > 0) {
+      throw new Error(`${describeBaseChanges(behind, remote, baseBranch)}\nthen rerun completion when the pipeline is green.`);
+    }
     const requirementFile = relative(root, requirementPath).replace(/\\/g, '/');
     const manifestFile = relative(root, join(runDir, 'manifest.json')).replace(/\\/g, '/');
     if (manifestFile.startsWith('../') || !git(root, ['ls-tree', '-r', '--name-only', 'HEAD', '--', manifestFile])) {
